@@ -1,0 +1,13 @@
+{
+  "name": "Top-Down Racer",
+  "short_name": "Racer",
+  "start_url": "racer_start_menu.html",
+  "display": "fullscreen",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "orientation": "landscape",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

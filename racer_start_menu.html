@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#0b0f14" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <title>Top‑Down Racer — Start Menu</title>
+  <style>
+    :root{ --sat:env(safe-area-inset-top); --sab:env(safe-area-inset-bottom); --sal:env(safe-area-inset-left); --sar:env(safe-area-inset-right); }
+    html, body { height:100%; margin:0; background:#0b0f14; color:#e8eef5; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; -webkit-text-size-adjust:100%; }
+    body { overflow:hidden; }
+    .wrap { min-height:100svh; display:grid; place-items:center; padding:16px; padding-top:calc(12px + var(--sat)); padding-bottom:calc(16px + var(--sab)); padding-left:calc(16px + var(--sal)); padding-right:calc(16px + var(--sar)); }
+    .panel { width:min(720px,100%); max-height:calc(100svh - 32px - var(--sat) - var(--sab)); overflow:auto; background:#0f172a; border:1px solid #1f2a44; border-radius:16px; box-shadow:0 12px 32px rgba(0,0,0,.5); padding:20px; }
+    h1 { margin:0 0 8px; font-size:28px; letter-spacing:.2px; }
+    p.sub { margin:0 0 18px; opacity:.8; }
+    fieldset { border:0; margin:0 0 18px; padding:0; }
+    legend { font-weight:700; margin-bottom:8px; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; }
+    .btn { appearance:none; border:1px solid #31456b; background:#132035; color:#e6edf6; padding:12px 16px; border-radius:12px; font-size:16px; cursor:pointer; }
+    .btn:hover { background:#172a4a; }
+    .btn.primary { background:#2563eb; border-color:#2563eb; }
+    .btn.primary:hover { filter:brightness(1.1); }
+    .card { flex:1; min-width:240px; border:1px solid #223453; border-radius:12px; padding:14px; background:#0e1a2c; }
+    .choice { display:flex; align-items:center; gap:10px; margin:8px 0; }
+  select { background:#0e1a2c; border:1px solid #223453; color:#e6edf6; border-radius:10px; padding:12px 12px; font-size:16px; width:100%; }
+    .footer { display:flex; justify-content:space-between; align-items:center; margin-top:16px; }
+    .muted { opacity:.7; font-size:12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="panel">
+      <h1>Top‑Down Racer</h1>
+      <p class="sub">Pick a mode, vehicle, and track — then hit Start.</p>
+
+      <fieldset>
+        <legend>Mode</legend>
+        <div class="row">
+          <label class="card choice">
+            <input type="radio" name="mode" value="grip" checked />
+            <div><strong>Grip</strong><br><span class="muted">Tight grip, classic feel</span></div>
+          </label>
+          <label class="card choice">
+            <input type="radio" name="mode" value="drift" />
+            <div><strong>Drift</strong><br><span class="muted">Grass‑aware drifting physics</span></div>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Vehicle</legend>
+        <select id="vehicleSel">
+          <option value="GT" selected>GT</option>
+          <option value="F1">F1</option>
+          <option value="Rally">Rally</option>
+          <option value="Truck">Truck</option>
+        </select>
+      </fieldset>
+
+      <fieldset>
+        <legend>Track</legend>
+        <select id="trackSel">
+          <option value="Le Mans" selected>Le Mans (Bugatti layout)</option>
+          <option value="Silverstone">Silverstone</option>
+        </select>
+      </fieldset>
+
+      <div class="footer">
+        <div class="muted">W/S/A/D drive • R restart • Space pause</div>
+        <div class="row">
+          <button class="btn" id="quitBtn">Quit</button>
+          <button class="btn primary" id="startBtn">Start</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      function $(id){ return document.getElementById(id); }
+      const startBtn = $("startBtn");
+      const quitBtn = $("quitBtn");
+      const trackSel = $("trackSel");
+      const vehicleSel = $("vehicleSel");
+      startBtn.addEventListener('click', function(){
+        const mode = (document.querySelector('input[name=mode]:checked')||{}).value || 'grip';
+        const track = encodeURIComponent(trackSel.value);
+        const car = encodeURIComponent(vehicleSel.value);
+        const file = mode === 'drift' ? 'racer_mode_drift.html' : 'racer_mode_grip.html';
+        window.location.href = file + '?track=' + track + '&car=' + car;
+      });
+      quitBtn.addEventListener('click', function(){
+        window.close();
+        setTimeout(function(){ window.location.href = 'about:blank'; }, 50);
+      });
+      // Register SW only on http(s)
+      if ('serviceWorker' in navigator && /^https?:$/i.test(location.protocol)) {
+        window.addEventListener('load', function(){
+          navigator.serviceWorker.register('service-worker.js').catch(function(e){ console.warn('SW reg failed', e); });
+        });
+      }
+    })();
+  </script>
+</body>
+</html>
