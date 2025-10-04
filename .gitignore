@@ -1,0 +1,9 @@
+﻿# Ignore JetBrains IDE files
+.idea/
+*.iml
+
+# Node/Python/OS temp files (sensible defaults)
+node_modules/
+.vscode/
+.DS_Store
+Thumbs.db
