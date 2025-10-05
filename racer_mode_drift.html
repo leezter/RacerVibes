@@ -9,6 +9,7 @@
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="physics.js"></script>
     <style>
       html, body, #root { height: 100%; margin: 0; }
       body { background: #0a0a0a; color: #eee; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; overflow:hidden; overscroll-behavior:none; }
@@ -359,11 +360,12 @@ const { useEffect, useRef, useState } = React;
             const width = prof.width, length = prof.length;
             const stats = { maxK: prof.maxK, accelK: prof.accelK, brakeK: prof.brakeK, turnK: prof.turnK };
             if (!color) color = prof.color;
-            return { x, y, angle, speed: 0, width, length, color, kind, stats,
-                     lap: 0, lastCross: 0, bestLap: null, lapStart: performance.now(),
-                     vx: 0, vy: 0, targetIndex: 0, speedBias: 0,
-                     steerVis: 0, skidLPrev: null, skidRPrev: null,
-                     driftHoldFrames: 0, driftHoldDir: 0, driftHoldMag: 0 };
+            const car = { x, y, angle, speed: 0, width, length, color, kind, stats,
+                          lap: 0, lastCross: 0, bestLap: null, lapStart: performance.now(),
+                          vx: 0, vy: 0, targetIndex: 0, speedBias: 0,
+                          steerVis: 0, skidLPrev: null, skidRPrev: null };
+            try { if (window.RacerPhysics) window.RacerPhysics.initCar(car, kind); } catch(_){}
+            return car;
           }
           const player = makeCar({ x: 0, y: 0, angle: 0, color: "#e53935", kind: getInitialCar() });
           let aiCars = []; // array of AI cars
@@ -791,6 +793,7 @@ function drawBackground() {
             // Cars
             const allCars = [player, ...aiCars];
             for (const car of allCars) drawCarDetailed(ctx, car);
+            if (window.RacerPhysics) { for (const car of allCars) window.RacerPhysics.drawDebug(ctx, car); }
             ctx.restore();
           }
 
@@ -831,97 +834,37 @@ function drawBackground() {
 
           function updateCar(car, dt, control) {
             const rawSteer = control ? ((control.right?1:0) - (control.left?1:0)) : 0;
-            car.steerVis = (car.steerVis||0) + (rawSteer - (car.steerVis||0)) * Math.min(1, dt*8);
-            const steerApplied = car.steerVis || 0;
-// Determine surface
+            // Surface detection
             const corners = carCorners(car);
             const samples = [corners[0], corners[1], corners[2], corners[3], { x: car.x, y: car.y }];
             let roadCount = 0; for (const s of samples) if (onRoad(s.x, s.y)) roadCount++;
             const onroad = roadCount >= 3;
-            const baseMax = onroad ? MAX_SPEED_ROAD : MAX_SPEED_GRASS;
-            const maxSpeed = baseMax * (car.stats ? car.stats.maxK : 1);
-            const friction = onroad ? FRICTION_ROAD : FRICTION_GRASS;
+            const prevX = car.x, prevY = car.y;
 
-            // throttle/brake
-            if (control) { if (control.throttle) car.speed += (ACCEL * (car.stats?car.stats.accelK:1)) * dt; if (control.brake) car.speed -= (BRAKE * (car.stats?car.stats.brakeK:1)) * dt; }
-            if (car===player){ car.sfxThrottle = control? (control.throttle?1:0) : 0; }
-            // clamp
-            if (car.speed > maxSpeed) car.speed = maxSpeed;
-            if (car.speed < -maxSpeed * 0.5) car.speed = -maxSpeed * 0.5;
+            const res = (window.RacerPhysics||{}).updateCar ? window.RacerPhysics.updateCar(
+              car,
+              { throttle: !!(control && control.throttle), brake: !!(control && control.brake), steer: rawSteer },
+              { onRoad: onroad },
+              dt
+            ) : null;
 
-            // steering (stronger at higher speed)
-            const speedNorm = Math.min(1, Math.abs(car.speed) / maxSpeed);
-            const turn = TURN_RATE * (car.stats?car.stats.turnK:1) * speedNorm;
-            if (steerApplied !== 0) {
-              car.angle += steerApplied * turn * dt * Math.sign(car.speed || 1);
-            }
-
-            
-            let driftActive = false;
-            // drifting when going fast
-            const steerInput = steerApplied;
-            if (speedNorm > 0.55 && steerInput !== 0) { // higher threshold to initiate drift
-              const slipStrength = Math.min(1, (speedNorm - 0.55) / 0.32); // slower ramp
-              const nx = -Math.sin(car.angle), ny = Math.cos(car.angle); // lateral (left) to car
-              const baseSlip = 620; // reduced slip impulse
-              const aiSlip   = 360; // AI lowered
-              const surfaceGrip = onroad ? 0.95 : 0.65; // slightly less ideal grip to reduce sudden snap
-              const slipMag = (car === player ? baseSlip : aiSlip) * slipStrength * surfaceGrip;
-              const slip = -steerInput * slipMag;
-              car.vx += nx * slip * dt;
-              car.vy += ny * slip * dt;
-              driftActive = true;
-              // remember drift for hold
-              car.driftHoldFrames = 0; // hold disabled // ~0.4s at 60fps
-              car.driftHoldDir = Math.sign(slip) || 0;
-              car.driftHoldMag = Math.abs(slip) * 0.75;
-              
-              if (car === player) {
-                const prev = car.sfxSlip || 0;
-                car.sfxSlip = Math.max(prev*0.9, Math.min(1, Math.abs(slipStrength)));
+            // Skid marks
+            const skidAmount = res && typeof res.skid === 'number' ? res.skid : 0;
+            if (skidAmount > 0.28){
+              const wp = window.RacerPhysics ? window.RacerPhysics.wheelPositions(car) : null;
+              if (wp){
+                if (car.skidLPrev && car.skidRPrev){
+                  addSkid(car.skidLPrev.x, car.skidLPrev.y, wp.left.x, wp.left.y);
+                  addSkid(car.skidRPrev.x, car.skidRPrev.y, wp.right.x, wp.right.y);
+                }
+                car.skidLPrev = wp.left; car.skidRPrev = wp.right;
               }
-        // Clamp lateral component of world velocity to avoid runaway slides
-              const vwx = Math.cos(car.angle)*car.speed + car.vx;
-              const vwy = Math.sin(car.angle)*car.speed + car.vy;
-              const vLat = vwx*nx + vwy*ny; // lateral speed relative to car
-              const vLatMax = Math.max(onroad ? 105 : 140, 1.05 * Math.abs(car.speed)); // tighter lateral cap
-              if (Math.abs(vLat) > vLatMax) {
-                const excess = (Math.abs(vLat) - vLatMax) * Math.sign(vLat);
-                // remove excess lateral along nx,ny from the knockback channels
-                car.vx -= nx * excess;
-                car.vy -= ny * excess;
-              }
-            }
-// integrate
-            const driveVx = Math.cos(car.angle) * car.speed;
-            const driveVy = Math.sin(car.angle) * car.speed;
-            car.x += (driveVx + car.vx) * dt;
-            car.y += (driveVy + car.vy) * dt;
-            if (driftActive) {
-              const nx = -Math.sin(car.angle), ny = Math.cos(car.angle);
-              const half = car.width * 0.45;
-              const lx = car.x + nx*half, ly = car.y + ny*half;
-              const rx = car.x - nx*half, ry = car.y - ny*half;
-              if (car.skidLPrev && car.skidRPrev) {
-                addSkid(car.skidLPrev.x, car.skidLPrev.y, lx, ly);
-                addSkid(car.skidRPrev.x, car.skidRPrev.y, rx, ry);
-              }
-              car.skidLPrev = {x: lx, y: ly};
-              car.skidRPrev = {x: rx, y: ry};
-            } else { car.skidLPrev = null; car.skidRPrev = null; if (car===player){ car.sfxSlip = (car.sfxSlip||0)*0.92; } }
-
-            // decay knockback velocities
-            const latDecay = onroad ? 0.99 : 0.965; // grass damps lateral more
-            car.vx *= latDecay; car.vy *= latDecay;
-
-            // friction on main speed
-            car.speed *= friction;
+            } else { car.skidLPrev = null; car.skidRPrev = null; }
 
             // Lap counting
-            const prevPos = { x: car.x - (driveVx + car.vx) * dt, y: car.y - (driveVy + car.vy) * dt };
             const now = performance.now();
             if (now - car.lastCross > 800) {
-              if (segIntersect(prevPos, { x: car.x, y: car.y }, startLine.a, startLine.b)) {
+              if (segIntersect({x: prevX, y: prevY}, { x: car.x, y: car.y }, startLine.a, startLine.b)) {
                 car.lap += 1; car.lastCross = now;
                 const lapTime = (now - car.lapStart) / 1000;
                 car.bestLap = car.bestLap ? Math.min(car.bestLap, lapTime) : lapTime; car.lapStart = now;
@@ -951,35 +894,41 @@ function drawBackground() {
           // ===== Collisions (pairwise among all cars) =====
           function handleCollisions() {
             const all = [player, ...aiCars];
-            const r = Math.sqrt(Math.pow(30/2,2)+Math.pow(16/2,2)); // approximate radius
-            const minDist = r*2;
             for (let i = 0; i < all.length; i++) {
               for (let j = i+1; j < all.length; j++) {
                 const a = all[i], b = all[j];
+                const ra = Math.hypot((a.length||36)/2, (a.width||18)/2);
+                const rb = Math.hypot((b.length||36)/2, (b.width||18)/2);
                 const dx = b.x - a.x, dy = b.y - a.y;
-                const dist = Math.hypot(dx, dy);
-                if (dist === 0) continue;
+                const dist = Math.hypot(dx, dy) || 1e-6;
+                const minDist = ra + rb;
                 if (dist < minDist) {
                   const nx = dx / dist, ny = dy / dist;
                   const overlap = (minDist - dist);
-                  a.x -= nx * overlap * 0.5; a.y -= ny * overlap * 0.5;
-                  b.x += nx * overlap * 0.5; b.y += ny * overlap * 0.5;
+                  const ma = (a.physics && a.physics.params && a.physics.params.mass) || 1.0;
+                  const mb = (b.physics && b.physics.params && b.physics.params.mass) || 1.0;
+                  const invSum = 1 / (ma + mb);
+                  a.x -= nx * overlap * (mb * invSum);
+                  a.y -= ny * overlap * (mb * invSum);
+                  b.x += nx * overlap * (ma * invSum);
+                  b.y += ny * overlap * (ma * invSum);
 
-                  const vax = Math.cos(a.angle) * a.speed + a.vx;
-                  const vay = Math.sin(a.angle) * a.speed + a.vy;
-                  const vbx = Math.cos(b.angle) * b.speed + b.vx;
-                  const vby = Math.sin(b.angle) * b.speed + b.vy;
+                  const vax = (a.physics ? a.physics.vx : (Math.cos(a.angle)*a.speed + a.vx));
+                  const vay = (a.physics ? a.physics.vy : (Math.sin(a.angle)*a.speed + a.vy));
+                  const vbx = (b.physics ? b.physics.vx : (Math.cos(b.angle)*b.speed + b.vx));
+                  const vby = (b.physics ? b.physics.vy : (Math.sin(b.angle)*b.speed + b.vy));
                   const rvx = vbx - vax, rvy = vby - vay;
                   const relNorm = rvx * nx + rvy * ny;
                   if (relNorm < 0) {
-                    const restitution = 0.55; // snappier bounce, no slowdown
-                    const j = -(1 + restitution) * relNorm / 2;
-                    a.vx -= j * nx; a.vy -= j * ny;
-                    b.vx += j * nx; b.vy += j * ny;
-                    
-                    const impact = Math.min(1, Math.abs(j) * 0.02);
+                    const e = 0.45;
+                    const j = -(1 + e) * relNorm / (1/ma + 1/mb);
+                    const jx = j * nx, jy = j * ny;
+                    if (a.physics){ a.physics.vx -= jx / ma; a.physics.vy -= jy / ma; a.vx = a.physics.vx; a.vy = a.physics.vy; }
+                    else { a.vx -= jx / ma; a.vy -= jy / ma; }
+                    if (b.physics){ b.physics.vx += jx / mb; b.physics.vy += jy / mb; b.vx = b.physics.vx; b.vy = b.physics.vy; }
+                    else { b.vx += jx / mb; b.vy += jy / mb; }
+                    const impact = Math.min(1, Math.abs(j) * 0.003);
                     if (a===player || b===player) { player.sfxImpact = Math.max(player.sfxImpact||0, impact); }
-        // keep speeds unchanged on impact (pure bounce)
                   }
                 }
               }
@@ -1065,6 +1014,7 @@ function drawBackground() {
           loadTrack(trackName);
           camInitRef.current = true; // ensure camera is initialized
           requestAnimationFrame(frame);
+          try { if (window.RacerPhysics) window.RacerPhysics.injectDevTools(()=>({ player, ai: aiCars })); } catch(_){}
 
           return () => { window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); };
         }, [trackName]);

@@ -1,10 +1,11 @@
 'use strict';
 // Basic offline cache for PWA installability and Android WebView/Chrome
-const CACHE_NAME = 'racer-cache-v1';
+const CACHE_NAME = 'racer-cache-v6';
 const ASSETS = [
   './racer_start_menu.html',
   './racer_mode_grip.html',
   './racer_mode_drift.html',
+  './physics.js',
   './manifest.webmanifest'
 ];
 self.addEventListener('install', (e) => {
