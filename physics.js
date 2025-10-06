@@ -83,7 +83,7 @@
     let vx = vb.x, vy = vb.y;
 
     // Steer target and rate limit
-    const steerNormTarget = clamp((input?.steer||0), -1, 1);
+    const steerNormTarget = clamp(((input && input.steer) || 0), -1, 1);
     const steerTarget = steerNormTarget * P.maxSteer;
     const ds = clamp(steerTarget - car.physics.steer, -P.steerSpeed*dt, P.steerSpeed*dt);
     car.physics.steer += ds;
@@ -108,8 +108,8 @@
     const FyR = tireLateralForce(muLat, Fzr, Cr, slipR);
 
     // Longitudinal forces (drive on rear axle), limited by traction
-    const throttle = clamp(input?.throttle?1:0, 0, 1);
-    const brake = clamp(input?.brake?1:0, 0, 1);
+    const throttle = clamp((input && input.throttle) ? 1 : 0, 0, 1);
+    const brake = clamp((input && input.brake) ? 1 : 0, 0, 1);
 
     let Fx_drive = throttle * P.engineForce;
     let Fx_brake = brake * P.brakeForce * sign(vx);
