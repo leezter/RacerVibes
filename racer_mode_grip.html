@@ -32,6 +32,16 @@
       .portrait-warning { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(10,10,10,0.94); color:#fff; z-index:10; text-align:center; padding:24px; }
       .portrait-warning .box { max-width:520px; border:1px solid #2a2a2a; border-radius:12px; padding:18px; background:#111; }
       @media (orientation: portrait) { .portrait-warning { display:flex; } }
+      .dev-toggle { position:fixed; top:16px; right:16px; padding:6px 12px; border-radius:999px; border:1px solid #1f2937; background:rgba(15,23,42,0.88); color:#e2e8f0; font-size:12px; cursor:pointer; z-index:30; }
+      .dev-toggle:hover { background:rgba(30,41,59,0.94); }
+      .dev-panel { position:fixed; top:56px; right:16px; width:220px; padding:12px; border-radius:12px; border:1px solid rgba(71,85,105,0.6); background:rgba(15,23,42,0.94); color:#e2e8f0; font-size:12px; display:none; gap:10px; box-shadow:0 12px 32px rgba(15,23,42,0.45); z-index:30; }
+      .dev-panel.open { display:flex; flex-direction:column; }
+      .dev-panel h3 { margin:0 0 4px; font-size:13px; font-weight:600; }
+      .dev-panel .field { display:grid; grid-template-columns:1fr 64px; align-items:center; gap:8px; }
+      .dev-panel label { display:flex; flex-direction:column; gap:6px; font-size:12px; color:#94a3b8; }
+      .dev-panel input[type="range"] { width:100%; accent-color:#38bdf8; }
+      .dev-panel input[type="number"] { width:100%; padding:4px 6px; border-radius:6px; border:1px solid rgba(148,163,184,0.5); background:#0f172a; color:#e2e8f0; font-size:12px; }
+      .hud-tip { position:fixed; top:16px; left:50%; transform:translateX(-50%); padding:6px 14px; border-radius:999px; background:rgba(15,23,42,0.92); color:#e2e8f0; font-size:12px; z-index:28; box-shadow:0 8px 20px rgba(15,23,42,0.45); pointer-events:none; }
     </style>
   </head>
   <body>
@@ -236,6 +246,28 @@ const { useEffect, useRef, useState } = React;
         } catch (e) { return "GT"; }
       }
 
+      const SCALE_MIN = 0.5;
+      const SCALE_MAX = 3.0;
+      const SCALE_STEP = 0.05;
+      function clampScale(value) {
+        return Math.min(SCALE_MAX, Math.max(SCALE_MIN, value));
+      }
+      function readScale(key, fallback) {
+        try {
+          const stored = localStorage.getItem(key);
+          if (stored === null) return fallback;
+          const parsed = parseFloat(stored);
+          return Number.isFinite(parsed) ? parsed : fallback;
+        } catch(_) {
+          return fallback;
+        }
+      }
+      function writeScale(key, value) {
+        try { localStorage.setItem(key, String(value)); } catch(_) {}
+      }
+      let GEO_SCALE = clampScale(readScale('geoScale', 1.0));
+      let WIDTH_SCALE = clampScale(readScale('widthScale', 1.0));
+
 
       function TopDownRacer() {
         const canvasRef = useRef(null);
@@ -244,11 +276,52 @@ const { useEffect, useRef, useState } = React;
         const [status, setStatus] = useState("");
         const [trackName, setTrackName] = useState(getInitialTrack()); // default to Le Mans
   const [hudTip, setHudTip] = useState("");
-    // motion steering analog value -1..1
+        const [devPanelOpen, setDevPanelOpen] = useState(false);
+        const [geoScaleInput, setGeoScaleInput] = useState(() => clampScale(GEO_SCALE));
+        const [widthScaleInput, setWidthScaleInput] = useState(() => clampScale(WIDTH_SCALE));
+  // motion steering analog value -1..1
   // Gyroscope removed: simplifying to keyboard / touch buttons only
   // camera state
   const camRef = useRef({ x: 0, y: 0, scale: 1.0, targetScale: 1.0 });
   const camInitRef = useRef(false);
+        const loadTrackRef = useRef(() => {});
+        useEffect(() => {
+          if (!hudTip) return;
+          const timer = setTimeout(() => setHudTip(""), 2600);
+          return () => clearTimeout(timer);
+        }, [hudTip]);
+        function reloadTrack() {
+          const loader = loadTrackRef.current;
+          if (typeof loader === "function") {
+            loader(trackName);
+          }
+        }
+        function applyGeoScaleChange(nextValue) {
+          const parsed = typeof nextValue === "number" ? nextValue : parseFloat(nextValue);
+          if (!Number.isFinite(parsed)) return;
+          const clamped = clampScale(parsed);
+          if (Math.abs(clamped - GEO_SCALE) < 1e-4) {
+            setGeoScaleInput(clamped);
+            return;
+          }
+          GEO_SCALE = clamped;
+          setGeoScaleInput(clamped);
+          writeScale("geoScale", clamped);
+          reloadTrack();
+        }
+        function applyWidthScaleChange(nextValue) {
+          const parsed = typeof nextValue === "number" ? nextValue : parseFloat(nextValue);
+          if (!Number.isFinite(parsed)) return;
+          const clamped = clampScale(parsed);
+          if (Math.abs(clamped - WIDTH_SCALE) < 1e-4) {
+            setWidthScaleInput(clamped);
+            return;
+          }
+          WIDTH_SCALE = clamped;
+          setWidthScaleInput(clamped);
+          writeScale("widthScale", clamped);
+          reloadTrack();
+        }
 
         useEffect(() => {
           const canvas = canvasRef.current;
@@ -424,7 +497,7 @@ const { useEffect, useRef, useState } = React;
                 [52, 66, 260]    // exit to straight
               ],
               labels: [["Pits", 210, 570], ["Hairpin", 930, 490], ["S sweep", 700, 420], ["Inner", 540, 520], ["Main straight", 600, 640]],
-              roadWidth: 80, // * SCALE (1.375) ≈ 110 px ≈ 10 m
+              roadWidth: 80, // base width before WIDTH_SCALE adjustment
               kerbs: true,
               kerbColors: ["#d94848", "#ffffff"],
               drawScenery: function(ctx){
@@ -648,8 +721,7 @@ const { useEffect, useRef, useState } = React;
               }
             }
           };
-          let SCALE = 1.375; // +10% bigger than before
-          let ROAD_WIDTH = 80;
+          let ROAD_WIDTH = 80 * WIDTH_SCALE;
           let centerline = [];
           let startLine = null;
           let waypoints = [];
@@ -783,30 +855,31 @@ const { useEffect, useRef, useState } = React;
 
           // ===== Track switcher =====
           function loadTrack(name) {
+            GEO_SCALE = clampScale(GEO_SCALE);
+            WIDTH_SCALE = clampScale(WIDTH_SCALE);
             const T = Tracks[name];
             if (!T){
               console.error('Track not found:', name);
               setStatus('Track data missing');
               return;
             }
-            activeTrack = T;
+            activeTrack = { ...T, name };
             const cx = W/2, cy = H/2;
-            // First, scale around canvas center
-            const scaledPoints = T.points.map(p => scalePoint(p, cx, cy, SCALE));
-            // Compute translation to center the track with padding
+            const scaledPoints = T.points.map(p => scalePoint(p, cx, cy, GEO_SCALE));
             const bb = bbox(scaledPoints);
-            const pad = 40;
-            const dx = ((W - (bb.w)) / 2) - bb.minX;
-            const dy = ((H - (bb.h)) / 2) - bb.minY;
-            const shift = (p) => { const q = scalePoint(p, cx, cy, SCALE); return { x: q.x + dx, y: q.y + dy, angle: p.angle }; };
+            const dx = ((W - bb.w) / 2) - bb.minX;
+            const dy = ((H - bb.h) / 2) - bb.minY;
+            const shift = (p) => {
+              const q = scalePoint(p, cx, cy, GEO_SCALE);
+              return { x: q.x + dx, y: q.y + dy, angle: p.angle };
+            };
             centerline = interpolate(T.points.map(shift), 6);
             startLine = { a: shift(T.startLine.a), b: shift(T.startLine.b) };
-            ROAD_WIDTH = T.roadWidth * SCALE;
-            labels = (T.labels || []).map(([text, x, y]) => [text, ...Object.values(shift({x,y}))]);
+            ROAD_WIDTH = (T.roadWidth || 80) * WIDTH_SCALE;
+            labels = (T.labels || []).map(([text, x, y]) => [text, ...Object.values(shift({ x, y }))]);
             drawTrackMask();
             waypoints = buildWaypoints(centerline, T.speedZones);
             trackBounds = bbox(centerline);
-            // Build simple evenly spaced checkpoints (12 slices) perpendicular to tangent
             checkpoints = [];
             const K = 12;
             for (let i=0;i<K;i++){
@@ -818,19 +891,15 @@ const { useEffect, useRef, useState } = React;
               checkpoints.push({ a:{x:a.x+nx*half, y:a.y+ny*half}, b:{x:a.x-nx*half, y:a.y-ny*half} });
             }
 
-            // spawn
             const pSpawn = shift(T.spawn.player);
             Object.assign(player, { ...player, ...pSpawn, speed: 0, lap: 0, bestLap: null, lapStart: performance.now(), lastCross: 0, vx: 0, vy: 0, targetIndex: 0 });
-            // Align player to the track tangent at spawn so it faces the correct way
             player.angle = headingAtNearest(player.x, player.y);
-            // build 9 AI cars total
             const base = shift(T.spawn.ai);
             aiCars = buildAICars(9, base, T.spawn.ai.angle);
 
             setStatus("");
-            setHudTip(`${name} loaded (scaled x${SCALE})`);
+            setHudTip(`${name} loaded (geo x${GEO_SCALE.toFixed(2)}, width x${WIDTH_SCALE.toFixed(2)})`);
 
-            // Ensure camera is properly initialized and centered on player
             try {
               const cam = camRef.current; 
               if (cam) { 
@@ -1234,6 +1303,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               }
             }
           }
+          loadTrackRef.current = loadTrack;
 
           function updateAI(dt) {
             for (const car of aiCars) {
@@ -1321,8 +1391,18 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
             if (down && k === 'm') toggleSFX();
             if (down && k === "1") { setTrackName("Silverstone"); setTimeout(() => loadTrack("Silverstone"), 0); }
             if (down && k === "2") { setTrackName("Le Mans"); setTimeout(() => loadTrack("Le Mans"), 0); }
-            if (down && (k === "+" || k === "=")) { SCALE = Math.min(1.6, SCALE + 0.05); loadTrack(trackName); }
-            if (down && (k === "-" || k === "_")) { SCALE = Math.max(1.0, SCALE - 0.05); loadTrack(trackName); }
+            if (down && (k === "+" || k === "=")) {
+              GEO_SCALE = clampScale(GEO_SCALE + SCALE_STEP);
+              writeScale('geoScale', GEO_SCALE);
+              setGeoScaleInput(GEO_SCALE);
+              loadTrack(trackName);
+            }
+            if (down && (k === "-" || k === "_")) {
+              GEO_SCALE = clampScale(GEO_SCALE - SCALE_STEP);
+              writeScale('geoScale', GEO_SCALE);
+              setGeoScaleInput(GEO_SCALE);
+              loadTrack(trackName);
+            }
             // Gyro toggle and calibration
             // (Gyro removed)
           }
@@ -1388,11 +1468,69 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
           requestAnimationFrame(frame);
           try { if (window.RacerPhysics) window.RacerPhysics.injectDevTools(()=>({ player, ai: aiCars })); } catch(_){}
 
-          return () => { window.removeEventListener("keydown", kd); window.removeEventListener("keyup", ku); };
+          return () => {
+            window.removeEventListener("keydown", kd);
+            window.removeEventListener("keyup", ku);
+            loadTrackRef.current = () => {};
+          };
         }, [trackName]);
 
         return (
           <div className="wrap">
+            {hudTip ? <div className="hud-tip">{hudTip}</div> : null}
+            <button
+              type="button"
+              className="dev-toggle"
+              onClick={() => setDevPanelOpen(open => !open)}
+              aria-pressed={devPanelOpen}
+            >
+              {devPanelOpen ? "Hide scales" : "Scales"}
+            </button>
+            <div className={`dev-panel ${devPanelOpen ? "open" : ""}`}>
+              <h3>Track scale</h3>
+              <label>
+                <span>Geo scale</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={SCALE_MIN}
+                    max={SCALE_MAX}
+                    step={SCALE_STEP}
+                    value={geoScaleInput}
+                    onChange={(e) => applyGeoScaleChange(e.target.value)}
+                  />
+                  <input
+                    type="number"
+                    min={SCALE_MIN}
+                    max={SCALE_MAX}
+                    step={SCALE_STEP}
+                    value={geoScaleInput.toFixed(2)}
+                    onChange={(e) => applyGeoScaleChange(e.target.value)}
+                  />
+                </div>
+              </label>
+              <label>
+                <span>Width scale</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={SCALE_MIN}
+                    max={SCALE_MAX}
+                    step={SCALE_STEP}
+                    value={widthScaleInput}
+                    onChange={(e) => applyWidthScaleChange(e.target.value)}
+                  />
+                  <input
+                    type="number"
+                    min={SCALE_MIN}
+                    max={SCALE_MAX}
+                    step={SCALE_STEP}
+                    value={widthScaleInput.toFixed(2)}
+                    onChange={(e) => applyWidthScaleChange(e.target.value)}
+                  />
+                </div>
+              </label>
+            </div>
             <canvas ref={canvasRef} width="1000" height="700"></canvas>
           </div>
         );
