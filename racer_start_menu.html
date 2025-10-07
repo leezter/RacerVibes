@@ -6,6 +6,8 @@
   <meta name="theme-color" content="#0b0f14" />
   <link rel="manifest" href="manifest.webmanifest" />
   <title>Top‑Down Racer — Start Menu</title>
+  <script src="track_storage.js" defer></script>
+  <script src="track_editor.js" defer></script>
   <style>
     :root{ --sat:env(safe-area-inset-top); --sab:env(safe-area-inset-bottom); --sal:env(safe-area-inset-left); --sar:env(safe-area-inset-right); }
     html, body { height:100%; margin:0; background:#0b0f14; color:#e8eef5; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; -webkit-text-size-adjust:100%; }
@@ -17,7 +19,10 @@
     fieldset { border:0; margin:0 0 18px; padding:0; }
     legend { font-weight:700; margin-bottom:8px; }
   .row { display:flex; gap:12px; flex-wrap:wrap; }
+    .track-row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+    .track-row select { flex:1 1 260px; min-width:240px; }
     .btn { appearance:none; border:1px solid #31456b; background:#132035; color:#e6edf6; padding:12px 16px; border-radius:12px; font-size:16px; cursor:pointer; }
+    .btn.small { padding:10px 14px; font-size:14px; }
     .btn:hover { background:#172a4a; }
     .btn.primary { background:#2563eb; border-color:#2563eb; }
     .btn.primary:hover { filter:brightness(1.1); }
@@ -26,6 +31,45 @@
   select { background:#0e1a2c; border:1px solid #223453; color:#e6edf6; border-radius:10px; padding:12px 12px; font-size:16px; width:100%; }
     .footer { display:flex; justify-content:space-between; align-items:center; margin-top:16px; }
     .muted { opacity:.7; font-size:12px; }
+    .track-editor-overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:32px; background:rgba(2,8,23,0.86); backdrop-filter:blur(16px); z-index:80; }
+    .track-editor-overlay.hidden { display:none; }
+    .track-editor-panel { width:min(1120px,100%); max-height:100%; display:flex; flex-direction:column; background:#0f172a; border-radius:18px; border:1px solid rgba(59,130,246,0.35); box-shadow:0 24px 64px rgba(2,6,23,0.75); }
+    .track-editor-header { display:flex; align-items:center; gap:12px; padding:18px 20px; border-bottom:1px solid rgba(148,163,184,0.15); }
+    .track-editor-header h2 { margin:0; font-size:20px; letter-spacing:.3px; }
+    .track-editor-header .spacer { flex:1; }
+    .track-editor-body { flex:1; display:flex; gap:20px; padding:20px; overflow:auto; flex-wrap:wrap; }
+    .track-editor-canvas-wrap { flex:1 1 620px; display:flex; flex-direction:column; align-items:center; gap:12px; }
+    .track-editor-canvas { width:100%; max-width:960px; background:#050914; border-radius:16px; box-shadow:0 16px 36px rgba(3,7,18,0.65); touch-action:none; }
+    .track-editor-instructions { font-size:12px; opacity:.7; text-align:center; max-width:760px; }
+    .track-editor-controls { flex:0 0 260px; min-width:240px; display:flex; flex-direction:column; gap:16px; }
+    .te-btn { appearance:none; border-radius:12px; border:1px solid rgba(148,163,184,0.25); background:#1d2a42; color:#e2e8f0; padding:10px 14px; font-size:14px; cursor:pointer; transition:background .18s ease, transform .18s ease; }
+    .te-btn:hover { background:#253556; }
+    .te-btn:active { transform:scale(0.97); }
+    .te-primary { background:#2563eb; border-color:#2563eb; color:#fff; }
+    .te-primary:hover { filter:brightness(1.08); }
+    .te-secondary { background:#17233b; }
+    .te-tool.active { background:#2563eb; border-color:#2563eb; color:#fff; }
+    .te-field { display:flex; flex-direction:column; gap:6px; font-size:13px; color:#cbd5f5; }
+    .te-field.slider span { display:flex; justify-content:space-between; gap:12px; align-items:center; }
+    .te-input { border-radius:10px; border:1px solid rgba(148,163,184,0.35); background:#0d1626; padding:10px 12px; font-size:14px; color:#e2e8f0; }
+    .te-tools { display:flex; flex-wrap:wrap; gap:8px; }
+    .te-status { min-height:20px; font-size:12px; color:#e2e8f0; opacity:.85; }
+    .te-status[data-tone="error"] { color:#f87171; }
+    .te-status[data-tone="warn"] { color:#facc15; }
+    .te-status[data-tone="success"] { color:#34d399; }
+    .te-status[data-tone="info"] { color:#60a5fa; }
+    .te-actions { display:flex; gap:10px; }
+    .te-actions .te-btn { flex:1; }
+    .te-test { display:flex; flex-direction:column; gap:8px; font-size:12px; color:#e2e8f0; }
+    .te-test.hidden { display:none; }
+    .te-test-buttons { display:flex; gap:10px; }
+    @media (max-width: 1024px) {
+      .track-editor-body { flex-direction:column; align-items:stretch; }
+      .track-editor-controls { width:100%; }
+    }
+    @media (max-width: 600px) {
+      .track-row { flex-direction:column; align-items:stretch; }
+    }
   </style>
 </head>
 <body>
@@ -60,15 +104,18 @@
 
       <fieldset>
         <legend>Track</legend>
-        <select id="trackSel">
-          <option value="Le Mans" selected>Le Mans (Bugatti layout)</option>
-          <option value="Silverstone">Silverstone</option>
-          <option value="Kart Park">Kart Park</option>
-          <option value="Windey">Windey (Aerial clone)</option>
-          <option value="Windey Clone">Windey Clone (Exact)</option>
-          <option value="Windey Circuit">Windey Circuit (Photo)</option>
-          <option value="Night Loop">Night Loop</option>
-        </select>
+        <div class="track-row">
+          <select id="trackSel">
+            <option value="Le Mans" selected>Le Mans (Bugatti layout)</option>
+            <option value="Silverstone">Silverstone</option>
+            <option value="Kart Park">Kart Park</option>
+            <option value="Windey">Windey (Aerial clone)</option>
+            <option value="Windey Clone">Windey Clone (Exact)</option>
+            <option value="Windey Circuit">Windey Circuit (Photo)</option>
+            <option value="Night Loop">Night Loop</option>
+          </select>
+          <button type="button" class="btn small" id="createTrackBtn">Create Track</button>
+        </div>
       </fieldset>
 
       <fieldset>
@@ -90,57 +137,131 @@
   </div>
 
   <script>
-    (function(){
-      function $(id){ return document.getElementById(id); }
-      const startBtn = $("startBtn");
-      const quitBtn = $("quitBtn");
-      const trackSel = $("trackSel");
-      const vehicleSel = $("vehicleSel");
-      const steeringSel = $("steeringModeSel");
+    window.addEventListener('DOMContentLoaded', function(){
+      (function(){
+        function $(id){ return document.getElementById(id); }
+        const startBtn = $("startBtn");
+        const quitBtn = $("quitBtn");
+        const trackSel = $("trackSel");
+        const vehicleSel = $("vehicleSel");
+        const steeringSel = $("steeringModeSel");
+        const createTrackBtn = $("createTrackBtn");
 
-      const validModes = new Set(["manual", "touch"]);
-      (function initSteeringMode(){
-        let initial = "manual";
-        try {
-          const saved = localStorage.getItem("steeringMode");
-          if (saved && validModes.has(saved)) {
-            initial = saved;
-          } else {
-            localStorage.setItem("steeringMode", "manual");
-          }
-        } catch(_){}
-        if (steeringSel) steeringSel.value = initial;
-      })();
-
-      if (steeringSel) {
-        steeringSel.addEventListener("change", function(){
-          const mode = validModes.has(steeringSel.value) ? steeringSel.value : "manual";
-          try { localStorage.setItem("steeringMode", mode); } catch(_){}
-        });
-      }
-
-      startBtn.addEventListener('click', function(){
-        const mode = (document.querySelector('input[name=mode]:checked')||{}).value || 'grip';
-        const track = encodeURIComponent(trackSel.value);
-        const car = encodeURIComponent(vehicleSel.value);
-        if (steeringSel) {
-          const modeValue = validModes.has(steeringSel.value) ? steeringSel.value : "manual";
-          try { localStorage.setItem("steeringMode", modeValue); } catch(_){}
+        let customGroup = null;
+        if (trackSel) {
+          customGroup = document.createElement("optgroup");
+          customGroup.label = "Custom Tracks";
+          customGroup.disabled = true;
+          trackSel.appendChild(customGroup);
         }
-        const file = mode === 'drift' ? 'racer_mode_drift.html' : 'racer_mode_grip.html';
-        window.location.href = file + '?track=' + track + '&car=' + car;
-      });
-      quitBtn.addEventListener('click', function(){
-        window.close();
-        setTimeout(function(){ window.location.href = 'about:blank'; }, 50);
-      });
-      // Register SW only on http(s)
-      if ('serviceWorker' in navigator && /^https?:$/i.test(location.protocol)) {
-        window.addEventListener('load', function(){
-          navigator.serviceWorker.register('service-worker.js').catch(function(e){ console.warn('SW reg failed', e); });
-        });
-      }
-    })();
+
+        async function refreshCustomTracks(selectId){
+          if (!trackSel || !window.TrackStore || typeof TrackStore.listTracks !== "function") return;
+          try {
+            const tracks = await TrackStore.listTracks();
+            if (!customGroup) return;
+            customGroup.innerHTML = "";
+            if (!tracks.length) {
+              customGroup.disabled = true;
+              return;
+            }
+            customGroup.disabled = false;
+            tracks.forEach((track) => {
+              const opt = document.createElement("option");
+              opt.value = "custom:" + track.id;
+              opt.textContent = "★ " + track.name;
+              customGroup.appendChild(opt);
+            });
+            if (selectId) {
+              trackSel.value = "custom:" + selectId;
+            }
+          } catch (err) {
+            console.warn("Failed to load custom tracks", err);
+          }
+        }
+
+        let trackEditor = null;
+        if (createTrackBtn && window.TrackEditor && window.TrackStore) {
+          trackEditor = TrackEditor.create({
+            onSaved: async (entry) => {
+              await refreshCustomTracks(entry && entry.id);
+              if (trackSel && entry && entry.id) {
+                trackSel.value = "custom:" + entry.id;
+              }
+            },
+            onTestDrive: (mode, entry) => {
+              if (!entry || !entry.id) return;
+              const value = "custom:" + entry.id;
+              if (trackSel) trackSel.value = value;
+              const file = mode === "drift" ? "racer_mode_drift.html" : "racer_mode_grip.html";
+              const car = vehicleSel ? encodeURIComponent(vehicleSel.value) : "GT";
+              window.location.href = file + "?track=" + encodeURIComponent(value) + "&car=" + car;
+            }
+          });
+          createTrackBtn.addEventListener("click", function(){
+            trackEditor.reset();
+            trackEditor.open();
+          });
+        } else if (createTrackBtn) {
+          createTrackBtn.disabled = true;
+          createTrackBtn.title = "Track editor unavailable";
+        }
+
+        if (window.TrackStore && trackSel) {
+          refreshCustomTracks().catch((err) => console.warn("Track load failed", err));
+        }
+
+        const validModes = new Set(["manual", "touch"]);
+        (function initSteeringMode(){
+          let initial = "manual";
+          try {
+            const saved = localStorage.getItem("steeringMode");
+            if (saved && validModes.has(saved)) {
+              initial = saved;
+            } else {
+              localStorage.setItem("steeringMode", "manual");
+            }
+          } catch(_){}
+          if (steeringSel) steeringSel.value = initial;
+        })();
+
+        if (steeringSel) {
+          steeringSel.addEventListener("change", function(){
+            const mode = validModes.has(steeringSel.value) ? steeringSel.value : "manual";
+            try { localStorage.setItem("steeringMode", mode); } catch(_){}
+          });
+        }
+
+        if (startBtn) {
+          startBtn.addEventListener("click", function(){
+            const mode = (document.querySelector('input[name=mode]:checked')||{}).value || "grip";
+            const trackValue = trackSel ? trackSel.value : "Le Mans";
+            const track = encodeURIComponent(trackValue);
+            const carValue = vehicleSel ? vehicleSel.value : "GT";
+            const car = encodeURIComponent(carValue);
+            if (steeringSel) {
+              const modeValue = validModes.has(steeringSel.value) ? steeringSel.value : "manual";
+              try { localStorage.setItem("steeringMode", modeValue); } catch(_){}
+            }
+            const file = mode === "drift" ? "racer_mode_drift.html" : "racer_mode_grip.html";
+            window.location.href = file + "?track=" + track + "&car=" + car;
+          });
+        }
+
+        if (quitBtn) {
+          quitBtn.addEventListener("click", function(){
+            window.close();
+            setTimeout(function(){ window.location.href = "about:blank"; }, 50);
+          });
+        }
+
+        if ("serviceWorker" in navigator && /^https?:$/i.test(location.protocol)) {
+          window.addEventListener("load", function(){
+            navigator.serviceWorker.register("service-worker.js").catch(function(e){ console.warn("SW reg failed", e); });
+          });
+        }
+      })();
+    });
   </script>
 </body>
 </html>

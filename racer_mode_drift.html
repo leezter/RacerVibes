@@ -10,6 +10,7 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="physics.js"></script>
+    <script src="track_storage.js"></script>
     <style>
       html, body, #root { height: 100%; margin: 0; }
       body { background: #0a0a0a; color: #eee; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; overflow:hidden; overscroll-behavior:none; }
@@ -211,10 +212,13 @@ const { useEffect, useRef, useState } = React;
       function getInitialTrack() {
         try {
           const params = new URLSearchParams(window.location.search);
-          const q = (params.get('track') || '').toLowerCase().trim();
-          if (!q) return "Le Mans";
+          const raw = (params.get('track') || '').trim();
+          if (!raw) return "Le Mans";
+          if (/^custom:/i.test(raw)) return raw;
+          const q = raw.toLowerCase();
           const map = { "le mans": "Le Mans", "lemans": "Le Mans", "silverstone": "Silverstone", "kart": "Kart Park", "kart park": "Kart Park", "kartpark": "Kart Park", "park": "Kart Park", "windey": "Windey", "windey clone": "Windey Clone", "windeyclone": "Windey Clone", "windey circuit": "Windey Circuit", "windeycircuit": "Windey Circuit", "night loop": "Night Loop", "nightloop": "Night Loop", "night": "Night Loop" };
-          return map[q] || (q[0].toUpperCase() + q.slice(1));
+          if (map[q]) return map[q];
+          return q ? (q[0].toUpperCase() + q.slice(1)) : "Le Mans";
         } catch (e) { return "Le Mans"; }
       }
       const CarProfiles = {
@@ -318,34 +322,59 @@ const { useEffect, useRef, useState } = React;
         }
 
         useEffect(() => {
-          const canvas = canvasRef.current; const ctx = canvas.getContext('2d');
-          function adjustCanvasSize(){
-            const { w, h } = getViewportSize();
-            const baseW = 1000, baseH = 700; const aspect = baseW/baseH; const vpAspect = w/h;
-            let targetW=baseW, targetH=baseH;
-            if (vpAspect > aspect){ targetH = Math.min(h, baseH); const s = targetH/baseH; targetW = baseW * s; } else { targetW = Math.min(w, baseW); const s = targetW/baseW; targetH = baseH * s; }
-            canvas.width = baseW; canvas.height = baseH;
-            Object.assign(canvas.style, { width: targetW+'px', height: targetH+'px', position:'fixed', left:'50%', top:'50%', transform:'translate(-50%, -50%)'});
-          }
-          const fsOnce = () => { requestFullscreen(document.documentElement); adjustCanvasSize(); window.removeEventListener('pointerdown', fsOnce); };
-          window.addEventListener('pointerdown', fsOnce, { once:true });
-          window.addEventListener('resize', adjustCanvasSize);
-          if (window.visualViewport) window.visualViewport.addEventListener('resize', adjustCanvasSize);
-          adjustCanvasSize();
-          return () => { window.removeEventListener('resize', adjustCanvasSize); if (window.visualViewport) window.visualViewport.removeEventListener('resize', adjustCanvasSize); };
-        }, [trackName]);
-
-        useEffect(() => {
           const canvas = canvasRef.current;
           const ctx = canvas.getContext("2d");
 
-          const W = 1000, H = 700;
+          let W = 1000, H = 700;
           canvas.width = W; canvas.height = H;
 
           const trackMap = document.createElement("canvas");
           trackMap.width = W; trackMap.height = H;
           trackMapRef.current = trackMap;
           const tctx = trackMap.getContext("2d");
+
+          function adjustCanvasSize(){
+            const { w, h } = getViewportSize();
+            const baseW = W, baseH = H;
+            let targetW = baseW, targetH = baseH;
+            const aspect = baseW / baseH;
+            const vpAspect = w / Math.max(h, 1);
+            if (vpAspect > aspect){
+              targetH = Math.min(h, baseH);
+              const scale = targetH / baseH;
+              targetW = baseW * scale;
+            } else {
+              targetW = Math.min(w, baseW);
+              const scale = targetW / baseW;
+              targetH = baseH * scale;
+            }
+            Object.assign(canvas.style, {
+              width: targetW + 'px',
+              height: targetH + 'px',
+              position: 'fixed',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)'
+            });
+          }
+
+          function applyWorldSize(width, height){
+            const minW = 600;
+            const minH = 420;
+            W = Math.max(minW, Math.round(width || 1000));
+            H = Math.max(minH, Math.round(height || 700));
+            canvas.width = W;
+            canvas.height = H;
+            trackMap.width = W;
+            trackMap.height = H;
+            adjustCanvasSize();
+          }
+
+          const fsOnce = () => { requestFullscreen(document.documentElement); adjustCanvasSize(); window.removeEventListener('pointerdown', fsOnce); };
+          window.addEventListener('pointerdown', fsOnce, { once:true });
+          window.addEventListener('resize', adjustCanvasSize);
+          if (window.visualViewport) window.visualViewport.addEventListener('resize', adjustCanvasSize);
+          adjustCanvasSize();
 
           // ===== Track Library (centerline points in pixels) =====
           const Tracks = {
@@ -653,6 +682,8 @@ const { useEffect, useRef, useState } = React;
           let startLine = null;
           let waypoints = [];
           let labels = [];
+          const customTrackCache = new Map();
+          const customTrackPromises = new Map();
           let trackData = null;
           let activeTrack = null; // keep current track config
           let trackBounds = null; // world-space bbox
@@ -723,6 +754,91 @@ const { useEffect, useRef, useState } = React;
             return {minX, minY, maxX, maxY, w:maxX-minX, h:maxY-minY};
           }
 
+          function clamp(value, min, max){
+            return Math.min(max, Math.max(min, value));
+          }
+
+          function convertCustomEntry(entry){
+            if (!entry || !entry.data) throw new Error("Track bundle missing data");
+            const data = entry.data;
+            const rawPoints = Array.isArray(data.points) ? data.points : [];
+            const points = rawPoints.map((p) => ({ x: Number(p && p.x) || 0, y: Number(p && p.y) || 0 }));
+            const worldSrc = data.world || {};
+            const world = {
+              width: Number(worldSrc.width) || 1000,
+              height: Number(worldSrc.height) || 700,
+              scale: Number(worldSrc.scale) || undefined
+            };
+            const name = data.name || entry.name || "Custom Track";
+            const speedZones = Array.isArray(data.speedZones) && data.speedZones.length ? data.speedZones : [[0, Math.max(1, Math.floor(points.length / 24) || 1), 220]];
+            const labels = Array.isArray(data.labels) && data.labels.length ? data.labels : [[name, world.width * 0.5, world.height * 0.5]];
+            const fallbackA = points[0] || { x: world.width * 0.5, y: world.height * 0.5 };
+            const fallbackB = points[1] || { x: fallbackA.x + 40, y: fallbackA.y };
+            const clonePoint = (src, fallback) => ({
+              x: Number(src && src.x) || fallback.x || 0,
+              y: Number(src && src.y) || fallback.y || 0,
+              angle: typeof (src && src.angle) === "number" ? src.angle : undefined
+            });
+            const startA = clonePoint(data.startLine && data.startLine.a, fallbackA);
+            const startB = clonePoint(data.startLine && data.startLine.b, fallbackB);
+            const defaultAngle = Math.atan2((startB.y || 0) - (startA.y || 0), (startB.x || 0) - (startA.x || 0));
+            const spawnPlayerSrc = data.spawn && data.spawn.player;
+            const spawnAiSrc = data.spawn && data.spawn.ai;
+            const spawnPlayer = {
+              x: Number(spawnPlayerSrc && spawnPlayerSrc.x) || startA.x,
+              y: Number(spawnPlayerSrc && spawnPlayerSrc.y) || startA.y,
+              angle: typeof (spawnPlayerSrc && spawnPlayerSrc.angle) === "number" ? spawnPlayerSrc.angle : defaultAngle
+            };
+            const spawnAi = {
+              x: Number(spawnAiSrc && spawnAiSrc.x) || (spawnPlayer.x - Math.cos(defaultAngle) * 40),
+              y: Number(spawnAiSrc && spawnAiSrc.y) || (spawnPlayer.y - Math.sin(defaultAngle) * 40),
+              angle: typeof (spawnAiSrc && spawnAiSrc.angle) === "number" ? spawnAiSrc.angle : defaultAngle
+            };
+            return {
+              name,
+              points,
+              startLine: { a: startA, b: startB },
+              spawn: { player: spawnPlayer, ai: spawnAi },
+              roadWidth: data.roadWidth || 80,
+              world,
+              mask: data.mask || entry.mask || null,
+              speedZones,
+              labels,
+              source: { id: entry.id, createdAt: entry.createdAt, updatedAt: entry.updatedAt }
+            };
+          }
+
+          async function ensureCustomTrack(name){
+            if (!name || !/^custom:/i.test(name)) return null;
+            if (Tracks[name]) return Tracks[name];
+            if (customTrackCache.has(name)) {
+              const cached = customTrackCache.get(name);
+              if (cached && typeof cached.then !== "function") return cached;
+            }
+            if (customTrackPromises.has(name)) {
+              return customTrackPromises.get(name);
+            }
+            if (!window.TrackStore || typeof TrackStore.getTrack !== "function") {
+              throw new Error("Track storage unavailable");
+            }
+            const id = name.slice(7);
+            if (!id) throw new Error("Custom track id missing");
+            const promise = TrackStore.getTrack(id).then((entry) => {
+              if (!entry) throw new Error("Custom track not found");
+              const track = convertCustomEntry(entry);
+              Tracks[name] = track;
+              customTrackCache.set(name, track);
+              customTrackPromises.delete(name);
+              return track;
+            }).catch((err) => {
+              customTrackPromises.delete(name);
+              customTrackCache.delete(name);
+              throw err;
+            });
+            customTrackPromises.set(name, promise);
+            return promise;
+          }
+
           function drawTrackMask() {
             tctx.save();
             tctx.clearRect(0, 0, W, H);
@@ -786,13 +902,27 @@ const { useEffect, useRef, useState } = React;
           function loadTrack(name) {
             GEO_SCALE = clampScale(GEO_SCALE);
             WIDTH_SCALE = clampScale(WIDTH_SCALE);
-            const T = Tracks[name];
+            let T = Tracks[name];
             if (!T) {
-              console.error("Track not found:", name);
-              setStatus("Track data missing");
+              if (name && /^custom:/i.test(name)) {
+                setStatus("Loading custom track\u2026");
+                ensureCustomTrack(name).then(() => {
+                  setStatus("");
+                  loadTrack(name);
+                }).catch((err) => {
+                  console.error("Custom track load failed", err);
+                  setStatus("Custom track unavailable");
+                });
+              } else {
+                console.error("Track not found:", name);
+                setStatus("Track data missing");
+              }
               return;
             }
-            activeTrack = { ...T, name };
+            const world = T.world || { width: 1000, height: 700 };
+            applyWorldSize(world.width, world.height);
+            const displayName = T.name || name;
+            activeTrack = { ...T, name: displayName, key: name, world: { width: W, height: H } };
             const cx = W/2, cy = H/2;
             const scaledPoints = T.points.map(p => scalePoint(p, cx, cy, GEO_SCALE));
             const bb = bbox(scaledPoints);
@@ -807,13 +937,15 @@ const { useEffect, useRef, useState } = React;
             ROAD_WIDTH = (T.roadWidth || 80) * WIDTH_SCALE;
             labels = (T.labels || []).map(([text, x, y]) => [text, ...Object.values(shift({ x, y }))]);
             drawTrackMask();
-            waypoints = buildWaypoints(centerline, T.speedZones);
+            const zones = Array.isArray(T.speedZones) && T.speedZones.length ? T.speedZones : [[0, Math.max(1, Math.floor(centerline.length / 24)), 220]];
+            waypoints = buildWaypoints(centerline, zones);
             trackBounds = bbox(centerline);
             checkpoints = [];
             const K = 12;
             for (let i=0;i<K;i++){
-              const idx = Math.floor(i * (centerline.length-2) / K);
-              const a = centerline[idx], b = centerline[idx+1];
+              const idx = Math.floor(i * Math.max(1, centerline.length-2) / K);
+              const a = centerline[idx];
+              const b = centerline[(idx+1) % centerline.length];
               const ang = Math.atan2(b.y-a.y, b.x-a.x);
               const nx = -Math.sin(ang), ny = Math.cos(ang);
               const half = ROAD_WIDTH*0.5;
@@ -824,19 +956,23 @@ const { useEffect, useRef, useState } = React;
             Object.assign(player, { ...player, ...pSpawn, speed: 0, lap: 0, bestLap: null, lapStart: performance.now(), lastCross: 0, vx: 0, vy: 0, targetIndex: 0 });
             player.angle = headingAtNearest(player.x, player.y);
             const base = shift(T.spawn.ai);
-            aiCars = buildAICars(9, base, T.spawn.ai.angle);
+            const baseAngle = typeof base.angle === "number" ? base.angle : (typeof T.spawn.ai.angle === "number" ? T.spawn.ai.angle : player.angle);
+            aiCars = buildAICars(9, base, baseAngle);
 
+            const prettyName = activeTrack && activeTrack.name ? activeTrack.name : name;
             try {
               const cam = camRef.current; 
               if (cam) { 
                 cam.x = player.x;
                 cam.y = player.y;
+                cam.targetX = player.x;
+                cam.targetY = player.y;
                 cam.scale = cam.targetScale = 1.0;
               }
             } catch(_){}
 
             setStatus("");
-            setHudTip(`${name} loaded (geo x${GEO_SCALE.toFixed(2)}, width x${WIDTH_SCALE.toFixed(2)})`);
+            setHudTip(`${prettyName} loaded (geo x${GEO_SCALE.toFixed(2)}, width x${WIDTH_SCALE.toFixed(2)})`);
           }
           loadTrackRef.current = loadTrack;
 
@@ -1078,7 +1214,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
 
             // World-space transform: center exactly on player
             const cam = camRef.current;
-            const s = cam.scale || 1.0;
+            const s = cam && cam.scale ? cam.scale : 1.0;
             
             // Ensure player has valid position and track data is loaded
             if (!player || typeof player.x !== 'number' || typeof player.y !== 'number' || !trackData) {
@@ -1091,7 +1227,9 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
             const ch = canvasRef.current ? canvasRef.current.height : H;
             ctx.translate(cw/2, ch/2);
             ctx.scale(s, s);
-            ctx.translate(-player.x, -player.y);
+            const focusX = cam && typeof cam.x === "number" ? cam.x : player.x;
+            const focusY = cam && typeof cam.y === "number" ? cam.y : player.y;
+            ctx.translate(-focusX, -focusY);
 
             // Optional track-specific scenery
             if (activeTrack && activeTrack.drawScenery){ activeTrack.drawScenery(ctx, {W,H,ROAD_WIDTH,centerline,labels}); }
@@ -1352,19 +1490,37 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                 setRunning(false);
               }
             }
-            // Dynamic zoom only (position is handled directly in drawBackground)
             const cam = camRef.current;
-            
-            // Make sure camera is always centered on player position
-            if (player && typeof player.x === 'number' && typeof player.y === 'number') {
-              cam.x = player.x;
-              cam.y = player.y;
+            if (cam && player && typeof player.x === 'number' && typeof player.y === 'number') {
+              cam.targetX = player.x;
+              cam.targetY = player.y;
             }
-            
             const spd = Math.abs(player.speed || 0);
             const minZoom = 0.70, maxZoom = 1.10;
-            cam.targetScale = Math.max(minZoom, Math.min(maxZoom, 1.0 - Math.min(0.35, spd / 1200)));
-            cam.scale += (cam.targetScale - cam.scale) * Math.min(1, dt * 4);
+            if (cam) {
+              cam.targetScale = Math.max(minZoom, Math.min(maxZoom, 1.0 - Math.min(0.35, spd / 1200)));
+              cam.scale += (cam.targetScale - cam.scale) * Math.min(1, dt * 4);
+              if (typeof cam.targetX === "number" && typeof cam.targetY === "number") {
+                const canvasNode = canvasRef.current;
+                const cw = canvasNode ? canvasNode.width : W;
+                const ch = canvasNode ? canvasNode.height : H;
+                const s = cam.scale || 1;
+                const viewW = cw / s;
+                const viewH = ch / s;
+                const halfViewW = viewW / 2;
+                const halfViewH = viewH / 2;
+                if (W > viewW) {
+                  cam.x = clamp(cam.targetX, halfViewW, W - halfViewW);
+                } else {
+                  cam.x = cam.targetX;
+                }
+                if (H > viewH) {
+                  cam.y = clamp(cam.targetY, halfViewH, H - halfViewH);
+                } else {
+                  cam.y = cam.targetY;
+                }
+              }
+            }
 
             updateSFX(player, dt); updateSkids(dt);
             drawBackground(); drawHUD();
