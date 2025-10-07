@@ -246,6 +246,15 @@ const { useEffect, useRef, useState } = React;
         } catch (e) { return "GT"; }
       }
 
+      function getSteeringModeSetting() {
+        try {
+          const value = localStorage.getItem("steeringMode");
+          return value === "touch" ? "touch" : "manual";
+        } catch (_) {
+          return "manual";
+        }
+      }
+
       const SCALE_MIN = 0.5;
       const SCALE_MAX = 3.0;
       const SCALE_STEP = 0.05;
@@ -732,19 +741,21 @@ const { useEffect, useRef, useState } = React;
           let checkpoints = [];   // [{a:{x,y}, b:{x,y}}]
 
           // Cars and sim state
-          function makeCar({ x, y, angle, color, kind = 'GT' }) {
+          function makeCar({ x, y, angle, color, kind = 'GT', steeringMode }) {
             const prof = CarProfiles[kind] || CarProfiles.GT;
             const width = prof.width, length = prof.length;
             const stats = { maxK: prof.maxK, accelK: prof.accelK, brakeK: prof.brakeK, turnK: prof.turnK };
             if (!color) color = prof.color;
+            const mode = steeringMode === "touch" ? "touch" : "manual";
             const car = { x, y, angle, speed: 0, width, length, color, kind, stats,
                           lap: 0, lastCross: 0, bestLap: null, lapStart: performance.now(),
                           vx: 0, vy: 0, targetIndex: 0, speedBias: 0,
-                          steerVis: 0, skidLPrev: null, skidRPrev: null };
+                          steerVis: 0, skidLPrev: null, skidRPrev: null, steeringMode: mode };
             try { if (window.RacerPhysics) window.RacerPhysics.initCar(car, kind); } catch(_){}
             return car;
           }
-          const player = makeCar({ x: 0, y: 0, angle: 0, color: "#e53935", kind: getInitialCar() });
+          const steeringModePreference = getSteeringModeSetting();
+          const player = makeCar({ x: 0, y: 0, angle: 0, color: "#e53935", kind: getInitialCar(), steeringMode: steeringModePreference });
           let aiCars = []; // array of AI cars
 
           const keys = { w: false, s: false, a: false, d: false };
@@ -925,7 +936,7 @@ const { useEffect, useRef, useState } = React;
               const x = base.x - v.x * gap * row + vp.x * lateral * side;
               const y = base.y - v.y * gap * row + vp.y * lateral * side;
               const kind = kinds[i % kinds.length];
-              const car = makeCar({ x, y, angle: angleRad, color: colors[i % colors.length], kind });
+              const car = makeCar({ x, y, angle: angleRad, color: colors[i % colors.length], kind, steeringMode: "manual" });
               car.targetIndex = 0;
               car.speedBias = (-20 + (i%5)*10); // small variety in target speed
               arr.push(car);

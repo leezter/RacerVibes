@@ -6,10 +6,110 @@
 
   // Default per-vehicle physical parameters (pixel-space, tuned empirically)
   const VEHICLE_DEFAULTS = {
-    F1:    { mass: 0.9,  wheelbase: 42, cgToFront: 20, cgToRear: 22, engineForce: 620, brakeForce: 680, maxSteer: 0.55, steerSpeed: 6.0, muLatRoad: 1.8, muLongRoad: 1.4, muLatGrass: 0.55, muLongGrass: 0.45, dragK: 0.0018, rollK: 0.15, downforceK: 0.0009 },
-    GT:    { mass: 1.0,  wheelbase: 36, cgToFront: 17, cgToRear: 19, engineForce: 520, brakeForce: 640, maxSteer: 0.50, steerSpeed: 5.0, muLatRoad: 1.45, muLongRoad: 1.2, muLatGrass: 0.50, muLongGrass: 0.40, dragK: 0.0020, rollK: 0.18, downforceK: 0.0006 },
-    Rally: { mass: 0.95, wheelbase: 34, cgToFront: 16, cgToRear: 18, engineForce: 560, brakeForce: 650, maxSteer: 0.58, steerSpeed: 6.5, muLatRoad: 1.35, muLongRoad: 1.15, muLatGrass: 0.46, muLongGrass: 0.38, dragK: 0.0022, rollK: 0.20, downforceK: 0.0005 },
-    Truck: { mass: 1.6,  wheelbase: 44, cgToFront: 21, cgToRear: 23, engineForce: 400, brakeForce: 820, maxSteer: 0.40, steerSpeed: 3.5, muLatRoad: 1.10, muLongRoad: 0.95, muLatGrass: 0.42, muLongGrass: 0.34, dragK: 0.0026, rollK: 0.26, downforceK: 0.0008 }
+    F1: {
+      mass: 0.9,
+      wheelbase: 42,
+      cgToFront: 20,
+      cgToRear: 22,
+      engineForce: 620,
+      brakeForce: 680,
+      maxSteer: 0.55,
+      steerSpeed: 6.0,
+      muLatRoad: 1.8,
+      muLongRoad: 1.4,
+      muLatGrass: 0.55,
+      muLongGrass: 0.45,
+      dragK: 0.0018,
+      rollK: 0.15,
+      downforceK: 0.0009,
+      touchSteer: {
+        maxSteerLowSpeed: 0.65,
+        maxSteerHighSpeed: 0.24,
+        falloffSpeed: 340,
+        baseSteerRate: 6.6,
+        steerRateFalloff: 0.0035,
+        returnGain: 0,
+        filterTau: 0.12
+      }
+    },
+    GT: {
+      mass: 1.0,
+      wheelbase: 36,
+      cgToFront: 17,
+      cgToRear: 19,
+      engineForce: 520,
+      brakeForce: 640,
+      maxSteer: 0.50,
+      steerSpeed: 5.0,
+      muLatRoad: 1.45,
+      muLongRoad: 1.2,
+      muLatGrass: 0.50,
+      muLongGrass: 0.40,
+      dragK: 0.0020,
+      rollK: 0.18,
+      downforceK: 0.0006,
+      touchSteer: {
+        maxSteerLowSpeed: 0.58,
+        maxSteerHighSpeed: 0.28,
+        falloffSpeed: 260,
+        baseSteerRate: 5.4,
+        steerRateFalloff: 0.0032,
+        returnGain: 0,
+        filterTau: 0.12
+      }
+    },
+    Rally: {
+      mass: 0.95,
+      wheelbase: 34,
+      cgToFront: 16,
+      cgToRear: 18,
+      engineForce: 560,
+      brakeForce: 650,
+      maxSteer: 0.58,
+      steerSpeed: 6.5,
+      muLatRoad: 1.35,
+      muLongRoad: 1.15,
+      muLatGrass: 0.46,
+      muLongGrass: 0.38,
+      dragK: 0.0022,
+      rollK: 0.20,
+      downforceK: 0.0005,
+      touchSteer: {
+        maxSteerLowSpeed: 0.68,
+        maxSteerHighSpeed: 0.32,
+        falloffSpeed: 220,
+        baseSteerRate: 6.8,
+        steerRateFalloff: 0.0038,
+        returnGain: 0,
+        filterTau: 0.12
+      }
+    },
+    Truck: {
+      mass: 1.6,
+      wheelbase: 44,
+      cgToFront: 21,
+      cgToRear: 23,
+      engineForce: 400,
+      brakeForce: 820,
+      maxSteer: 0.40,
+      steerSpeed: 3.5,
+      muLatRoad: 1.10,
+      muLongRoad: 0.95,
+      muLatGrass: 0.42,
+      muLongGrass: 0.34,
+      dragK: 0.0026,
+      rollK: 0.26,
+      downforceK: 0.0008,
+      touchSteer: {
+        maxSteerLowSpeed: 0.50,
+        maxSteerHighSpeed: 0.24,
+        falloffSpeed: 200,
+        baseSteerRate: 3.8,
+        steerRateFalloff: 0.0028,
+        returnGain: 0,
+        filterTau: 0.12
+      }
+    }
   };
 
   function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
@@ -38,7 +138,16 @@
   function initCar(car, kind){
     const k = kind || car.kind || 'GT';
     const base = VEHICLE_DEFAULTS[k] || VEHICLE_DEFAULTS.GT;
-    const params = { ...base };
+    const touchSteerDefaults = base.touchSteer ? { ...base.touchSteer } : {
+      maxSteerLowSpeed: base.maxSteer,
+      maxSteerHighSpeed: base.maxSteer * 0.6,
+      falloffSpeed: 240,
+      baseSteerRate: base.steerSpeed,
+      steerRateFalloff: 0.003,
+      returnGain: 0,
+      filterTau: 0.12
+    };
+    const params = { ...base, touchSteer: touchSteerDefaults };
     // If the art length/width differs, adapt wheelbase slightly to fit
     const Lpx = (car.length || 36); const Wpx = (car.width || 18);
     // Keep cg distances proportional to given wheelbase
@@ -49,6 +158,8 @@
       vx: 0, vy: 0, r: 0, // world-frame velocity and yaw rate
       vxb: 0, vyb: 0,     // body-frame velocity (cached)
       steer: 0,           // actual steer angle applied (rad)
+      steeringState: { filteredSpeed: 0 },
+      steeringMode: car && car.steeringMode === 'touch' ? 'touch' : 'manual',
       params,
       a, b,
       Izz,
@@ -82,11 +193,53 @@
     const vb = worldToBody(car.physics.vx, car.physics.vy, car.angle);
     let vx = vb.x, vy = vb.y;
 
+    // Steering mode and filtered speed for adaptive touch steering
+    const steeringMode = (car && car.steeringMode === 'touch') ? 'touch' : 'manual';
+    car.physics.steeringMode = steeringMode;
+    const steeringState = car.physics.steeringState || (car.physics.steeringState = { filteredSpeed: 0 });
+    const speedWorld = Math.hypot(car.physics.vx, car.physics.vy);
+    if (steeringState.filteredSpeed == null || !Number.isFinite(steeringState.filteredSpeed)) {
+      steeringState.filteredSpeed = speedWorld;
+    }
+    if (steeringMode === 'touch') {
+      const cfg = P.touchSteer || {};
+      const tau = Math.max(0.05, cfg.filterTau || 0.12);
+      const alpha = clamp(1 - Math.exp(-dt / tau), 0, 1);
+      steeringState.filteredSpeed += (speedWorld - steeringState.filteredSpeed) * alpha;
+    } else {
+      steeringState.filteredSpeed = speedWorld;
+    }
+
     // Steer target and rate limit
     const steerNormTarget = clamp(((input && input.steer) || 0), -1, 1);
-    const steerTarget = steerNormTarget * P.maxSteer;
-    const ds = clamp(steerTarget - car.physics.steer, -P.steerSpeed*dt, P.steerSpeed*dt);
-    car.physics.steer += ds;
+    let steerMax = P.maxSteer;
+    let steerRate = P.steerSpeed;
+    let returnGain = 0;
+    if (steeringMode === 'touch') {
+      const cfg = P.touchSteer || {};
+      const low = cfg.maxSteerLowSpeed != null ? cfg.maxSteerLowSpeed : P.maxSteer;
+      const high = cfg.maxSteerHighSpeed != null ? cfg.maxSteerHighSpeed : (P.maxSteer * 0.6);
+      const falloff = Math.max(1, cfg.falloffSpeed || 240);
+      const filtered = steeringState.filteredSpeed;
+      const blend = Math.exp(-filtered / falloff);
+      steerMax = high + (low - high) * blend;
+      const baseRate = cfg.baseSteerRate != null ? cfg.baseSteerRate : P.steerSpeed;
+      const falloffScale = cfg.steerRateFalloff != null ? cfg.steerRateFalloff : 0;
+      steerRate = baseRate / (1 + filtered * falloffScale);
+      if (!Number.isFinite(steerRate) || steerRate <= 0) steerRate = baseRate;
+      returnGain = Math.max(0, cfg.returnGain || 0);
+    }
+    steerRate = Math.max(1e-3, steerRate);
+    const steerTarget = steerNormTarget * steerMax;
+    const steerStep = clamp(steerTarget - car.physics.steer, -steerRate * dt, steerRate * dt);
+    car.physics.steer += steerStep;
+    if (returnGain > 0) {
+      const alignStep = clamp(-car.physics.steer * returnGain * dt, -steerRate * dt, steerRate * dt);
+      car.physics.steer += alignStep;
+    }
+    if (steeringMode === 'touch') {
+      car.physics.steer = clamp(car.physics.steer, -steerMax, steerMax);
+    }
     const delta = car.physics.steer;
     car.steerVis = (car.steerVis==null?0:car.steerVis) + (steerNormTarget - (car.steerVis||0))*Math.min(1, dt*10);
     car.steerVis = clamp(car.steerVis, -1, 1);
