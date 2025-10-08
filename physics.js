@@ -22,6 +22,12 @@
       dragK: 0.0018,
       rollK: 0.15,
       downforceK: 0.0009,
+      rearCircle: 0.50,
+      vKineBlend: 40,
+      cgHeight: 8,
+      yawDampK: 0.12,
+    reverseEntrySpeed: 40, // px/s threshold below which brake engages reverse
+    reverseTorqueScale: 0.60, // fraction of engineForce when reversing
       touchSteer: {
         maxSteerLowSpeed: 0.65,
         maxSteerHighSpeed: 0.24,
@@ -48,6 +54,12 @@
       dragK: 0.0020,
       rollK: 0.18,
       downforceK: 0.0006,
+      rearCircle: 0.50,
+      vKineBlend: 40,
+      cgHeight: 7,
+      yawDampK: 0.12,
+    reverseEntrySpeed: 40,
+    reverseTorqueScale: 0.60,
       touchSteer: {
         maxSteerLowSpeed: 0.58,
         maxSteerHighSpeed: 0.28,
@@ -74,6 +86,12 @@
       dragK: 0.0022,
       rollK: 0.20,
       downforceK: 0.0005,
+      rearCircle: 0.50,
+      vKineBlend: 40,
+      cgHeight: 8,
+      yawDampK: 0.12,
+    reverseEntrySpeed: 40,
+    reverseTorqueScale: 0.60,
       touchSteer: {
         maxSteerLowSpeed: 0.68,
         maxSteerHighSpeed: 0.32,
@@ -100,6 +118,12 @@
       dragK: 0.0026,
       rollK: 0.26,
       downforceK: 0.0008,
+      rearCircle: 0.50,
+      vKineBlend: 40,
+      cgHeight: 10,
+      yawDampK: 0.12,
+    reverseEntrySpeed: 40,
+    reverseTorqueScale: 0.60,
       touchSteer: {
         maxSteerLowSpeed: 0.50,
         maxSteerHighSpeed: 0.24,
@@ -186,8 +210,8 @@
     const onRoad = surface && surface.onRoad !== false;
     const muLat = onRoad ? P.muLatRoad : P.muLatGrass;
     const muLong = onRoad ? P.muLongRoad : P.muLongGrass;
-    const dragK = P.dragK * (onRoad?1:0.7); // slightly less aero on grass due to lower speeds
-    const rollK = P.rollK  * (onRoad?1.0:1.6); // higher rolling on grass
+  const dragK = P.dragK * (onRoad?1:0.7); // slightly less aero on grass due to lower speeds
+  const rollK = P.rollK  * (onRoad?1.0:1.6); // higher rolling on grass
 
     // Body-frame velocity
     const vb = worldToBody(car.physics.vx, car.physics.vy, car.angle);
@@ -244,41 +268,118 @@
     car.steerVis = (car.steerVis==null?0:car.steerVis) + (steerNormTarget - (car.steerVis||0))*Math.min(1, dt*10);
     car.steerVis = clamp(car.steerVis, -1, 1);
 
-    // Normal loads per axle
-    const { Fzf, Fzr } = axleNormalLoads(mass, a, b);
+  // Normal loads per axle (static baseline)
+  const loadsStatic = axleNormalLoads(mass, a, b);
+  let Fzf = loadsStatic.Fzf, Fzr = loadsStatic.Fzr;
 
-    // Cornering stiffness proportional to available grip (linear range roughly at ~8 deg)
-    const slip0 = 0.14; // ~8 degrees
-    const Cf = muLat * Fzf / slip0;
-    const Cr = muLat * Fzr / slip0;
+  // Cornering stiffness proportional to available grip (linear range roughly at ~8 deg)
+  const slip0 = 0.14; // ~8 degrees
+  let Cf = muLat * Fzf / slip0;
+  let Cr = muLat * Fzr / slip0;
 
     // Avoid singularity at very low speed
-    const eps = 0.001;
-    const slipF = Math.atan2(vy + a*car.physics.r, Math.max(eps, vx)) - delta;
-    const slipR = Math.atan2(vy - b*car.physics.r, Math.max(eps, vx));
+  const eps = 0.001;
+  const speedBody = Math.hypot(vx, vy);
+  const fwd = Math.abs(vx) < 0.5 ? 1 : sign(vx); // stable forward reference near zero
+  const vxEff = fwd * Math.max(eps, Math.abs(vx));
+  const deltaEff = delta * fwd; // invert steering when rolling backwards
+  let slipF = Math.atan2(vy + a*car.physics.r, vxEff) - deltaEff;
+  let slipR = Math.atan2(vy - b*car.physics.r, vxEff);
 
-    const FyF = tireLateralForce(muLat, Fzf, Cf, slipF);
-    const FyR = tireLateralForce(muLat, Fzr, Cr, slipR);
+  // Lateral forces will be computed after load transfer adjustments
+  let FyF = 0;
+  let FyR_unc = 0;
 
     // Longitudinal forces (drive on rear axle), limited by traction
     const throttle = clamp((input && input.throttle) ? 1 : 0, 0, 1);
     const brake = clamp((input && input.brake) ? 1 : 0, 0, 1);
 
-    let Fx_drive = throttle * P.engineForce;
-    let Fx_brake = brake * P.brakeForce * sign(vx);
-    // Resistances (aero and rolling)
-    const v = Math.hypot(vx, vy);
-    const F_drag = dragK * v * v * sign(vx);
-    const F_roll = rollK * v * sign(vx);
+    // Reverse mode: if near stopped and braking, allow controlled reverse torque
+    let reversing = false;
+    const reverseEntrySpeed = P.reverseEntrySpeed != null ? P.reverseEntrySpeed : 40;
+    const reverseTorqueScale = P.reverseTorqueScale != null ? P.reverseTorqueScale : 0.60;
+    const almostStopped = speedWorld < reverseEntrySpeed;
+    if (almostStopped && brake && !throttle && reverseTorqueScale > 0 && reverseEntrySpeed > 0){
+      reversing = true;
+    }
+    let Fx_drive = reversing ? -P.engineForce * reverseTorqueScale : throttle * P.engineForce;
+    let Fx_brake = reversing ? 0 : (brake * P.brakeForce * sign(vx));
+    // Resistances (aero & rolling) oppose actual motion direction in body frame along X
+    const vmag = Math.max(eps, Math.hypot(vx, vy));
+    const ux_bx = vx / vmag; // projection of velocity direction on body X
+    const F_drag = dragK * vmag * vmag * ux_bx;
+    const F_roll = rollK * vmag * ux_bx;
 
-    // Traction limit on drive axle (rear). Enforce friction circle approximately
-    const Fr_max = muLong * Fzr;
-    const Fx_long = clamp(Fx_drive - Fx_brake - F_drag - F_roll, -Fr_max, Fr_max);
+  // Preliminary longitudinal force (will re-evaluate traction limit after load transfer)
+  const Fx_long_raw_pre = Fx_drive - Fx_brake - F_drag - F_roll;
+  // Use current Fzr for initial clamp; will recalc after transfer
+  let Fx_long = clamp(Fx_long_raw_pre, -muLong * Fzr, muLong * Fzr);
+    const ax = Fx_long / mass; // longitudinal accel (approx) for load transfer
+    // Debug cache (will be refreshed after possible load transfer too)
+    car.physics.lastAx = ax;
 
-    // State derivatives in body frame per standard bicycle model
-    const dvx = (Fx_long - FyF * Math.sin(delta) + vy * car.physics.r) / mass;
-    const dvy = (FyF * Math.cos(delta) + FyR - vx * car.physics.r) / mass;
-    const dr = (a * FyF * Math.cos(delta) - b * FyR) / Izz;
+    // Longitudinal load transfer update
+    const cgH = (P.cgHeight!=null?P.cgHeight:8);
+    if (cgH > 0) {
+      const dF = mass * cgH * ax / L; // shift proportional to accel
+      Fzf = clamp(loadsStatic.Fzf - dF, 0, mass*g);
+      Fzr = clamp(loadsStatic.Fzr + dF, 0, mass*g);
+      Cf = muLat * Fzf / slip0;
+      Cr = muLat * Fzr / slip0;
+    }
+    car.physics.lastFzf = Fzf; car.physics.lastFzr = Fzr;
+
+    // Now compute lateral forces with updated loads
+    FyF = tireLateralForce(muLat, Fzf, Cf, slipF);
+    FyR_unc = tireLateralForce(muLat, Fzr, Cr, slipR);
+
+    // Mild rear combined slip limiting (scale only lateral)
+    const rearCircle = (P.rearCircle!=null?P.rearCircle:0.5);
+    let lambda = 0;
+    if (rearCircle > 0) {
+      const ux = (muLong*Fzr>1e-6) ? (Fx_long / (muLong * Fzr)) : 0;
+      const uy = (muLat*Fzr>1e-6) ? (FyR_unc / (muLat * Fzr)) : 0;
+      lambda = Math.hypot(ux, uy);
+      if (lambda > 1) {
+        FyR_unc = FyR_unc / (1 + rearCircle * (lambda - 1));
+      }
+      car.physics._dbgLambda = lambda;
+    } else car.physics._dbgLambda = 0;
+    let FyR = FyR_unc;
+
+  // Recompute longitudinal traction limit after possible load shift
+  const Fr_max = muLong * Fzr;
+  // Clamp again in case load transfer changed available traction
+  Fx_long = clamp(Fx_long, -Fr_max, Fr_max);
+  car.physics._dbgFyR_avail = muLat * Fzr; car.physics._dbgUx = Math.min(1, Math.abs(Fx_long)/Math.max(1e-6, Fr_max)); car.physics._dbgFyR = FyR;
+
+    // Dynamic derivatives (force-based)
+    const dvx_dyn = (Fx_long - FyF * Math.sin(deltaEff) + vy * car.physics.r) / mass;
+    const dvy_dyn = (FyF * Math.cos(deltaEff) + FyR - vx * car.physics.r) / mass;
+    let dr_dyn = (a * FyF * Math.cos(deltaEff) - b * FyR) / Izz;
+    // Yaw damping
+    const yawDampK = (P.yawDampK!=null?P.yawDampK:0.12);
+    dr_dyn += -yawDampK * car.physics.r;
+
+    // Kinematic fallback
+    const vKineBlend = (P.vKineBlend!=null?P.vKineBlend:40);
+    const speedBody2 = Math.hypot(vx, vy);
+    let dvx_kine = 0, dvy_kine = 0, dr_kine = 0;
+    if (vKineBlend > 0) {
+      dr_kine = (vxEff / L) * Math.tan(deltaEff);
+      dvy_kine = dr_kine * vxEff; // rotate forward velocity into lateral
+    }
+    let alphaBlend = 1;
+    if (vKineBlend > 0) {
+      const t = clamp(speedBody2 / vKineBlend, 0, 1);
+      alphaBlend = t*t*(3-2*t);
+    }
+  // IMPORTANT: do NOT blend longitudinal acceleration; previous version blended dvx
+  // which zeroed propulsion at low speed (alphaBlend~0) causing cars to stay frozen.
+  const dvx = dvx_dyn;
+    const dvy = dvy_kine + (dvy_dyn - dvy_kine) * alphaBlend;
+    let dr = dr_kine + (dr_dyn - dr_kine) * alphaBlend;
+  car.physics.lastAlphaBlend = alphaBlend;
 
     vx += dvx * dt;
     vy += dvy * dt;
@@ -295,6 +396,15 @@
     car.y += car.physics.vy * dt;
     car.angle += car.physics.r * dt;
 
+  // Cache debug values
+  car.physics.lastSlipF = slipF;
+  car.physics.lastSlipR = slipR;
+  car.physics.lastFx_long = Fx_long;
+  car.physics.lastFwd = fwd;
+  car.physics.lastDeltaEff = deltaEff;
+  car.physics.lastLambda = car.physics._dbgLambda || 0;
+  car.physics.lastReversing = reversing;
+
     // Derived properties for compatibility
     car.speed = Math.hypot(car.physics.vx, car.physics.vy);
     car.sfxThrottle = throttle;
@@ -302,7 +412,7 @@
 
     // Skid intensity from combined slip
     const skidLat = Math.max(0, Math.min(1, (Math.abs(slipF) + Math.abs(slipR)) / (2*0.35)));
-    const driveSlip = Math.max(0, Math.min(1, Math.abs(Fx_long) / Math.max(1, Fr_max) - 0.85));
+  const driveSlip = Math.max(0, Math.min(1, Math.abs(Fx_long) / Math.max(1, muLong * Fzr) - 0.85));
     const skid = clamp(0.5*skidLat + 0.5*driveSlip, 0, 1);
     car.physics.skid = skid;
     car.sfxSlip = (car.sfxSlip||0) * 0.85 + skid * 0.15;
@@ -310,7 +420,15 @@
     return {
       skid,
       steerAngle: delta,
-      onGrass: !onRoad
+      onGrass: !onRoad,
+      Fx_long,
+      FyR: car.physics._dbgFyR,
+      FyR_avail: car.physics._dbgFyR_avail,
+      ux: car.physics._dbgUx,
+      slipF, slipR,
+      speed: car.speed,
+      fwd,
+      reversing
     };
   }
 
@@ -333,6 +451,22 @@
     ctx.beginPath(); ctx.moveTo(car.x, car.y); ctx.lineTo(car.x + car.physics.vx*0.25, car.y + car.physics.vy*0.25); ctx.stroke();
     ctx.strokeStyle = '#ff4081'; // heading
     ctx.beginPath(); ctx.moveTo(car.x, car.y); ctx.lineTo(car.x + Math.cos(car.angle)*18, car.y + Math.sin(car.angle)*18); ctx.stroke();
+
+    // Compact physics line (player-oriented). Expect prior updateCar to have stored debug fields.
+    try {
+      const p = car.physics || {};
+      if (p._dbgFyR_avail != null){
+        const lambda = p.lastLambda != null ? p.lastLambda : 0;
+        const speedMag = Math.hypot(car.physics.vx||0, car.physics.vy||0);
+        const line = `fwd=${(p.lastFwd!=null?p.lastFwd:1)} ${(p.lastReversing?'REV ':'')}|v|=${speedMag.toFixed(1)} vx=${(car.physics.vx||0).toFixed(1)} vy=${(car.physics.vy||0).toFixed(1)} dEff=${(p.lastDeltaEff||0).toFixed(3)} slipF=${(p.lastSlipF||0).toFixed(3)} slipR=${(p.lastSlipR||0).toFixed(3)} λ=${lambda.toFixed(2)} ax=${(p.lastAx||0).toFixed(2)} FzF=${(p.lastFzf||0).toFixed(0)} FzR=${(p.lastFzr||0).toFixed(0)} ${(p.lastAlphaBlend<0.999)?'KIN':''}`;
+        ctx.font = '11px monospace';
+        ctx.textBaseline = 'top';
+        const x = car.x + 20, y = car.y - 30;
+        ctx.fillStyle = 'rgba(0,0,0,0.55)'; const w = ctx.measureText(line).width + 8; ctx.fillRect(x-4,y-2,w,16);
+        ctx.fillStyle = (lambda>1.01) ? '#ff5050' : '#e0f2f1';
+        ctx.fillText(line, x, y);
+      }
+    } catch(_){}
     ctx.restore();
   }
 
@@ -376,9 +510,15 @@
         <div class="rv-row"><label>Grip long (road)</label><input id="rv-muor" type="range" min="0.6" max="1.8" step="0.05"><div class="val" id="rv-muor-v"></div></div>
         <div class="rv-row"><label>Grip lat (grass)</label><input id="rv-mulg" type="range" min="0.3" max="1.0" step="0.02"><div class="val" id="rv-mulg-v"></div></div>
         <div class="rv-row"><label>Grip long (grass)</label><input id="rv-muog" type="range" min="0.25" max="0.9" step="0.02"><div class="val" id="rv-muog-v"></div></div>
-        <div class="rv-row"><label>Drag</label><input id="rv-drag" type="range" min="0.001" max="0.0035" step="0.0001"><div class="val" id="rv-drag-v"></div></div>
-        <div class="rv-row"><label>Rolling</label><input id="rv-roll" type="range" min="0.10" max="0.35" step="0.005"><div class="val" id="rv-roll-v"></div></div>
-        <div class="rv-row"><button id="rv-reset">Reset defaults</button></div>
+    <div class="rv-row"><label>Drag</label><input id="rv-drag" type="range" min="0.001" max="0.0035" step="0.0001"><div class="val" id="rv-drag-v"></div></div>
+  <div class="rv-row"><label>Rolling</label><input id="rv-roll" type="range" min="0.10" max="0.35" step="0.005"><div class="val" id="rv-roll-v"></div></div>
+  <div class="rv-row"><label>Rear circle</label><input id="rv-rearc" type="range" min="0" max="1" step="0.05"><div class="val" id="rv-rearc-v"></div></div>
+  <div class="rv-row"><label>vKineBlend</label><input id="rv-vkine" type="range" min="0" max="120" step="5"><div class="val" id="rv-vkine-v"></div></div>
+  <div class="rv-row"><label>cgHeight</label><input id="rv-cgh" type="range" min="0" max="14" step="1"><div class="val" id="rv-cgh-v"></div></div>
+  <div class="rv-row"><label>Yaw damp</label><input id="rv-yawd" type="range" min="0" max="0.30" step="0.02"><div class="val" id="rv-yawd-v"></div></div>
+  <div class="rv-row"><label>Reverse entry</label><input id="rv-reventry" type="range" min="0" max="120" step="5"><div class="val" id="rv-reventry-v"></div></div>
+  <div class="rv-row"><label>Reverse torque</label><input id="rv-revtorque" type="range" min="0.30" max="1.00" step="0.05"><div class="val" id="rv-revtorque-v"></div></div>
+  <div class="rv-row"><button id="rv-reset">Reset defaults</button></div>
       </div>`;
     document.body.appendChild(wrap);
 
@@ -399,8 +539,14 @@
       muor: wrap.querySelector('#rv-muor'),   muorV: wrap.querySelector('#rv-muor-v'),
       mulg: wrap.querySelector('#rv-mulg'),   mulgV: wrap.querySelector('#rv-mulg-v'),
       muog: wrap.querySelector('#rv-muog'),   muogV: wrap.querySelector('#rv-muog-v'),
-      drag: wrap.querySelector('#rv-drag'),   dragV: wrap.querySelector('#rv-drag-v'),
-      roll: wrap.querySelector('#rv-roll'),   rollV: wrap.querySelector('#rv-roll-v'),
+    drag: wrap.querySelector('#rv-drag'),   dragV: wrap.querySelector('#rv-drag-v'),
+  roll: wrap.querySelector('#rv-roll'),   rollV: wrap.querySelector('#rv-roll-v'),
+  rearc: wrap.querySelector('#rv-rearc'), rearcV: wrap.querySelector('#rv-rearc-v'),
+  vkine: wrap.querySelector('#rv-vkine'), vkineV: wrap.querySelector('#rv-vkine-v'),
+  cgh: wrap.querySelector('#rv-cgh'), cghV: wrap.querySelector('#rv-cgh-v'),
+  yawd: wrap.querySelector('#rv-yawd'), yawdV: wrap.querySelector('#rv-yawd-v'),
+  reventry: wrap.querySelector('#rv-reventry'), reventryV: wrap.querySelector('#rv-reventry-v'),
+  revtorque: wrap.querySelector('#rv-revtorque'), revtorqueV: wrap.querySelector('#rv-revtorque-v'),
       reset: wrap.querySelector('#rv-reset')
     };
 
@@ -416,8 +562,14 @@
       els.muor.value = d.muLongRoad; els.muorV.textContent = d.muLongRoad.toFixed(2);
       els.mulg.value = d.muLatGrass; els.mulgV.textContent = d.muLatGrass.toFixed(2);
       els.muog.value = d.muLongGrass; els.muogV.textContent = d.muLongGrass.toFixed(2);
-      els.drag.value = d.dragK; els.dragV.textContent = (+d.dragK).toFixed(4);
-      els.roll.value = d.rollK; els.rollV.textContent = d.rollK.toFixed(2);
+  els.drag.value = d.dragK; els.dragV.textContent = (+d.dragK).toFixed(4);
+  els.roll.value = d.rollK; els.rollV.textContent = d.rollK.toFixed(2);
+  els.rearc.value = (d.rearCircle!=null?d.rearCircle:0.50).toFixed(2); els.rearcV.textContent = (+els.rearc.value).toFixed(2);
+  els.vkine.value = (d.vKineBlend!=null?d.vKineBlend:40).toFixed(0); els.vkineV.textContent = els.vkine.value;
+  els.cgh.value = (d.cgHeight!=null?d.cgHeight:8).toFixed(0); els.cghV.textContent = els.cgh.value;
+  els.yawd.value = (d.yawDampK!=null?d.yawDampK:0.12).toFixed(2); els.yawdV.textContent = (+els.yawd.value).toFixed(2);
+      els.reventry.value = (d.reverseEntrySpeed!=null?d.reverseEntrySpeed:40).toFixed(0); els.reventryV.textContent = els.reventry.value;
+      els.revtorque.value = (d.reverseTorqueScale!=null?d.reverseTorqueScale:0.60).toFixed(2); els.revtorqueV.textContent = (+els.revtorque.value).toFixed(2);
     }
     refresh(els.kind.value);
 
@@ -435,7 +587,13 @@
         muLatGrass: +els.mulg.value,
         muLongGrass: +els.muog.value,
         dragK: +els.drag.value,
-        rollK: +els.roll.value
+    rollK: +els.roll.value,
+  rearCircle: +els.rearc.value,
+  vKineBlend: +els.vkine.value,
+  cgHeight: +els.cgh.value,
+  yawDampK: +els.yawd.value,
+  reverseEntrySpeed: +els.reventry.value,
+  reverseTorqueScale: +els.revtorque.value
       };
       const cars = (getCars && getCars()) || {};
       const applyTo = [cars.player].filter(Boolean);
@@ -445,8 +603,8 @@
       refresh(k);
     }
 
-    for (const key of ['mass','eng','brk','steer','steers','mulr','muor','mulg','muog','drag','roll']){
-      els[key].addEventListener('input', ()=>{ const v = els[key].value; const label = key+'V'; if (els[label]) els[label].textContent = (''+v).slice(0, (key==='drag'?6:4)); apply(); });
+  for (const key of ['mass','eng','brk','steer','steers','mulr','muor','mulg','muog','drag','roll','rearc','vkine','cgh','yawd','reventry','revtorque']){
+      els[key].addEventListener('input', ()=>{ const v = els[key].value; const label = key+'V'; if (els[label]) els[label].textContent = (''+v).slice(0, (key==='drag'?6:(key==='revtorque'?6:4))); apply(); });
     }
     els.kind.addEventListener('change', ()=>refresh(els.kind.value));
     els.reset.addEventListener('click', ()=>{ VEHICLE_DEFAULTS[els.kind.value] = { ...defaultSnapshot[els.kind.value] }; refresh(els.kind.value); apply(); });
