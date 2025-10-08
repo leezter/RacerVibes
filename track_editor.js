@@ -611,7 +611,7 @@
     ctx.save();
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
-    ctx.lineWidth = this.state.roadWidth;
+    ctx.lineWidth = this.state.roadWidth * 0.5;
     ctx.strokeStyle = "rgba(59,130,246,0.35)";
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
@@ -619,7 +619,7 @@
       ctx.lineTo(pts[i].x, pts[i].y);
     }
     ctx.stroke();
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1;
     ctx.strokeStyle = "#38bdf8";
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);

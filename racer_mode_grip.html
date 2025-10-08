@@ -262,6 +262,7 @@ const { useEffect, useRef, useState } = React;
       const SCALE_MIN = 0.5;
       const SCALE_MAX = 3.0;
       const SCALE_STEP = 0.05;
+      const SCALE_DEFAULT = 2.5;
       function clampScale(value) {
         return Math.min(SCALE_MAX, Math.max(SCALE_MIN, value));
       }
@@ -278,8 +279,8 @@ const { useEffect, useRef, useState } = React;
       function writeScale(key, value) {
         try { localStorage.setItem(key, String(value)); } catch(_) {}
       }
-      let GEO_SCALE = clampScale(readScale('geoScale', 1.0));
-      let WIDTH_SCALE = clampScale(readScale('widthScale', 1.0));
+      let GEO_SCALE = clampScale(readScale('geoScale', SCALE_DEFAULT));
+      let WIDTH_SCALE = clampScale(readScale('widthScale', SCALE_DEFAULT));
 
 
       function TopDownRacer() {
@@ -339,7 +340,9 @@ const { useEffect, useRef, useState } = React;
         useEffect(() => {
           const canvas = canvasRef.current;
           const ctx = canvas.getContext("2d");
-          let W = 1000, H = 700; // logical simulation size (was missing after refactor)
+          const BASE_WORLD_W = 1000;
+          const BASE_WORLD_H = 700;
+          let W = BASE_WORLD_W, H = BASE_WORLD_H; // logical simulation size (was missing after refactor)
           canvas.width = W; canvas.height = H;
           // Offscreen track mask canvas (needed for onRoad() sampling) – was accidentally removed causing tctx reference errors
           const trackMap = document.createElement('canvas');
@@ -872,7 +875,9 @@ const { useEffect, useRef, useState } = React;
               mask: data.mask || entry.mask || null,
               speedZones,
               labels,
-              source: { id: entry.id, createdAt: entry.createdAt, updatedAt: entry.updatedAt }
+              source: { id: entry.id, createdAt: entry.createdAt, updatedAt: entry.updatedAt, origin: data.origin || entry.origin || "sketcher" },
+              origin: data.origin || "sketcher",
+              isCustom: true
             };
           }
 
@@ -987,23 +992,47 @@ const { useEffect, useRef, useState } = React;
               }
               return;
             }
-            const world = T.world || { width: 1000, height: 700 };
-            applyWorldSize(world.width, world.height);
             const displayName = T.name || name;
-            activeTrack = { ...T, name: displayName, key: name, world: { width: W, height: H } };
-            const cx = W/2, cy = H/2;
-            const scaledPoints = T.points.map(p => scalePoint(p, cx, cy, GEO_SCALE));
+            const isCustomTrack = !!(T.isCustom || (T.origin && T.origin === "sketcher") || /^custom:/i.test(name));
+            const baseWorldWidth = (T.world && T.world.width) || BASE_WORLD_W;
+            const baseWorldHeight = (T.world && T.world.height) || BASE_WORLD_H;
+            if (isCustomTrack) {
+              applyWorldSize(baseWorldWidth * GEO_SCALE, baseWorldHeight * GEO_SCALE);
+            } else {
+              applyWorldSize(BASE_WORLD_W * GEO_SCALE, BASE_WORLD_H * GEO_SCALE);
+            }
+            activeTrack = { ...T, name: displayName, key: name, world: { width: W, height: H }, isCustom: isCustomTrack };
+
+            const baseCx = baseWorldWidth / 2;
+            const baseCy = baseWorldHeight / 2;
+            const scaledPoints = T.points.map((p) => scalePoint(p, baseCx, baseCy, GEO_SCALE));
             const bb = bbox(scaledPoints);
             const dx = ((W - bb.w) / 2) - bb.minX;
             const dy = ((H - bb.h) / 2) - bb.minY;
-            const shift = (p) => {
-              const q = scalePoint(p, cx, cy, GEO_SCALE);
-              return { x: q.x + dx, y: q.y + dy, angle: p.angle };
+            const transformPoint = (p) => {
+              const src = p || { x: baseCx, y: baseCy };
+              const scaled = scalePoint(src, baseCx, baseCy, GEO_SCALE);
+              return { x: scaled.x + dx, y: scaled.y + dy };
             };
-            centerline = interpolate(T.points.map(shift), 6);
-            startLine = { a: shift(T.startLine.a), b: shift(T.startLine.b) };
+            const transformPose = (pose) => {
+              const src = pose || { x: baseCx, y: baseCy, angle: 0 };
+              const pt = transformPoint(src);
+              return { x: pt.x, y: pt.y, angle: typeof src.angle === "number" ? src.angle : 0 };
+            };
+
+            centerline = interpolate(T.points.map(transformPoint), 6);
+            const startSrc = T.startLine || { a: T.points[0], b: T.points[1] || T.points[0] };
+            startLine = { a: transformPoint(startSrc.a), b: transformPoint(startSrc.b) };
             ROAD_WIDTH = (T.roadWidth || 80) * WIDTH_SCALE;
-            labels = (T.labels || []).map(([text, x, y]) => [text, ...Object.values(shift({ x, y }))]);
+            labels = (T.labels || []).map(([text, x, y]) => {
+              const pt = transformPoint({ x, y });
+              return [text, pt.x, pt.y];
+            });
+            const rawPlayer = T.spawn && T.spawn.player ? T.spawn.player : startSrc.a;
+            const rawAi = T.spawn && T.spawn.ai ? T.spawn.ai : rawPlayer;
+            const playerSpawn = transformPose(rawPlayer);
+            const aiSpawn = transformPose(rawAi);
+
             drawTrackMask();
             const zones = Array.isArray(T.speedZones) && T.speedZones.length ? T.speedZones : [[0, Math.max(1, Math.floor(centerline.length / 24)), 220]];
             waypoints = buildWaypoints(centerline, zones);
@@ -1020,16 +1049,21 @@ const { useEffect, useRef, useState } = React;
               checkpoints.push({ a:{x:a.x+nx*half, y:a.y+ny*half}, b:{x:a.x-nx*half, y:a.y-ny*half} });
             }
 
-            const pSpawn = shift(T.spawn.player);
+            const fallbackPose = { x: W / 2, y: H / 2, angle: 0 };
+            const pSpawn = playerSpawn || fallbackPose;
             Object.assign(player, { ...player, ...pSpawn, speed: 0, lap: 0, bestLap: null, lapStart: performance.now(), lastCross: 0, vx: 0, vy: 0, targetIndex: 0 });
             player.angle = headingAtNearest(player.x, player.y);
-            const base = shift(T.spawn.ai);
-            const baseAngle = typeof base.angle === "number" ? base.angle : (typeof T.spawn.ai.angle === "number" ? T.spawn.ai.angle : player.angle);
+            const base = aiSpawn || pSpawn;
+            const baseAngle = typeof rawAi.angle === "number" ? rawAi.angle : base.angle;
             aiCars = buildAICars(9, base, baseAngle);
 
             const prettyName = activeTrack && activeTrack.name ? activeTrack.name : name;
             setStatus("");
-            setHudTip(`${prettyName} loaded (geo x${GEO_SCALE.toFixed(2)}, width x${WIDTH_SCALE.toFixed(2)})`);
+            if (isCustomTrack) {
+              setHudTip(`${prettyName} loaded (custom)`);
+            } else {
+              setHudTip(`${prettyName} loaded (geo x${GEO_SCALE.toFixed(2)}, width x${WIDTH_SCALE.toFixed(2)})`);
+            }
 
             try {
               const cam = camRef.current; 
