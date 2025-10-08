@@ -1503,6 +1503,20 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
             const focusY = cam && typeof cam.y === "number" ? cam.y : player.y;
             ctx.translate(-focusX, -focusY);
 
+            const viewHalfW = (cw / (s || 1)) * 0.5;
+            const viewHalfH = (ch / (s || 1)) * 0.5;
+            const pad = Math.max(viewHalfW, viewHalfH) + 64;
+            const worldWidth = activeTrack && activeTrack.world ? activeTrack.world.width : W;
+            const worldHeight = activeTrack && activeTrack.world ? activeTrack.world.height : H;
+            ctx.save();
+            ctx.fillStyle = "#123b1a";
+            if (worldWidth && worldHeight) {
+              ctx.fillRect(-pad, -pad, worldWidth + pad * 2, worldHeight + pad * 2);
+            } else {
+              ctx.fillRect((player ? player.x : 0) - pad, (player ? player.y : 0) - pad, pad * 2, pad * 2);
+            }
+            ctx.restore();
+
             // Optional track-specific scenery (before road)
             if (activeTrack && activeTrack.drawScenery){ activeTrack.drawScenery(ctx, {W,H,ROAD_WIDTH,centerline,labels}); }
 
@@ -1814,24 +1828,8 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               cam.targetScale = Math.max(minZoom, Math.min(maxZoom, targetZoom));
               cam.scale += (cam.targetScale - cam.scale) * Math.min(1, dt * 4);
               if (typeof cam.targetX === "number" && typeof cam.targetY === "number") {
-                const canvasNode = canvasRef.current;
-                const cw = canvasNode ? canvasNode.width : W;
-                const ch = canvasNode ? canvasNode.height : H;
-                const s = cam.scale || 1;
-                const viewW = cw / s;
-                const viewH = ch / s;
-                const halfViewW = viewW / 2;
-                const halfViewH = viewH / 2;
-                if (W > viewW) {
-                  cam.x = clamp(cam.targetX, halfViewW, W - halfViewW);
-                } else {
-                  cam.x = cam.targetX;
-                }
-                if (H > viewH) {
-                  cam.y = clamp(cam.targetY, halfViewH, H - halfViewH);
-                } else {
-                  cam.y = cam.targetY;
-                }
+                cam.x = cam.targetX;
+                cam.y = cam.targetY;
               }
             }
 
