@@ -9,7 +9,8 @@
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="physics.js"></script>
+  <script src="https://unpkg.com/planck-js@0.3.0/dist/planck.min.js"></script>
+  <script type="module" src="physics.js"></script>
     <script src="decor_generator.js"></script>
     <script src="track_storage.js"></script>
     <style>
@@ -914,6 +915,9 @@ const { useEffect, useRef, useState } = React;
           let activeTrack = null; // keep current track config
           let trackBounds = null; // world-space bbox
           let checkpoints = [];   // [{a:{x,y}, b:{x,y}}]
+          let planckSegments = [];
+          let planckPPM = 30;
+          let planckNeedsSync = false;
 
           // Cars and sim state
           function makeCar({ x, y, angle, color, kind = 'GT', steeringMode }) {
@@ -1106,6 +1110,62 @@ const { useEffect, useRef, useState } = React;
             return pts.map((p) => ({ x: x + p.x * c - p.y * s, y: y + p.x * s + p.y * c }));
           }
 
+          function buildPlanckSegments(points, halfWidth) {
+            if (!Array.isArray(points) || points.length < 2 || !Number.isFinite(halfWidth)) return [];
+            const n = points.length;
+            const left = new Array(n);
+            const right = new Array(n);
+            for (let i = 0; i < n; i++) {
+              const prev = points[(i - 1 + n) % n];
+              const curr = points[i];
+              const next = points[(i + 1) % n];
+              let tx = next.x - prev.x;
+              let ty = next.y - prev.y;
+              const len = Math.hypot(tx, ty) || 1;
+              const nx = -ty / len;
+              const ny = tx / len;
+              left[i] = { x: curr.x + nx * halfWidth, y: curr.y + ny * halfWidth };
+              right[i] = { x: curr.x - nx * halfWidth, y: curr.y - ny * halfWidth };
+            }
+            const segs = [];
+            for (let i = 0; i < n; i++) {
+              const a = left[i];
+              const b = left[(i + 1) % n];
+              segs.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+            }
+            for (let i = 0; i < n; i++) {
+              const a = right[i];
+              const b = right[(i + 1) % n];
+              segs.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+            }
+            return segs;
+          }
+
+          function planckCars(){
+            const list = [];
+            if (player) list.push(player);
+            if (Array.isArray(aiCars)) list.push(...aiCars);
+            return list;
+          }
+
+          function syncPlanckWorld(){
+            if (!window.RacerPhysics) { planckNeedsSync = true; return; }
+            try {
+              const ppm = (player && player.physics && player.physics.params && player.physics.params.pixelsPerMeter) || planckPPM || 30;
+              planckPPM = ppm;
+              const restitution = (player && player.physics && player.physics.params && player.physics.params.restitution) || 0;
+              window.RacerPhysics.configureTrackCollision(planckSegments, { ppm, restitution });
+              const cars = planckCars();
+              if (cars.length) {
+                window.RacerPhysics.rebuildPlanckWorld({ cars });
+              }
+              planckNeedsSync = false;
+            } catch (err) {
+              console.warn('[Planck] rebuild failed', err);
+              planckNeedsSync = true;
+            }
+          }
+
 
           // Get the tangent heading of the centerline nearest to (x,y)
           function headingAtNearest(x, y) {
@@ -1181,6 +1241,10 @@ const { useEffect, useRef, useState } = React;
             const startSrc = (T.startLine && T.startLine.a && T.startLine.b) ? T.startLine : { a: sourcePoints[0], b: sourcePoints[1] || sourcePoints[0] };
             startLine = { a: transformPoint(startSrc.a), b: transformPoint(startSrc.b) };
             ROAD_WIDTH = (T.roadWidth || 80) * WIDTH_SCALE;
+            if (typeof T.ppm === "number" && Number.isFinite(T.ppm) && T.ppm > 0) {
+              planckPPM = T.ppm;
+            }
+            planckSegments = buildPlanckSegments(centerline, ROAD_WIDTH * 0.5);
             labels = (T.labels || []).map(([text, x, y]) => {
               const pt = transformPoint({ x, y });
               return [text, pt.x, pt.y];
@@ -1227,6 +1291,7 @@ const { useEffect, useRef, useState } = React;
             const base = aiSpawn || pSpawn;
             const baseAngle = typeof rawAi.angle === "number" ? rawAi.angle : base.angle;
             aiCars = buildAICars(9, base, baseAngle);
+            syncPlanckWorld();
 
             const prettyName = activeTrack && activeTrack.name ? activeTrack.name : name;
             setStatus("");
@@ -1809,9 +1874,25 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
 
           function frame(t) {
             const dt = Math.min(0.05, (t - last) / 1000); last = t;
+            const physicsAPI = window.RacerPhysics;
+            const carsForPlanck = planckCars();
+            if (planckNeedsSync && physicsAPI && typeof physicsAPI.configureTrackCollision === 'function') {
+              syncPlanckWorld();
+            }
+            if (physicsAPI && typeof physicsAPI.planckBeginStep === 'function') {
+              try { physicsAPI.planckBeginStep(running ? dt : 0, carsForPlanck); } catch(err){ console.warn('[Planck] begin step failed', err); }
+            }
             if (running) {
               updatePlayer(dt); updateAI(dt);
-              handleCollisions();
+            }
+            if (physicsAPI && typeof physicsAPI.planckStep === 'function') {
+              try { physicsAPI.planckStep(); } catch(err){ console.warn('[Planck] step failed', err); }
+            }
+            if (running) {
+              const planckActive = physicsAPI && typeof physicsAPI.usesPlanckWorld === 'function' && physicsAPI.usesPlanckWorld();
+              if (!planckActive) {
+                handleCollisions();
+              }
               if (!status && (player.lap >= 3)) {
                 setStatus("3 laps done! Press R to restart");
                 setRunning(false);

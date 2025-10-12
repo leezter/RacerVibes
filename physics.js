@@ -1,12 +1,39 @@
-"use strict";
+import { createWorld, stepWorld, meters, pixels, PPM_DEFAULT } from './physics/planckWorld.js';
+import { buildTrackBodies } from './trackCollision.js';
+
 (function(){
+  "use strict";
+  /*
+   Summary of physics changes (2025-10):
+   - Longitudinal slip-ratio response replaces hard traction clamp (smooth build-up/peak/falloff)
+   - Combined-slip ellipse applied to front axle (rear already existed); rear ellipse now uses wheel-originated Fx
+   - Tire load sensitivity: effective mu decreases slightly as Fz increases
+   - Downforce (downforceK) contributes to axle loads based on speed
+   - Analog throttle/brake inputs supported (0..1)
+   New params per vehicle (with defaults):
+     longSlipPeak: 0.14, longSlipFalloff: 0.65,
+     frontCircle: 0.50, brakeFrontShare: 0.60,
+     loadSenseK: 0.08
+  */
   // Gravity in pixel-units. Scale up so tire traction (mu*Fz) matches engineForce magnitudes
   // This fixes cars feeling like "slow motion" due to tiny normal loads.
   const g = 600; // px/s^2 (tuned so GT tops ~330-350 px/s on road)
 
   // Default per-vehicle physical parameters (pixel-space, tuned empirically)
+  const PLANCK_DEFAULTS = {
+    usePlanck: true,
+    pixelsPerMeter: PPM_DEFAULT,
+    linearDamp: 0.0,
+    angularDamp: 0.0,
+    restitution: 0.0,
+    velIters: 8,
+    posIters: 3,
+    planckDoSleep: true
+  };
+
   const VEHICLE_DEFAULTS = {
     F1: {
+      ...PLANCK_DEFAULTS,
       mass: 0.9,
       wheelbase: 42,
       cgToFront: 20,
@@ -21,9 +48,15 @@
       muLongGrass: 0.45,
       dragK: 0.0018,
       rollK: 0.15,
-      downforceK: 0.0009,
+  downforceK: 0.00025,
+  longSlipPeak: 0.18,
+  longSlipFalloff: 0.80,
+  frontCircle: 0.50,
+  brakeFrontShare: 0.60,
+  loadSenseK: 0.08,
+  muLongLoadSenseK: 0.04,
       rearCircle: 0.50,
-      vKineBlend: 40,
+  vKineBlend: 1.8,
       cgHeight: 8,
       yawDampK: 0.12,
     reverseEntrySpeed: 40, // px/s threshold below which brake engages reverse
@@ -39,6 +72,7 @@
       }
     },
     GT: {
+      ...PLANCK_DEFAULTS,
       mass: 1.0,
       wheelbase: 36,
       cgToFront: 17,
@@ -53,9 +87,15 @@
       muLongGrass: 0.40,
       dragK: 0.0020,
       rollK: 0.18,
-      downforceK: 0.0006,
+  downforceK: 0.00025,
+  longSlipPeak: 0.18,
+  longSlipFalloff: 0.80,
+  frontCircle: 0.50,
+  brakeFrontShare: 0.60,
+  loadSenseK: 0.08,
+  muLongLoadSenseK: 0.04,
       rearCircle: 0.50,
-      vKineBlend: 40,
+  vKineBlend: 1.8,
       cgHeight: 7,
       yawDampK: 0.12,
     reverseEntrySpeed: 40,
@@ -71,6 +111,7 @@
       }
     },
     Rally: {
+      ...PLANCK_DEFAULTS,
       mass: 0.95,
       wheelbase: 34,
       cgToFront: 16,
@@ -85,9 +126,15 @@
       muLongGrass: 0.38,
       dragK: 0.0022,
       rollK: 0.20,
-      downforceK: 0.0005,
+  downforceK: 0.00025,
+  longSlipPeak: 0.18,
+  longSlipFalloff: 0.80,
+  frontCircle: 0.50,
+  brakeFrontShare: 0.60,
+  loadSenseK: 0.08,
+  muLongLoadSenseK: 0.04,
       rearCircle: 0.50,
-      vKineBlend: 40,
+  vKineBlend: 1.8,
       cgHeight: 8,
       yawDampK: 0.12,
     reverseEntrySpeed: 40,
@@ -103,6 +150,7 @@
       }
     },
     Truck: {
+      ...PLANCK_DEFAULTS,
       mass: 1.6,
       wheelbase: 44,
       cgToFront: 21,
@@ -117,9 +165,15 @@
       muLongGrass: 0.34,
       dragK: 0.0026,
       rollK: 0.26,
-      downforceK: 0.0008,
+  downforceK: 0.00025,
+  longSlipPeak: 0.18,
+  longSlipFalloff: 0.80,
+  frontCircle: 0.50,
+  brakeFrontShare: 0.60,
+  loadSenseK: 0.08,
+  muLongLoadSenseK: 0.04,
       rearCircle: 0.50,
-      vKineBlend: 40,
+  vKineBlend: 1.8,
       cgHeight: 10,
       yawDampK: 0.12,
     reverseEntrySpeed: 40,
@@ -159,6 +213,227 @@
     return { Fzf, Fzr };
   }
 
+  const planckState = {
+    world: null,
+    trackBody: null,
+    trackSegments: [],
+    ppm: PLANCK_DEFAULTS.pixelsPerMeter,
+    velIters: PLANCK_DEFAULTS.velIters,
+    posIters: PLANCK_DEFAULTS.posIters,
+    gravityY: 0,
+    doSleep: PLANCK_DEFAULTS.planckDoSleep,
+    pendingDt: 0,
+    steppedThisFrame: false,
+    carEntries: new Map(),
+    restitution: PLANCK_DEFAULTS.restitution,
+    needsWorldBuild: false
+  };
+
+  function destroyPlanckWorld(){
+    if (!planckState.world) return;
+    for (const { body } of planckState.carEntries.values()) {
+      try { planckState.world.destroyBody(body); } catch(_){}
+    }
+    planckState.carEntries.clear();
+    if (planckState.trackBody) {
+      try { planckState.world.destroyBody(planckState.trackBody); } catch(_){}
+    }
+    planckState.trackBody = null;
+    planckState.world = null;
+  }
+
+  function configureTrackCollision(trackSegments, opts = {}){
+    planckState.trackSegments = Array.isArray(trackSegments) ? trackSegments.slice() : [];
+    if (typeof opts.ppm === 'number' && Number.isFinite(opts.ppm) && opts.ppm > 0) {
+      planckState.ppm = opts.ppm;
+    }
+    if (typeof opts.restitution === 'number') {
+      planckState.restitution = opts.restitution;
+    }
+    if (typeof opts.gravityY === 'number') {
+      planckState.gravityY = opts.gravityY;
+    }
+    if (typeof opts.doSleep === 'boolean') {
+      planckState.doSleep = opts.doSleep;
+    }
+    planckState.needsWorldBuild = true;
+  }
+
+  function rebuildPlanckWorld({ cars } = {}){
+    const carList = Array.isArray(cars) ? cars.slice() : Array.from(planckState.carEntries.keys());
+    destroyPlanckWorld();
+    const world = createWorld({ gravityY: planckState.gravityY, doSleep: planckState.doSleep });
+    planckState.world = world;
+    if (planckState.trackSegments.length) {
+      try {
+        planckState.trackBody = buildTrackBodies(world, planckState.trackSegments, planckState.ppm, { restitution: planckState.restitution });
+      } catch(err) {
+        console.warn('[RacerPhysics] Failed to build track bodies', err);
+        planckState.trackBody = null;
+      }
+    }
+    planckState.needsWorldBuild = false;
+    planckState.steppedThisFrame = false;
+    planckState.pendingDt = 0;
+    if (carList.length) {
+      registerPlanckCars(carList);
+    }
+  }
+
+  function removePlanckBody(car){
+    if (!car) return;
+    const entry = planckState.carEntries.get(car);
+    if (entry && planckState.world) {
+      try { planckState.world.destroyBody(entry.body); } catch(_){}
+    }
+    planckState.carEntries.delete(car);
+    if (car.physics) {
+      car.physics.planckBody = null;
+    }
+  }
+
+  function updateBodyPose(body, car, ppm){
+    if (!body || !car) return;
+    const pl = window.planck;
+    if (!pl) return;
+    const pos = pl.Vec2(meters(car.x || 0, ppm), meters(car.y || 0, ppm));
+    body.setTransform(pos, car.angle || 0);
+    body.setLinearVelocity(pl.Vec2(0, 0));
+    body.setAngularVelocity(0);
+  }
+
+  function createCarBody(world, car, P, ppmOverride){
+    const pl = window.planck;
+    if (!world || !car || !pl) return null;
+    const ppm = ppmOverride || planckState.ppm || PPM_DEFAULT;
+    const widthPx = car.width || (car.dim && car.dim.widthPx) || 18;
+    const lengthPx = car.length || (car.dim && car.dim.lengthPx) || 36;
+  const w = meters(widthPx, ppm);
+  const h = meters(lengthPx, ppm);
+  const desiredMass = (P && typeof P.mass === 'number') ? Math.max(0.01, P.mass) : 1.0;
+  const area = Math.max(1e-6, w * h);
+  const density = desiredMass / area;
+    const body = world.createBody({
+      type: 'dynamic',
+      position: pl.Vec2(meters(car.x || 0, ppm), meters(car.y || 0, ppm)),
+      angle: car.angle || 0,
+      linearDamping: P && typeof P.linearDamp === 'number' ? P.linearDamp : 0,
+      angularDamping: P && typeof P.angularDamp === 'number' ? P.angularDamp : 0,
+      bullet: true,
+      allowSleep: P && typeof P.planckDoSleep === 'boolean' ? P.planckDoSleep : planckState.doSleep
+    });
+    const shape = pl.Box(Math.max(0.01, w * 0.5), Math.max(0.01, h * 0.5));
+    body.createFixture(shape, {
+      density,
+      friction: 0.0,
+      restitution: P && typeof P.restitution === 'number' ? P.restitution : planckState.restitution
+    });
+    car.physics.planckBody = body;
+    return body;
+  }
+
+  function ensurePlanckBody(car, P){
+    if (!car || !P || !P.usePlanck) {
+      removePlanckBody(car);
+      return null;
+    }
+    if (planckState.needsWorldBuild || !planckState.world) {
+      rebuildPlanckWorld();
+    }
+    if (!planckState.world) return null;
+    const desiredPpm = P.pixelsPerMeter || planckState.ppm || PPM_DEFAULT;
+    if (desiredPpm > 0 && desiredPpm !== planckState.ppm) {
+      planckState.ppm = desiredPpm;
+    }
+    if (typeof P.velIters === 'number') planckState.velIters = P.velIters;
+    if (typeof P.posIters === 'number') planckState.posIters = P.posIters;
+    if (typeof P.planckDoSleep === 'boolean') planckState.doSleep = P.planckDoSleep;
+    let entry = planckState.carEntries.get(car);
+    if (entry && entry.ppm !== planckState.ppm) {
+      removePlanckBody(car);
+      entry = null;
+    }
+    if (!entry) {
+      const body = createCarBody(planckState.world, car, P, planckState.ppm);
+      if (!body) return null;
+      entry = { body, ppm: planckState.ppm };
+      planckState.carEntries.set(car, entry);
+    }
+    return entry.body;
+  }
+
+  function registerPlanckCars(cars){
+    if (!cars) return;
+    const arr = Array.isArray(cars) ? cars : [cars];
+    for (const car of arr) {
+      if (!car || !car.physics) continue;
+      const P = car.physics.params || car.physics;
+      if (P && P.usePlanck) {
+        ensurePlanckBody(car, P);
+      } else {
+        removePlanckBody(car);
+      }
+    }
+  }
+
+  function planckBeginStep(dt, cars){
+    if (dt <= 0) { planckState.pendingDt = 0; planckState.steppedThisFrame = false; return; }
+    if (cars) registerPlanckCars(cars);
+    planckState.pendingDt = dt;
+    planckState.steppedThisFrame = false;
+  }
+
+  function syncCarFromBody(car, entry){
+    if (!car || !entry) return;
+    const body = entry.body;
+    if (!body) return;
+    const ppm = entry.ppm || planckState.ppm || PPM_DEFAULT;
+    const pos = body.getPosition();
+    const vel = body.getLinearVelocity();
+    const angle = body.getAngle();
+    const omega = body.getAngularVelocity();
+    car.x = pixels(pos.x, ppm);
+    car.y = pixels(pos.y, ppm);
+    car.angle = angle;
+    if (car.physics) {
+      car.physics.vx = pixels(vel.x, ppm);
+      car.physics.vy = pixels(vel.y, ppm);
+      car.physics.r = omega;
+      car.vx = car.physics.vx;
+      car.vy = car.physics.vy;
+      car.physics.planckBody = body;
+    }
+    car.speed = Math.hypot(car.vx || 0, car.vy || 0);
+  }
+
+  function planckStep(){
+    if (!planckState.world || planckState.steppedThisFrame) return;
+    const dt = planckState.pendingDt;
+    if (!dt || dt <= 0) return;
+    try {
+      stepWorld(planckState.world, dt, planckState.velIters, planckState.posIters);
+    } catch(err) {
+      console.warn('[RacerPhysics] Planck world step failed', err);
+    }
+    planckState.steppedThisFrame = true;
+    planckState.pendingDt = 0;
+    for (const [car, entry] of planckState.carEntries.entries()) {
+      syncCarFromBody(car, entry);
+    }
+  }
+
+  function usesPlanckWorld(){
+    if (!planckState.world) return false;
+    if (!planckState.carEntries.size) return false;
+    for (const car of planckState.carEntries.keys()) {
+      const params = car && car.physics && car.physics.params;
+      if (params && params.usePlanck) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   function initCar(car, kind){
     const k = kind || car.kind || 'GT';
     const base = VEHICLE_DEFAULTS[k] || VEHICLE_DEFAULTS.GT;
@@ -171,7 +446,7 @@
       returnGain: 0,
       filterTau: 0.12
     };
-    const params = { ...base, touchSteer: touchSteerDefaults };
+  const params = { ...PLANCK_DEFAULTS, ...base, touchSteer: touchSteerDefaults };
     // If the art length/width differs, adapt wheelbase slightly to fit
     const Lpx = (car.length || 36); const Wpx = (car.width || 18);
     // Keep cg distances proportional to given wheelbase
@@ -187,7 +462,8 @@
       params,
       a, b,
       Izz,
-      skid: 0             // last computed skid intensity 0..1
+      skid: 0,            // last computed skid intensity 0..1
+      planckBody: null
     };
     return car.physics;
   }
@@ -199,13 +475,47 @@
     return clamp(Fy_lin, -Fy_max, Fy_max);
   }
 
+  // Longitudinal slip ratio response: linear rise up to sPeak, soft falloff towards `falloff`
+  function slipRatioResponse(s, sPeak = 0.15, falloff = 0.65){
+    // s approx in [-1,1]
+    const x = Math.min(1, Math.max(0, Math.abs(s)));
+    const up = Math.min(1, x / Math.max(1e-6, sPeak));
+    const down = (x <= sPeak) ? 1 : (1 - (x - sPeak) / Math.max(1e-6, 1 - sPeak));
+    const y = up * (falloff + (1 - falloff) * down);
+    return Math.sign(s) * y;
+  }
+  function lerp(a,b,t){ return a + (b - a) * t; }
+
   function updateCar(car, input, surface, dt){
     // input: {throttle:0..1, brake:0..1, steer:-1..1}
     // surface: {onRoad:boolean}
     if (!car.physics) initCar(car, car.kind);
     const P = car.physics.params;
+    let usePlanck = !!(P && P.usePlanck);
+    let ppm = P.pixelsPerMeter || planckState.ppm || PPM_DEFAULT;
+    let planckBody = null;
     const mass = P.mass;
-    const Izz = car.physics.Izz || inferIzz(mass, car.length||36, car.width||18);
+    if (usePlanck) {
+      planckBody = ensurePlanckBody(car, P);
+      if (!planckBody) {
+        usePlanck = false;
+      } else {
+        ppm = planckState.ppm || ppm;
+        const vel = planckBody.getLinearVelocity();
+        const angle = planckBody.getAngle();
+        const omega = planckBody.getAngularVelocity();
+        car.physics.vx = pixels(vel.x, ppm);
+        car.physics.vy = pixels(vel.y, ppm);
+        car.physics.r = omega;
+        car.vx = car.physics.vx;
+        car.vy = car.physics.vy;
+        car.angle = angle;
+        car.physics.planckBody = planckBody;
+      }
+    } else if (car.physics.planckBody) {
+      removePlanckBody(car);
+    }
+    const Izz = car.physics.Izz || inferIzz(P.mass, car.length||36, car.width||18);
     const a = car.physics.a, b = car.physics.b, L=a+b;
     const onRoad = surface && surface.onRoad !== false;
     const muLat = onRoad ? P.muLatRoad : P.muLatGrass;
@@ -272,10 +582,25 @@
   const loadsStatic = axleNormalLoads(mass, a, b);
   let Fzf = loadsStatic.Fzf, Fzr = loadsStatic.Fzr;
 
+  // Speed-based downforce split by static distribution
+  {
+    const vDF = Math.hypot(car.physics.vx, car.physics.vy);
+    const DF  = (P.downforceK != null ? P.downforceK : 0) * vDF * vDF;
+    const frontShare = b / (a + b);
+    const rearShare  = a / (a + b);
+    Fzf += DF * frontShare;
+    Fzr += DF * rearShare;
+  }
+
   // Cornering stiffness proportional to available grip (linear range roughly at ~8 deg)
   const slip0 = 0.14; // ~8 degrees
-  let Cf = muLat * Fzf / slip0;
-  let Cr = muLat * Fzr / slip0;
+  // Define reference loads for load sensitivity
+  const Fzf_ref = loadsStatic.Fzf, Fzr_ref = loadsStatic.Fzr;
+  const loadSenseK = (P.loadSenseK != null ? P.loadSenseK : 0.08);
+  let muLatF = muLat * (1 - loadSenseK * (Fzf / Math.max(1e-6, Fzf_ref) - 1));
+  let muLatR = muLat * (1 - loadSenseK * (Fzr / Math.max(1e-6, Fzr_ref) - 1));
+  let Cf = muLatF * Fzf / slip0;
+  let Cr = muLatR * Fzr / slip0;
 
     // Avoid singularity at very low speed
   const eps = 0.001;
@@ -290,9 +615,9 @@
   let FyF = 0;
   let FyR_unc = 0;
 
-    // Longitudinal forces (drive on rear axle), limited by traction
-    const throttle = clamp((input && input.throttle) ? 1 : 0, 0, 1);
-    const brake = clamp((input && input.brake) ? 1 : 0, 0, 1);
+  // Longitudinal forces (drive on rear axle), limited by traction; analog inputs 0..1
+  const throttle = clamp(+((input && input.throttle) || 0), 0, 1);
+  const brake = clamp(+((input && input.brake) || 0), 0, 1);
 
     // Reverse mode: if near stopped and braking, allow controlled reverse torque
     let reversing = false;
@@ -304,42 +629,68 @@
     }
     let Fx_drive = reversing ? -P.engineForce * reverseTorqueScale : throttle * P.engineForce;
     let Fx_brake = reversing ? 0 : (brake * P.brakeForce * sign(vx));
-    // Resistances (aero & rolling) oppose actual motion direction in body frame along X
+    // Body X resistances (drag/roll) oppose motion
     const vmag = Math.max(eps, Math.hypot(vx, vy));
     const ux_bx = vx / vmag; // projection of velocity direction on body X
     const F_drag = dragK * vmag * vmag * ux_bx;
     const F_roll = rollK * vmag * ux_bx;
 
-  // Preliminary longitudinal force (will re-evaluate traction limit after load transfer)
-  const Fx_long_raw_pre = Fx_drive - Fx_brake - F_drag - F_roll;
-  // Use current Fzr for initial clamp; will recalc after transfer
-  let Fx_long = clamp(Fx_long_raw_pre, -muLong * Fzr, muLong * Fzr);
-    const ax = Fx_long / mass; // longitudinal accel (approx) for load transfer
-    // Debug cache (will be refreshed after possible load transfer too)
-    car.physics.lastAx = ax;
+    // Compute command-only acceleration estimate for load transfer
+    const Fx_cmd = Fx_drive - Fx_brake;
+    const ax_est = (Fx_cmd - F_drag - F_roll) / mass;
 
     // Longitudinal load transfer update
     const cgH = (P.cgHeight!=null?P.cgHeight:8);
     if (cgH > 0) {
-      const dF = mass * cgH * ax / L; // shift proportional to accel
+      const dF = mass * cgH * ax_est / L; // shift proportional to accel
       Fzf = clamp(loadsStatic.Fzf - dF, 0, mass*g);
       Fzr = clamp(loadsStatic.Fzr + dF, 0, mass*g);
-      Cf = muLat * Fzf / slip0;
-      Cr = muLat * Fzr / slip0;
+      // Recompute load-sensitive mu and cornering stiffness with updated loads
+      muLatF = muLat * (1 - loadSenseK * (Fzf / Math.max(1e-6, Fzf_ref) - 1));
+      muLatR = muLat * (1 - loadSenseK * (Fzr / Math.max(1e-6, Fzr_ref) - 1));
+      Cf = muLatF * Fzf / slip0;
+      Cr = muLatR * Fzr / slip0;
     }
     car.physics.lastFzf = Fzf; car.physics.lastFzr = Fzr;
 
-    // Now compute lateral forces with updated loads
-    FyF = tireLateralForce(muLat, Fzf, Cf, slipF);
-    FyR_unc = tireLateralForce(muLat, Fzr, Cr, slipR);
+    // Now compute lateral forces with updated loads (mu load-sensitive per axle)
+    let FyF_unc = tireLateralForce(muLatF, Fzf, Cf, slipF);
+    FyR_unc = tireLateralForce(muLatR, Fzr, Cr, slipR);
+
+    // Longitudinal load-sensitivity for grip (effective muLong per axle)
+    const kL = (P.muLongLoadSenseK != null ? P.muLongLoadSenseK : 0.04);
+    const muLongEffF = muLong * (1 - kL * (Fzf / Math.max(1e-6, Fzf_ref) - 1));
+    const muLongEffR = muLong * (1 - kL * (Fzr / Math.max(1e-6, Fzr_ref) - 1));
+
+    // Front combined-slip ellipse (trail-braking reduces lateral)
+    const frontCircle = (P.frontCircle != null ? P.frontCircle : (P.rearCircle != null ? P.rearCircle : 0.5));
+    const brakeFrontShare = (P.brakeFrontShare != null ? P.brakeFrontShare : 0.6);
+    const FxF_cmd = -brakeFrontShare * (brake * P.brakeForce) * sign(vxEff);
+    if (frontCircle > 0) {
+      const uxF = (muLongEffF * Fzf > 1e-6) ? (FxF_cmd / (muLongEffF * Fzf)) : 0;
+      const uyF = (muLatF * Fzf > 1e-6) ? (FyF_unc  / (muLatF * Fzf)) : 0;
+      const lambdaF = Math.hypot(uxF, uyF);
+      if (lambdaF > 1) {
+        FyF_unc = FyF_unc / (1 + frontCircle * (lambdaF - 1));
+      }
+      car.physics._dbgLambdaF = lambdaF;
+    } else {
+      car.physics._dbgLambdaF = 0;
+    }
+    FyF = FyF_unc;
 
     // Mild rear combined slip limiting (scale only lateral)
     const rearCircle = (P.rearCircle!=null?P.rearCircle:0.5);
     let lambda = 0;
     if (rearCircle > 0) {
-      const ux = (muLong*Fzr>1e-6) ? (Fx_long / (muLong * Fzr)) : 0;
-      const uy = (muLat*Fzr>1e-6) ? (FyR_unc / (muLat * Fzr)) : 0;
-      lambda = Math.hypot(ux, uy);
+      // Use wheel-originated longitudinal at rear contact for combined slip
+      const brakeFrontShare = (P.brakeFrontShare != null ? P.brakeFrontShare : 0.6);
+      const brakeRearShare = 1 - brakeFrontShare;
+      const FxR_cmd = (reversing ? -P.engineForce * (P.reverseTorqueScale ?? 0.60) : throttle * P.engineForce)
+                    - brakeRearShare * (brake * P.brakeForce) * sign(vx);
+      const uxR = (muLongEffR*Fzr>1e-6) ? (FxR_cmd / (muLongEffR * Fzr)) : 0;
+      const uy = (muLatR*Fzr>1e-6) ? (FyR_unc / (muLatR * Fzr)) : 0;
+      lambda = Math.hypot(uxR, uy);
       if (lambda > 1) {
         FyR_unc = FyR_unc / (1 + rearCircle * (lambda - 1));
       }
@@ -347,11 +698,46 @@
     } else car.physics._dbgLambda = 0;
     let FyR = FyR_unc;
 
-  // Recompute longitudinal traction limit after possible load shift
-  const Fr_max = muLong * Fzr;
-  // Clamp again in case load transfer changed available traction
-  Fx_long = clamp(Fx_long, -Fr_max, Fr_max);
-  car.physics._dbgFyR_avail = muLat * Fzr; car.physics._dbgUx = Math.min(1, Math.abs(Fx_long)/Math.max(1e-6, Fr_max)); car.physics._dbgFyR = FyR;
+    // Now compute post-transfer longitudinal traction using slip ratio
+    const Fr_max = muLongEffR * Fzr;
+    const s_eff  = Fr_max > 1e-6 ? clamp(Fx_cmd / Fr_max, -1, 1) : 0;
+    const sPeak  = (P.longSlipPeak != null ? P.longSlipPeak : 0.18);
+    const falloff= (P.longSlipFalloff != null ? P.longSlipFalloff : 0.80);
+    const Fx_trac = Fr_max * slipRatioResponse(s_eff, sPeak, falloff);
+    let Fx_long = Fx_trac - F_drag - F_roll;
+    const ax = Fx_long / mass;
+    car.physics.lastAx = ax;
+    car.physics._dbgFyR_avail = muLatR * Fzr;
+    car.physics._dbgUx = Math.min(1, Math.abs(Fx_long)/Math.max(1e-6, Fr_max));
+    car.physics._dbgFyR = FyR;
+
+    if (usePlanck && planckBody) {
+      const pl = window.planck;
+      if (pl) {
+        const cosA = Math.cos(car.angle);
+        const sinA = Math.sin(car.angle);
+        const toWorld = (Fx, Fy) => ({ x: Fx * cosA - Fy * sinA, y: Fx * sinA + Fy * cosA });
+        const FxFyToVec = (Fx, Fy) => toWorld(Fx, Fy);
+        const aM = meters(a, ppm);
+        const bM = meters(b, ppm);
+        const frontLocal = pl.Vec2(aM, 0);
+        const rearLocal = pl.Vec2(-bM, 0);
+        const frontWorld = FxFyToVec(0, FyF);
+        const rearWorld = FxFyToVec(Fx_trac, FyR);
+        const dragWorld = FxFyToVec(-F_drag, 0);
+        const rollWorld = FxFyToVec(-F_roll, 0);
+        const scaleForce = (vec) => pl.Vec2(vec.x / ppm, vec.y / ppm);
+        planckBody.applyForce(scaleForce(frontWorld), planckBody.getWorldPoint(frontLocal));
+        planckBody.applyForce(scaleForce(rearWorld), planckBody.getWorldPoint(rearLocal));
+        const resist = pl.Vec2((dragWorld.x + rollWorld.x) / ppm, (dragWorld.y + rollWorld.y) / ppm);
+        planckBody.applyForce(resist, planckBody.getWorldCenter());
+        const yawDampK = (P.yawDampK!=null?P.yawDampK:0.12);
+        if (yawDampK) {
+          const torquePx = -yawDampK * car.physics.r * Izz;
+          planckBody.applyTorque(torquePx / (ppm * ppm));
+        }
+      }
+    }
 
     // Dynamic derivatives (force-based)
     const dvx_dyn = (Fx_long - FyF * Math.sin(deltaEff) + vy * car.physics.r) / mass;
@@ -381,20 +767,20 @@
     let dr = dr_kine + (dr_dyn - dr_kine) * alphaBlend;
   car.physics.lastAlphaBlend = alphaBlend;
 
-    vx += dvx * dt;
-    vy += dvy * dt;
-    car.physics.r += dr * dt;
+    if (!usePlanck) {
+      vx += dvx * dt;
+      vy += dvy * dt;
+      car.physics.r += dr * dt;
 
-    // Convert back to world frame for integration
-    const vw = bodyToWorld(vx, vy, car.angle);
-    car.physics.vx = vw.x;
-    car.physics.vy = vw.y;
-    // Mirror to legacy fields for compatibility with existing code
-    car.vx = car.physics.vx;
-    car.vy = car.physics.vy;
-    car.x += car.physics.vx * dt;
-    car.y += car.physics.vy * dt;
-    car.angle += car.physics.r * dt;
+      const vw = bodyToWorld(vx, vy, car.angle);
+      car.physics.vx = vw.x;
+      car.physics.vy = vw.y;
+      car.vx = car.physics.vx;
+      car.vy = car.physics.vy;
+      car.x += car.physics.vx * dt;
+      car.y += car.physics.vy * dt;
+      car.angle += car.physics.r * dt;
+    }
 
   // Cache debug values
   car.physics.lastSlipF = slipF;
@@ -488,37 +874,97 @@
     `;
     document.head.appendChild(style);
 
+    const DESCRIPTIONS = {
+      vehicle: "Select which vehicle preset you are tuning.",
+      applyToAI: "Apply the current tuning to AI cars as well.",
+      debugOverlay: "Show on-screen debug info (forces, slip, etc.).",
+      usePlanck: "Use Planck (Box2D) for integration/collisions. Off = legacy integrator.",
+      pixelsPerMeter: "Scale from pixels to physics meters. Affects body sizes in the solver.",
+      linearDamp: "Planck: global damping on linear velocity. Prefer Drag/Rolling for coasting.",
+      angularDamp: "Planck: damping on yaw (rotational) velocity. Prefer Yaw damp for tuning feel.",
+      restitution: "Bounciness on wall impacts.",
+      velIters: "Solver velocity iterations. Higher = more accurate contacts (slower).",
+      posIters: "Solver position iterations. Higher = fewer penetrations (slower).",
+      mass: "Car mass & inertia. Higher = more planted, harder to spin; may need more Brake.",
+      engineForce: "Peak engine drive force. Higher = stronger acceleration.",
+      brakeForce: "Peak braking force. Higher = shorter stops; too high can overwhelm grip.",
+      maxSteer: "Maximum steering lock. Higher = tighter turns, riskier at speed.",
+      steerSpeed: "How fast steering moves toward target. Higher = snappier steering.",
+      muLatRoad: "Sideways (lateral) grip on road. Raises cornering limit before slide.",
+      muLongRoad: "Forward/back (longitudinal) grip on road. Affects traction & braking.",
+      muLatGrass: "Sideways grip on grass (usually much lower than road).",
+      muLongGrass: "Forward/back grip on grass (usually lower than road).",
+      dragK: "Aerodynamic drag (~speed²). Higher = more lift-off decel & lower top speed.",
+      rollK: "Rolling resistance (~speed). Higher = more coasting loss at any speed.",
+      rearCircle: "Rear combined-slip blend. Higher = rear loses lateral sooner under drive/brake (stabilizes on throttle).",
+      frontCircle: "Front combined-slip blend. Higher = front loses lateral sooner under braking (reduces trail-brake bite).",
+      brakeFrontShare: "Front brake bias (0.50 = 50% front). Higher = more front braking, less rear lock.",
+      longSlipPeak: "Slip ratio at which drive/brake force peaks. Higher = peak at larger slip (strong bite).",
+      longSlipFalloff: "How gently force falls after the peak. Higher = softer, more forgiving breakaway.",
+      loadSenseK: "Lateral load sensitivity. Higher = diminishing returns with load (tames extremes).",
+      muLongLoadSenseK: "Longitudinal load sensitivity. Higher = traction/braking gain less with load.",
+      downforceK: "Speed-based downforce. Higher = more high-speed grip without changing low-speed feel.",
+      vKineBlend: "Low-speed kinematic blend (legacy helper). Often inactive when Planck is on.",
+      cgHeight: "CG height for accel/brake weight transfer. Higher = stronger lift-off oversteer.",
+      yawDampK: "Extra yaw damping torque. Higher = rotations settle faster.",
+      reverseEntry: "Speed threshold/window to allow reverse mode.",
+      reverseTorque: "Percent of engine torque available in reverse.",
+      rebuildWorld: "Rebuild the Planck physics world/bodies with current settings.",
+      resetDefaults: "Reset this vehicle’s sliders to default values."
+    };
+
+    const escapeAttr = (value) => String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    const tipAttr = (key) => {
+      const desc = DESCRIPTIONS[key];
+      return desc ? ` title="${escapeAttr(desc)}"` : '';
+    };
+
     const wrap = document.createElement('div');
     wrap.id = 'rv-devtools';
     wrap.className = 'rv-devtools';
     wrap.innerHTML = `
       <button class="toggle">Dev tools ▾</button>
       <div class="rv-panel" role="dialog" aria-label="Dev tools">
-        <div class="rv-row"><label>Vehicle</label>
+        <div class="rv-row"><label for="rv-kind"><span class="rv-name"${tipAttr('vehicle')}>Vehicle</span></label>
           <select id="rv-kind">
             <option>F1</option><option selected>GT</option><option>Rally</option><option>Truck</option>
           </select>
-          <label class="small"><input type="checkbox" id="rv-apply-ai"> Apply to AI</label>
+          <label class="small" for="rv-apply-ai"><input type="checkbox" id="rv-apply-ai"> <span class="rv-name"${tipAttr('applyToAI')}>Apply to AI</span></label>
         </div>
-        <div class="rv-row"><label>Debug overlay</label><input type="checkbox" id="rv-debug"></div>
-        <div class="rv-row"><label>Mass</label><input id="rv-mass" type="range" min="0.6" max="2.2" step="0.05"><div class="val" id="rv-mass-v"></div></div>
-        <div class="rv-row"><label>Engine</label><input id="rv-eng" type="range" min="280" max="900" step="10"><div class="val" id="rv-eng-v"></div></div>
-        <div class="rv-row"><label>Brake</label><input id="rv-brk" type="range" min="380" max="1100" step="10"><div class="val" id="rv-brk-v"></div></div>
-        <div class="rv-row"><label>Max steer</label><input id="rv-steer" type="range" min="0.25" max="0.85" step="0.01"><div class="val" id="rv-steer-v"></div></div>
-        <div class="rv-row"><label>Steer speed</label><input id="rv-steers" type="range" min="2" max="10" step="0.1"><div class="val" id="rv-steers-v"></div></div>
-        <div class="rv-row"><label>Grip lat (road)</label><input id="rv-mulr" type="range" min="0.8" max="2.2" step="0.05"><div class="val" id="rv-mulr-v"></div></div>
-        <div class="rv-row"><label>Grip long (road)</label><input id="rv-muor" type="range" min="0.6" max="1.8" step="0.05"><div class="val" id="rv-muor-v"></div></div>
-        <div class="rv-row"><label>Grip lat (grass)</label><input id="rv-mulg" type="range" min="0.3" max="1.0" step="0.02"><div class="val" id="rv-mulg-v"></div></div>
-        <div class="rv-row"><label>Grip long (grass)</label><input id="rv-muog" type="range" min="0.25" max="0.9" step="0.02"><div class="val" id="rv-muog-v"></div></div>
-    <div class="rv-row"><label>Drag</label><input id="rv-drag" type="range" min="0.001" max="0.0035" step="0.0001"><div class="val" id="rv-drag-v"></div></div>
-  <div class="rv-row"><label>Rolling</label><input id="rv-roll" type="range" min="0.10" max="0.35" step="0.005"><div class="val" id="rv-roll-v"></div></div>
-  <div class="rv-row"><label>Rear circle</label><input id="rv-rearc" type="range" min="0" max="1" step="0.05"><div class="val" id="rv-rearc-v"></div></div>
-  <div class="rv-row"><label>vKineBlend</label><input id="rv-vkine" type="range" min="0" max="120" step="5"><div class="val" id="rv-vkine-v"></div></div>
-  <div class="rv-row"><label>cgHeight</label><input id="rv-cgh" type="range" min="0" max="14" step="1"><div class="val" id="rv-cgh-v"></div></div>
-  <div class="rv-row"><label>Yaw damp</label><input id="rv-yawd" type="range" min="0" max="0.30" step="0.02"><div class="val" id="rv-yawd-v"></div></div>
-  <div class="rv-row"><label>Reverse entry</label><input id="rv-reventry" type="range" min="0" max="120" step="5"><div class="val" id="rv-reventry-v"></div></div>
-  <div class="rv-row"><label>Reverse torque</label><input id="rv-revtorque" type="range" min="0.30" max="1.00" step="0.05"><div class="val" id="rv-revtorque-v"></div></div>
-  <div class="rv-row"><button id="rv-reset">Reset defaults</button></div>
+        <div class="rv-row"><label for="rv-debug"><span class="rv-name"${tipAttr('debugOverlay')}>Debug overlay</span></label><input type="checkbox" id="rv-debug"></div>
+        <div class="rv-row"><label for="rv-planck"><span class="rv-name"${tipAttr('usePlanck')}>Use Planck</span></label><input type="checkbox" id="rv-planck"></div>
+        <div class="rv-row"><label for="rv-ppm"><span class="rv-name"${tipAttr('pixelsPerMeter')}>Pixels / m</span></label><input id="rv-ppm" type="number" min="5" max="200" step="1"></div>
+        <div class="rv-row"><label for="rv-ldamp"><span class="rv-name"${tipAttr('linearDamp')}>Linear damp</span></label><input id="rv-ldamp" type="range" min="0" max="5" step="0.05"><div class="val" id="rv-ldamp-v"></div></div>
+        <div class="rv-row"><label for="rv-adamp"><span class="rv-name"${tipAttr('angularDamp')}>Angular damp</span></label><input id="rv-adamp" type="range" min="0" max="5" step="0.05"><div class="val" id="rv-adamp-v"></div></div>
+        <div class="rv-row"><label for="rv-rest"><span class="rv-name"${tipAttr('restitution')}>Restitution</span></label><input id="rv-rest" type="range" min="0" max="1" step="0.02"><div class="val" id="rv-rest-v"></div></div>
+        <div class="rv-row"><label for="rv-veliters"><span class="rv-name"${tipAttr('velIters')}>Vel iters</span></label><input id="rv-veliters" type="number" min="1" max="50" step="1"></div>
+        <div class="rv-row"><label for="rv-positers"><span class="rv-name"${tipAttr('posIters')}>Pos iters</span></label><input id="rv-positers" type="number" min="1" max="50" step="1"></div>
+        <div class="rv-row"><label for="rv-mass"><span class="rv-name"${tipAttr('mass')}>Mass</span></label><input id="rv-mass" type="range" min="0.6" max="2.2" step="0.05"><div class="val" id="rv-mass-v"></div></div>
+        <div class="rv-row"><label for="rv-eng"><span class="rv-name"${tipAttr('engineForce')}>Engine</span></label><input id="rv-eng" type="range" min="280" max="900" step="10"><div class="val" id="rv-eng-v"></div></div>
+        <div class="rv-row"><label for="rv-brk"><span class="rv-name"${tipAttr('brakeForce')}>Brake</span></label><input id="rv-brk" type="range" min="380" max="1100" step="10"><div class="val" id="rv-brk-v"></div></div>
+        <div class="rv-row"><label for="rv-steer"><span class="rv-name"${tipAttr('maxSteer')}>Max steer</span></label><input id="rv-steer" type="range" min="0.25" max="0.85" step="0.01"><div class="val" id="rv-steer-v"></div></div>
+        <div class="rv-row"><label for="rv-steers"><span class="rv-name"${tipAttr('steerSpeed')}>Steer speed</span></label><input id="rv-steers" type="range" min="2" max="10" step="0.1"><div class="val" id="rv-steers-v"></div></div>
+        <div class="rv-row"><label for="rv-mulr"><span class="rv-name"${tipAttr('muLatRoad')}>Grip lat (road)</span></label><input id="rv-mulr" type="range" min="0.8" max="2.2" step="0.05"><div class="val" id="rv-mulr-v"></div></div>
+        <div class="rv-row"><label for="rv-muor"><span class="rv-name"${tipAttr('muLongRoad')}>Grip long (road)</span></label><input id="rv-muor" type="range" min="0.6" max="1.8" step="0.05"><div class="val" id="rv-muor-v"></div></div>
+        <div class="rv-row"><label for="rv-mulg"><span class="rv-name"${tipAttr('muLatGrass')}>Grip lat (grass)</span></label><input id="rv-mulg" type="range" min="0.3" max="1.0" step="0.02"><div class="val" id="rv-mulg-v"></div></div>
+        <div class="rv-row"><label for="rv-muog"><span class="rv-name"${tipAttr('muLongGrass')}>Grip long (grass)</span></label><input id="rv-muog" type="range" min="0.25" max="0.9" step="0.02"><div class="val" id="rv-muog-v"></div></div>
+        <div class="rv-row"><label for="rv-drag"><span class="rv-name"${tipAttr('dragK')}>Drag</span></label><input id="rv-drag" type="range" min="0.001" max="0.0035" step="0.0001"><div class="val" id="rv-drag-v"></div></div>
+        <div class="rv-row"><label for="rv-roll"><span class="rv-name"${tipAttr('rollK')}>Rolling</span></label><input id="rv-roll" type="range" min="0.10" max="0.35" step="0.005"><div class="val" id="rv-roll-v"></div></div>
+        <div class="rv-row"><label for="rv-rearc"><span class="rv-name"${tipAttr('rearCircle')}>Rear circle</span></label><input id="rv-rearc" type="range" min="0.00" max="1.00" step="0.05"><div class="val" id="rv-rearc-v"></div></div>
+        <div class="rv-row"><label for="rv-frontc"><span class="rv-name"${tipAttr('frontCircle')}>Front circle</span></label><input id="rv-frontc" type="range" min="0.00" max="1.00" step="0.05"><div class="val" id="rv-frontc-v"></div></div>
+        <div class="rv-row"><label for="rv-brkfs"><span class="rv-name"${tipAttr('brakeFrontShare')}>Brake F share</span></label><input id="rv-brkfs" type="range" min="0.30" max="0.80" step="0.02"><div class="val" id="rv-brkfs-v"></div></div>
+        <div class="rv-row"><label for="rv-lspe"><span class="rv-name"${tipAttr('longSlipPeak')}>Long slip peak</span></label><input id="rv-lspe" type="range" min="0.08" max="0.30" step="0.01"><div class="val" id="rv-lspe-v"></div></div>
+        <div class="rv-row"><label for="rv-lsfo"><span class="rv-name"${tipAttr('longSlipFalloff')}>Long falloff</span></label><input id="rv-lsfo" type="range" min="0.40" max="1.00" step="0.01"><div class="val" id="rv-lsfo-v"></div></div>
+        <div class="rv-row"><label for="rv-llat"><span class="rv-name"${tipAttr('loadSenseK')}>Lat load K</span></label><input id="rv-llat" type="range" min="0.00" max="0.20" step="0.01"><div class="val" id="rv-llat-v"></div></div>
+        <div class="rv-row"><label for="rv-llong"><span class="rv-name"${tipAttr('muLongLoadSenseK')}>Long load K</span></label><input id="rv-llong" type="range" min="0.00" max="0.20" step="0.01"><div class="val" id="rv-llong-v"></div></div>
+        <div class="rv-row"><label for="rv-df"><span class="rv-name"${tipAttr('downforceK')}>DownforceK</span></label><input id="rv-df" type="range" min="0.0000" max="0.0050" step="0.00005"><div class="val" id="rv-df-v"></div></div>
+        <div class="rv-row"><label for="rv-vkine"><span class="rv-name"${tipAttr('vKineBlend')}>vKineBlend</span></label><input id="rv-vkine" type="range" min="0.0" max="5.0" step="0.1"><div class="val" id="rv-vkine-v"></div></div>
+        <div class="rv-row"><label for="rv-cgh"><span class="rv-name"${tipAttr('cgHeight')}>cgHeight</span></label><input id="rv-cgh" type="range" min="0" max="14" step="1"><div class="val" id="rv-cgh-v"></div></div>
+        <div class="rv-row"><label for="rv-yawd"><span class="rv-name"${tipAttr('yawDampK')}>Yaw damp</span></label><input id="rv-yawd" type="range" min="0" max="0.30" step="0.02"><div class="val" id="rv-yawd-v"></div></div>
+        <div class="rv-row"><label for="rv-reventry"><span class="rv-name"${tipAttr('reverseEntry')}>Reverse entry</span></label><input id="rv-reventry" type="range" min="0" max="120" step="5"><div class="val" id="rv-reventry-v"></div></div>
+        <div class="rv-row"><label for="rv-revtorque"><span class="rv-name"${tipAttr('reverseTorque')}>Reverse torque</span></label><input id="rv-revtorque" type="range" min="0.30" max="1.00" step="0.05"><div class="val" id="rv-revtorque-v"></div></div>
+        <div class="rv-row"><button id="rv-planck-rebuild"${tipAttr('rebuildWorld')}>Rebuild physics world</button></div>
+        <div class="rv-row"><button id="rv-reset"${tipAttr('resetDefaults')}>Reset defaults</button></div>
       </div>`;
     document.body.appendChild(wrap);
 
@@ -530,6 +976,13 @@
       kind: wrap.querySelector('#rv-kind'),
       applyAI: wrap.querySelector('#rv-apply-ai'),
       debug: wrap.querySelector('#rv-debug'),
+  planck: wrap.querySelector('#rv-planck'),
+  ppm: wrap.querySelector('#rv-ppm'),
+  ldamp: wrap.querySelector('#rv-ldamp'),     ldampV: wrap.querySelector('#rv-ldamp-v'),
+  adamp: wrap.querySelector('#rv-adamp'),     adampV: wrap.querySelector('#rv-adamp-v'),
+  rest: wrap.querySelector('#rv-rest'),       restV: wrap.querySelector('#rv-rest-v'),
+  veliters: wrap.querySelector('#rv-veliters'),
+  positers: wrap.querySelector('#rv-positers'),
       mass: wrap.querySelector('#rv-mass'),   massV: wrap.querySelector('#rv-mass-v'),
       eng: wrap.querySelector('#rv-eng'),     engV: wrap.querySelector('#rv-eng-v'),
       brk: wrap.querySelector('#rv-brk'),     brkV: wrap.querySelector('#rv-brk-v'),
@@ -542,17 +995,38 @@
     drag: wrap.querySelector('#rv-drag'),   dragV: wrap.querySelector('#rv-drag-v'),
   roll: wrap.querySelector('#rv-roll'),   rollV: wrap.querySelector('#rv-roll-v'),
   rearc: wrap.querySelector('#rv-rearc'), rearcV: wrap.querySelector('#rv-rearc-v'),
+  frontc: wrap.querySelector('#rv-frontc'), frontcV: wrap.querySelector('#rv-frontc-v'),
+  brkfs: wrap.querySelector('#rv-brkfs'), brkfsV: wrap.querySelector('#rv-brkfs-v'),
+  lspe: wrap.querySelector('#rv-lspe'), lspeV: wrap.querySelector('#rv-lspe-v'),
+  lsfo: wrap.querySelector('#rv-lsfo'), lsfoV: wrap.querySelector('#rv-lsfo-v'),
+  llat: wrap.querySelector('#rv-llat'), llatV: wrap.querySelector('#rv-llat-v'),
+  llong: wrap.querySelector('#rv-llong'), llongV: wrap.querySelector('#rv-llong-v'),
+  df: wrap.querySelector('#rv-df'), dfV: wrap.querySelector('#rv-df-v'),
   vkine: wrap.querySelector('#rv-vkine'), vkineV: wrap.querySelector('#rv-vkine-v'),
   cgh: wrap.querySelector('#rv-cgh'), cghV: wrap.querySelector('#rv-cgh-v'),
   yawd: wrap.querySelector('#rv-yawd'), yawdV: wrap.querySelector('#rv-yawd-v'),
   reventry: wrap.querySelector('#rv-reventry'), reventryV: wrap.querySelector('#rv-reventry-v'),
   revtorque: wrap.querySelector('#rv-revtorque'), revtorqueV: wrap.querySelector('#rv-revtorque-v'),
+      planckRebuild: wrap.querySelector('#rv-planck-rebuild'),
       reset: wrap.querySelector('#rv-reset')
     };
 
     function refresh(kind){
       const k = kind || els.kind.value;
       const d = VEHICLE_DEFAULTS[k];
+      els.planck.checked = !!(d.usePlanck !== false);
+      if (els.ppm) els.ppm.value = (d.pixelsPerMeter != null ? d.pixelsPerMeter : PPM_DEFAULT);
+      const ld = d.linearDamp != null ? d.linearDamp : 0;
+      els.ldamp.value = ld;
+      els.ldampV.textContent = ld.toFixed(2);
+      const ad = d.angularDamp != null ? d.angularDamp : 0;
+      els.adamp.value = ad;
+      els.adampV.textContent = ad.toFixed(2);
+      const rest = d.restitution != null ? d.restitution : 0;
+      els.rest.value = rest;
+      els.restV.textContent = rest.toFixed(2);
+      els.veliters.value = (d.velIters != null ? d.velIters : PLANCK_DEFAULTS.velIters);
+      els.positers.value = (d.posIters != null ? d.posIters : PLANCK_DEFAULTS.posIters);
       els.mass.value = d.mass; els.massV.textContent = d.mass.toFixed(2);
       els.eng.value = d.engineForce; els.engV.textContent = d.engineForce|0;
       els.brk.value = d.brakeForce; els.brkV.textContent = d.brakeForce|0;
@@ -565,6 +1039,13 @@
   els.drag.value = d.dragK; els.dragV.textContent = (+d.dragK).toFixed(4);
   els.roll.value = d.rollK; els.rollV.textContent = d.rollK.toFixed(2);
   els.rearc.value = (d.rearCircle!=null?d.rearCircle:0.50).toFixed(2); els.rearcV.textContent = (+els.rearc.value).toFixed(2);
+  els.frontc.value = (d.frontCircle!=null?d.frontCircle:0.50).toFixed(2); els.frontcV.textContent = (+els.frontc.value).toFixed(2);
+  els.brkfs.value = (d.brakeFrontShare!=null?d.brakeFrontShare:0.60).toFixed(2); els.brkfsV.textContent = (+els.brkfs.value).toFixed(2);
+  els.lspe.value = (d.longSlipPeak!=null?d.longSlipPeak:0.18).toFixed(2); els.lspeV.textContent = (+els.lspe.value).toFixed(2);
+  els.lsfo.value = (d.longSlipFalloff!=null?d.longSlipFalloff:0.80).toFixed(2); els.lsfoV.textContent = (+els.lsfo.value).toFixed(2);
+  els.llat.value = (d.loadSenseK!=null?d.loadSenseK:0.08).toFixed(2); els.llatV.textContent = (+els.llat.value).toFixed(2);
+  els.llong.value = (d.muLongLoadSenseK!=null?d.muLongLoadSenseK:0.04).toFixed(2); els.llongV.textContent = (+els.llong.value).toFixed(2);
+  els.df.value = (d.downforceK!=null?d.downforceK:0.00025).toFixed(5); els.dfV.textContent = (+els.df.value).toFixed(5);
   els.vkine.value = (d.vKineBlend!=null?d.vKineBlend:40).toFixed(0); els.vkineV.textContent = els.vkine.value;
   els.cgh.value = (d.cgHeight!=null?d.cgHeight:8).toFixed(0); els.cghV.textContent = els.cgh.value;
   els.yawd.value = (d.yawDampK!=null?d.yawDampK:0.12).toFixed(2); els.yawdV.textContent = (+els.yawd.value).toFixed(2);
@@ -577,6 +1058,13 @@
       const k = els.kind.value;
       const p = VEHICLE_DEFAULTS[k] = {
         ...VEHICLE_DEFAULTS[k],
+        usePlanck: !!els.planck.checked,
+        pixelsPerMeter: Math.max(1, +els.ppm.value || PLANCK_DEFAULTS.pixelsPerMeter),
+        linearDamp: +els.ldamp.value,
+        angularDamp: +els.adamp.value,
+        restitution: +els.rest.value,
+        velIters: clamp(+els.veliters.value || PLANCK_DEFAULTS.velIters, 1, 50),
+        posIters: clamp(+els.positers.value || PLANCK_DEFAULTS.posIters, 1, 50),
         mass: +els.mass.value,
         engineForce: +els.eng.value,
         brakeForce: +els.brk.value,
@@ -589,6 +1077,13 @@
         dragK: +els.drag.value,
     rollK: +els.roll.value,
   rearCircle: +els.rearc.value,
+  frontCircle: +els.frontc.value,
+  brakeFrontShare: +els.brkfs.value,
+  longSlipPeak: +els.lspe.value,
+  longSlipFalloff: +els.lsfo.value,
+  loadSenseK: +els.llat.value,
+  muLongLoadSenseK: +els.llong.value,
+  downforceK: +els.df.value,
   vKineBlend: +els.vkine.value,
   cgHeight: +els.cgh.value,
   yawDampK: +els.yawd.value,
@@ -598,15 +1093,55 @@
       const cars = (getCars && getCars()) || {};
       const applyTo = [cars.player].filter(Boolean);
       if (els.applyAI.checked && Array.isArray(cars.ai)) applyTo.push(...cars.ai);
-      for (const c of applyTo){ if (!c) continue; if (!c.physics) initCar(c, c.kind); c.physics.params = { ...c.physics.params, ...p }; }
+      for (const c of applyTo){
+        if (!c) continue;
+        if (!c.physics) initCar(c, c.kind);
+        c.physics.params = { ...c.physics.params, ...p };
+        if (c.physics.planckBody) {
+          const body = c.physics.planckBody;
+          try {
+            body.setLinearDamping(p.linearDamp ?? 0);
+            body.setAngularDamping(p.angularDamp ?? 0);
+            for (let fix = body.getFixtureList(); fix; fix = fix.getNext()) {
+              fix.setFriction(0);
+              fix.setRestitution(p.restitution ?? planckState.restitution);
+            }
+          } catch(_){/* ignore */}
+        }
+      }
+      registerPlanckCars(applyTo);
+      if (p.usePlanck) {
+        planckState.ppm = p.pixelsPerMeter;
+        planckState.velIters = p.velIters;
+        planckState.posIters = p.posIters;
+        planckState.restitution = p.restitution;
+        planckState.doSleep = p.planckDoSleep != null ? !!p.planckDoSleep : planckState.doSleep;
+        planckState.needsWorldBuild = true;
+      }
       setDebugEnabled(!!els.debug.checked);
       refresh(k);
     }
 
-  for (const key of ['mass','eng','brk','steer','steers','mulr','muor','mulg','muog','drag','roll','rearc','vkine','cgh','yawd','reventry','revtorque']){
+  for (const key of ['ldamp','adamp','rest','mass','eng','brk','steer','steers','mulr','muor','mulg','muog','drag','roll','rearc','frontc','brkfs','lspe','lsfo','llat','llong','df','vkine','cgh','yawd','reventry','revtorque']){
       els[key].addEventListener('input', ()=>{ const v = els[key].value; const label = key+'V'; if (els[label]) els[label].textContent = (''+v).slice(0, (key==='drag'?6:(key==='revtorque'?6:4))); apply(); });
     }
     els.kind.addEventListener('change', ()=>refresh(els.kind.value));
+    if (els.planck) els.planck.addEventListener('change', apply);
+    if (els.ppm) els.ppm.addEventListener('change', apply);
+    if (els.veliters) els.veliters.addEventListener('change', apply);
+    if (els.positers) els.positers.addEventListener('change', apply);
+    if (els.planckRebuild) {
+      els.planckRebuild.addEventListener('click', ()=>{
+        apply();
+        if (typeof rebuildPlanckWorld === 'function' && getCars) {
+          const cset = getCars() || {};
+          const list = [];
+          if (cset.player) list.push(cset.player);
+          if (Array.isArray(cset.ai)) list.push(...cset.ai);
+          rebuildPlanckWorld({ cars: list });
+        }
+      });
+    }
     els.reset.addEventListener('click', ()=>{ VEHICLE_DEFAULTS[els.kind.value] = { ...defaultSnapshot[els.kind.value] }; refresh(els.kind.value); apply(); });
     els.debug.addEventListener('change', ()=>setDebugEnabled(!!els.debug.checked));
   }
@@ -621,6 +1156,12 @@
     drawDebug,
     setDebugEnabled,
     injectDevTools,
+    configureTrackCollision,
+    rebuildPlanckWorld,
+    registerPlanckCars,
+    planckBeginStep,
+    planckStep,
+    usesPlanckWorld,
     defaults: VEHICLE_DEFAULTS
   };
   window.RacerPhysics = API;
