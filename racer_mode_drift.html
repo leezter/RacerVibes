@@ -183,14 +183,22 @@ function updateSFX(player, dt){
   const slip = Math.max(0, Math.min(1, player.sfxSlip || 0));
   const onGrass = !!player.sfxGrass;
 
-  // Engine pitch from speed + throttle
-  const rpm = 80 + spd * 0.9 + throttle * 40; // pseudo-rpm
-  const fA = Math.max(40, rpm); const fB = fA/2;
-  sfx.eng.oscA.frequency.setTargetAtTime(fA, sfx.ctx.currentTime, 0.02);
-  sfx.eng.oscB.frequency.setTargetAtTime(fB, sfx.ctx.currentTime, 0.02);
-  const engVol = Math.min(0.85, 0.15 + spd*0.002 + throttle*0.35);
+  const gb = player && player.gearbox;
+  const cfg = gb ? gb.c : (window.GEARBOX_DEFAULTS || {});
+  const idle = cfg && cfg.idleRPM ? cfg.idleRPM : 1100;
+  const redline = cfg && cfg.redlineRPM ? cfg.redlineRPM : 7600;
+  const rpmRaw = player.sfxRPM || idle;
+  const rpmClamped = Math.max(idle, Math.min(redline, rpmRaw));
+  const pitch = 0.8 + ((rpmClamped - idle) / Math.max(200, redline - idle)) * (1.6 - 0.8);
+  const baseFreq = 90;
+  const fA = baseFreq * pitch;
+  const fB = fA * 0.5;
+  sfx.eng.oscA.frequency.setTargetAtTime(fA, sfx.ctx.currentTime, 0.025);
+  sfx.eng.oscB.frequency.setTargetAtTime(fB, sfx.ctx.currentTime, 0.025);
+  const driveForce = Math.abs(player.sfxDriveForce || 0);
+  const engVol = Math.min(0.9, 0.18 + throttle * 0.45 + Math.min(0.35, driveForce * 0.0004));
   sfx.eng.g.gain.setTargetAtTime(engVol, sfx.ctx.currentTime, 0.04);
-  sfx.eng.lp.frequency.setTargetAtTime(400 + spd*2 + throttle*500, sfx.ctx.currentTime, 0.05);
+  sfx.eng.lp.frequency.setTargetAtTime(360 + (pitch - 0.8) / 0.8 * 1200, sfx.ctx.currentTime, 0.05);
 
   // Wind
   const windVol = Math.min(0.5, spd*0.0025);
@@ -865,9 +873,20 @@ const { useEffect, useRef, useState } = React;
           }
           const steeringModePreference = getSteeringModeSetting();
           const player = makeCar({ x: 0, y: 0, angle: 0, color: "#e53935", kind: getInitialCar(), steeringMode: steeringModePreference });
+          window.playerCar = player;
+          import('./gearbox.js').then(mod => {
+            const { Gearbox, gearboxDefaults } = mod;
+            window.GEARBOX_DEFAULTS = { ...gearboxDefaults };
+            let stored = null;
+            try { stored = JSON.parse(localStorage.getItem('gearboxCfg_activeProfile') || 'null'); } catch(_){}
+            const gbxCfg = stored ? { ...gearboxDefaults, ...stored } : { ...gearboxDefaults };
+            player.gearbox = new Gearbox(gbxCfg);
+            try { if (window.RacerPhysics) window.RacerPhysics.initCar(player, player.kind); } catch(_){}
+          }).catch(err => console.warn('Gearbox init failed', err));
           let aiCars = []; // array of AI cars
 
           const keys = { w: false, s: false, a: false, d: false };
+          const gamepadShiftPrev = { up: false, down: false };
 
           // Normalized handling constants for mobile parity
           const MAX_SPEED_ROAD = 340, MAX_SPEED_GRASS = 135; // reduced from boosted values
@@ -1615,6 +1634,16 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               ctx.restore();
               ctx.fillStyle = "#cbd5e1"; ctx.font = "11px system-ui"; ctx.fillText(activeTrack && activeTrack.name ? activeTrack.name : trackName, x+8, y+14);
             }
+            if (player && player.gearbox) {
+              const hudText = `G${player.gearbox.gear}  ${(player.gearbox.rpm|0)} rpm`;
+              ctx.font = "14px system-ui";
+              const w = ctx.measureText(hudText).width + 16;
+              const hudX = 16, hudY = H - 44;
+              ctx.fillStyle = "rgba(10,16,24,0.7)";
+              ctx.fillRect(hudX, hudY, w, 28);
+              ctx.fillStyle = "#f8fafc";
+              ctx.fillText(hudText, hudX + 8, hudY + 19);
+            }
             ctx.restore();
           }
 
@@ -1677,6 +1706,18 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
 
           function updatePlayer(dt) {
             const control = { throttle: keys.w, brake: keys.s, left: keys.a, right: keys.d };
+            const pads = navigator.getGamepads ? navigator.getGamepads() : null;
+            const pad = pads ? pads[0] : null;
+            if (pad && pad.buttons) {
+              const lb = !!(pad.buttons[4] && pad.buttons[4].pressed);
+              const rb = !!(pad.buttons[5] && pad.buttons[5].pressed);
+              if (lb && !gamepadShiftPrev.down && player && player.gearbox) player.gearbox.shiftDown();
+              if (rb && !gamepadShiftPrev.up && player && player.gearbox) player.gearbox.shiftUp();
+              gamepadShiftPrev.down = lb;
+              gamepadShiftPrev.up = rb;
+            } else {
+              gamepadShiftPrev.down = gamepadShiftPrev.up = false;
+            }
             updateCar(player, dt, control);
           }
 
@@ -1727,6 +1768,18 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
           // ===== Input =====
           function key(e, down) {
             const k = e.key.toLowerCase();
+            if (down && !e.repeat) {
+              if (k === 'q' && player && player.gearbox) { player.gearbox.shiftDown(); e.preventDefault(); }
+              if (k === 'e' && player && player.gearbox) { player.gearbox.shiftUp(); e.preventDefault(); }
+              if (k === 'm') {
+                if (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) {
+                  toggleSFX();
+                } else if (player && player.gearbox) {
+                  player.gearbox.setManual(player.gearbox.c.auto);
+                }
+                e.preventDefault();
+              }
+            }
             if (k === "w") keys.w = down;
             if (k === "s") keys.s = down;
             if (k === "a") keys.a = down;
@@ -1737,8 +1790,8 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               const next = trackName === "Silverstone" ? "Le Mans" : "Silverstone";
               setTrackName(next); setTimeout(() => loadTrack(next), 0);
             }
-            if (down) { try { const a = ensureAudio(); if (a && a.ctx.state==='suspended') a.ctx.resume(); } catch(_){} }
-            if (down && k === 'm') toggleSFX();
+            if (down) { try { const a = ensureAudio(); if (a && a.ctx.state==='suspended') a.ctx.resume(); } catch(_){ } }
+            if (down && k === 'v') toggleSFX();
             if (down && k === "1") { setTrackName("Silverstone"); setTimeout(() => loadTrack("Silverstone"), 0); }
             if (down && k === "2") { setTrackName("Le Mans"); setTimeout(() => loadTrack("Le Mans"), 0); }
             if (down && (k === "+" || k === "=")) {
@@ -1995,6 +2048,146 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
 
       const root = ReactDOM.createRoot(document.getElementById("root"));
       root.render(<TopDownRacer />);
+    </script>
+    <style>
+    #gbxPanel { position:fixed; right:12px; top:12px; width:320px; max-height:80vh; overflow:auto; background:rgba(0,0,0,0.75); color:#fff; font:12px/1.4 system-ui, Arial; padding:10px; border:1px solid #444; border-radius:8px; display:none; z-index:9999; }
+    #gbxPanel input[type="number"] { width:72px; margin:2px; }
+    #gbxPanel .row { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-bottom:6px; }
+    #gbxToggle { position:fixed; right:12px; bottom:12px; z-index:9999; }
+    </style>
+    <div id="gbxPanel">
+      <div class="row"><strong>Gearbox Tuner</strong><button id="gbxClose" style="margin-left:auto">X</button></div>
+      <div class="row">Auto <input id="gbxAuto" type="checkbox"></div>
+      <div class="row">Ratios:
+        <input id="gbxR0" type="number" step="0.01">
+        <input id="gbxR1" type="number" step="0.01">
+        <input id="gbxR2" type="number" step="0.01">
+        <input id="gbxR3" type="number" step="0.01">
+        <input id="gbxR4" type="number" step="0.01">
+        <input id="gbxR5" type="number" step="0.01">
+      </div>
+      <div class="row">finalDrive <input id="gbxFD" type="number" step="0.01"></div>
+      <div class="row">wheelRadius <input id="gbxWR" type="number" step="0.01"></div>
+      <div class="row">idleRPM <input id="gbxIdle" type="number" step="50"></div>
+      <div class="row">redlineRPM <input id="gbxRed" type="number" step="50"></div>
+      <div class="row">upshiftRPM <input id="gbxUp" type="number" step="50"></div>
+      <div class="row">downshiftRPM <input id="gbxDown" type="number" step="50"></div>
+      <div class="row">drivelineEff <input id="gbxEff" type="number" step="0.01" min="0" max="1"></div>
+      <div class="row">torquePeak <input id="gbxTq" type="number" step="1"></div>
+      <div class="row">shiftCutMs <input id="gbxCut" type="number" step="5"></div>
+      <div class="row">engineInertia <input id="gbxIn" type="number" step="0.01" min="0" max="1"></div>
+      <div class="row">clutchEngageRate <input id="gbxCE" type="number" step="0.1" min="0"></div>
+      <div class="row">clutchSlipBoost <input id="gbxSB" type="number" step="0.01" min="0" max="1"></div>
+      <div class="row" style="gap:10px">
+        <button id="gbxSave">Save</button>
+        <button id="gbxReset">Reset</button>
+      </div>
+    </div>
+    <button id="gbxToggle">GBX</button>
+    <script>
+    (function(){
+      const QS = id => document.getElementById(id);
+      const panel = QS('gbxPanel');
+      const toggle = QS('gbxToggle');
+      const closeBtn = QS('gbxClose');
+
+      function getPlayerCar(){
+        // Adjust this accessor to your game if needed
+        return window.game?.playerCar || window.playerCar || window.car || null;
+      }
+      function readCfgFromCar(){
+        const car = getPlayerCar();
+        if (!car?.gearbox) return null;
+        return { ...car.gearbox.c };
+      }
+      function applyCfgToCar(cfg){
+        const car = getPlayerCar();
+        if (!car?.gearbox) return;
+        Object.assign(car.gearbox.c, cfg);
+      }
+      function loadStore(){
+        try { return JSON.parse(localStorage.getItem('gearboxCfg_activeProfile')||'null'); } catch(e){ return null; }
+      }
+      function saveStore(cfg){
+        localStorage.setItem('gearboxCfg_activeProfile', JSON.stringify(cfg));
+      }
+      function fillForm(cfg){
+        QS('gbxAuto').checked = !!cfg.auto;
+        const r = cfg.ratios || [];
+        ['gbxR0','gbxR1','gbxR2','gbxR3','gbxR4','gbxR5'].forEach((id,i)=>{ QS(id).value = r[i] ?? ''; });
+        QS('gbxFD').value = cfg.finalDrive;
+        QS('gbxWR').value = cfg.wheelRadius;
+        QS('gbxIdle').value = cfg.idleRPM;
+        QS('gbxRed').value = cfg.redlineRPM;
+        QS('gbxUp').value = cfg.upshiftRPM;
+        QS('gbxDown').value = cfg.downshiftRPM;
+        QS('gbxEff').value = cfg.drivelineEff;
+        QS('gbxTq').value = cfg.torquePeak;
+        QS('gbxCut').value = cfg.shiftCutMs;
+        QS('gbxIn').value = cfg.engineInertia;
+        QS('gbxCE').value = cfg.clutchEngageRate;
+        QS('gbxSB').value = cfg.clutchSlipBoost;
+      }
+      function readForm(){
+        const ratios = ['gbxR0','gbxR1','gbxR2','gbxR3','gbxR4','gbxR5'].map(id => parseFloat(QS(id).value || ''));
+        return {
+          auto: QS('gbxAuto').checked,
+          ratios: ratios.filter(n => !isNaN(n) && n>0),
+          finalDrive: parseFloat(QS('gbxFD').value),
+          wheelRadius: parseFloat(QS('gbxWR').value),
+          idleRPM: parseFloat(QS('gbxIdle').value),
+          redlineRPM: parseFloat(QS('gbxRed').value),
+          upshiftRPM: parseFloat(QS('gbxUp').value),
+          downshiftRPM: parseFloat(QS('gbxDown').value),
+          drivelineEff: parseFloat(QS('gbxEff').value),
+          torquePeak: parseFloat(QS('gbxTq').value),
+          shiftCutMs: parseFloat(QS('gbxCut').value),
+          engineInertia: parseFloat(QS('gbxIn').value),
+          clutchEngageRate: parseFloat(QS('gbxCE').value),
+          clutchSlipBoost: parseFloat(QS('gbxSB').value)
+        };
+      }
+
+      function openPanel(){
+        const cfg = readCfgFromCar() || loadStore();
+        if (cfg) fillForm(cfg);
+        panel.style.display = 'block';
+      }
+      function closePanel(){ panel.style.display = 'none'; }
+
+      toggle.addEventListener('click', openPanel);
+      closeBtn.addEventListener('click', closePanel);
+
+      // Keyboard toggle
+      window.addEventListener('keydown', (e)=>{
+        if (e.code === 'F9') {
+          if (panel.style.display === 'none' || !panel.style.display) openPanel(); else closePanel();
+        }
+        const car = getPlayerCar();
+        if (!car?.gearbox) return;
+        if (e.code === 'KeyQ' && !e.defaultPrevented) car.gearbox.shiftDown();
+        if (e.code === 'KeyE' && !e.defaultPrevented) car.gearbox.shiftUp();
+        if (e.code === 'KeyM' && !e.defaultPrevented) car.gearbox.setManual(!(car.gearbox.c.auto));
+      });
+
+      // Save and Reset
+      QS('gbxSave').addEventListener('click', ()=>{
+        const cfg = readForm();
+        applyCfgToCar(cfg);
+        saveStore({ ...readCfgFromCar() });
+      });
+      QS('gbxReset').addEventListener('click', ()=>{
+        const car = getPlayerCar();
+        if (!car?.gearbox) return;
+        const d = (window.GEARBOX_DEFAULTS || {});
+        Object.assign(car.gearbox.c, d);
+        fillForm(car.gearbox.c);
+        saveStore(car.gearbox.c);
+      });
+
+      // Expose defaults for Reset
+      window.GEARBOX_DEFAULTS = window.GEARBOX_DEFAULTS || {};
+    })();
     </script>
     <script>
       // Register service worker only on http(s)

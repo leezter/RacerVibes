@@ -1,5 +1,6 @@
 import { createWorld, stepWorld, meters, pixels, PPM_DEFAULT } from './physics/planckWorld.js';
 import { buildTrackBodies } from './trackCollision.js';
+import { Gearbox, gearboxDefaults } from './gearbox.js';
 
 (function(){
   "use strict";
@@ -465,6 +466,9 @@ import { buildTrackBodies } from './trackCollision.js';
       skid: 0,            // last computed skid intensity 0..1
       planckBody: null
     };
+    if (!car.gearbox) {
+      car.gearbox = new Gearbox(gearboxDefaults);
+    }
     return car.physics;
   }
 
@@ -491,6 +495,11 @@ import { buildTrackBodies } from './trackCollision.js';
     // surface: {onRoad:boolean}
     if (!car.physics) initCar(car, car.kind);
     const P = car.physics.params;
+    if (car.gearbox) {
+      if (input && input.shiftUp) car.gearbox.shiftUp();
+      if (input && input.shiftDown) car.gearbox.shiftDown();
+      if (input && typeof input.manual === 'boolean') car.gearbox.setManual(input.manual);
+    }
     let usePlanck = !!(P && P.usePlanck);
     let ppm = P.pixelsPerMeter || planckState.ppm || PPM_DEFAULT;
     let planckBody = null;
@@ -618,6 +627,8 @@ import { buildTrackBodies } from './trackCollision.js';
   // Longitudinal forces (drive on rear axle), limited by traction; analog inputs 0..1
   const throttle = clamp(+((input && input.throttle) || 0), 0, 1);
   const brake = clamp(+((input && input.brake) || 0), 0, 1);
+  if (car.physics.prevDriveSlip == null) car.physics.prevDriveSlip = 0;
+  const slipInfo = { driveSlip: car.physics.prevDriveSlip || 0 };
 
     // Reverse mode: if near stopped and braking, allow controlled reverse torque
     let reversing = false;
@@ -627,7 +638,23 @@ import { buildTrackBodies } from './trackCollision.js';
     if (almostStopped && brake && !throttle && reverseTorqueScale > 0 && reverseEntrySpeed > 0){
       reversing = true;
     }
-    let Fx_drive = reversing ? -P.engineForce * reverseTorqueScale : throttle * P.engineForce;
+  const vForward = vx / Math.max(1e-3, ppm); // m/s forward velocity (body X projected)
+  const gb = car.gearbox instanceof Gearbox ? car.gearbox : null;
+  let gbState = null;
+  if (gb) {
+    gbState = gb.step(dt, reversing ? 0 : vForward, reversing ? 0 : throttle, slipInfo);
+  }
+  let Fx_drive;
+  let gbForceScale = 1;
+  if (reversing) {
+    Fx_drive = -P.engineForce * reverseTorqueScale;
+  } else if (gbState) {
+    const norm = Math.max(1e-4, gbState.forceNorm || (gb && gb._lastForceNorm) || 1);
+    gbForceScale = P.engineForce / norm;
+    Fx_drive = gbState.requestedForce * gbForceScale;
+  } else {
+    Fx_drive = throttle * P.engineForce;
+  }
     let Fx_brake = reversing ? 0 : (brake * P.brakeForce * sign(vx));
     // Body X resistances (drag/roll) oppose motion
     const vmag = Math.max(eps, Math.hypot(vx, vy));
@@ -686,8 +713,7 @@ import { buildTrackBodies } from './trackCollision.js';
       // Use wheel-originated longitudinal at rear contact for combined slip
       const brakeFrontShare = (P.brakeFrontShare != null ? P.brakeFrontShare : 0.6);
       const brakeRearShare = 1 - brakeFrontShare;
-      const FxR_cmd = (reversing ? -P.engineForce * (P.reverseTorqueScale ?? 0.60) : throttle * P.engineForce)
-                    - brakeRearShare * (brake * P.brakeForce) * sign(vx);
+      const FxR_cmd = Fx_drive - brakeRearShare * (brake * P.brakeForce) * sign(vx);
       const uxR = (muLongEffR*Fzr>1e-6) ? (FxR_cmd / (muLongEffR * Fzr)) : 0;
       const uy = (muLatR*Fzr>1e-6) ? (FyR_unc / (muLatR * Fzr)) : 0;
       lambda = Math.hypot(uxR, uy);
@@ -700,10 +726,29 @@ import { buildTrackBodies } from './trackCollision.js';
 
     // Now compute post-transfer longitudinal traction using slip ratio
     const Fr_max = muLongEffR * Fzr;
-    const s_eff  = Fr_max > 1e-6 ? clamp(Fx_cmd / Fr_max, -1, 1) : 0;
     const sPeak  = (P.longSlipPeak != null ? P.longSlipPeak : 0.18);
+    const s_req  = Fr_max > 1e-6 ? (Fx_cmd / Fr_max) : 0;
+    const s_eff  = clamp(s_req, -1, 1);
+    if (Math.abs(s_req) > sPeak) {
+      const overPeak = Math.min(1, Math.abs(s_req) - sPeak);
+      const latScale = Math.max(0, 1 - 0.35 * overPeak);
+      FyR *= latScale;
+    }
     const falloff= (P.longSlipFalloff != null ? P.longSlipFalloff : 0.80);
     const Fx_trac = Fr_max * slipRatioResponse(s_eff, sPeak, falloff);
+    if (gb) {
+      const gbOut = gbState ? { ...gbState } : { rpm: gb.rpm|0, gear: gb.gear, requestedForce: Fx_drive, clutchLock: gb.clutchLock };
+      gbOut.forceScale = gbForceScale;
+      gbOut.requestedForceRaw = gbState ? gbState.requestedForce : Fx_drive;
+      gbOut.requestedForce = reversing ? Fx_drive : Fx_drive;
+      car.physics.lastGb = gbOut;
+      gb.lastRequestedForce = Fx_drive;
+      gb.lastForceScale = gbForceScale;
+    } else {
+      car.physics.lastGb = null;
+    }
+    car.physics.lastSlipReq = s_req;
+    car.physics.prevDriveSlip = Math.max(0, Math.abs(s_req) - sPeak);
     let Fx_long = Fx_trac - F_drag - F_roll;
     const ax = Fx_long / mass;
     car.physics.lastAx = ax;
@@ -794,6 +839,9 @@ import { buildTrackBodies } from './trackCollision.js';
     // Derived properties for compatibility
     car.speed = Math.hypot(car.physics.vx, car.physics.vy);
     car.sfxThrottle = throttle;
+    car.sfxRPM = gb ? gb.rpm : 0;
+    car.sfxGear = gb ? gb.gear : 0;
+    car.sfxDriveForce = gb ? (gb.lastRequestedForce ?? 0) : 0;
     car.sfxGrass = !onRoad;
 
     // Skid intensity from combined slip
@@ -844,7 +892,14 @@ import { buildTrackBodies } from './trackCollision.js';
       if (p._dbgFyR_avail != null){
         const lambda = p.lastLambda != null ? p.lastLambda : 0;
         const speedMag = Math.hypot(car.physics.vx||0, car.physics.vy||0);
-        const line = `fwd=${(p.lastFwd!=null?p.lastFwd:1)} ${(p.lastReversing?'REV ':'')}|v|=${speedMag.toFixed(1)} vx=${(car.physics.vx||0).toFixed(1)} vy=${(car.physics.vy||0).toFixed(1)} dEff=${(p.lastDeltaEff||0).toFixed(3)} slipF=${(p.lastSlipF||0).toFixed(3)} slipR=${(p.lastSlipR||0).toFixed(3)} λ=${lambda.toFixed(2)} ax=${(p.lastAx||0).toFixed(2)} FzF=${(p.lastFzf||0).toFixed(0)} FzR=${(p.lastFzr||0).toFixed(0)} ${(p.lastAlphaBlend<0.999)?'KIN':''}`;
+        const gbState = car.physics.lastGb || (car.gearbox ? {
+          gear: car.gearbox.gear,
+          rpm: car.gearbox.rpm,
+          requestedForce: car.gearbox.lastRequestedForce ?? 0
+        } : null);
+        const slipReq = car.physics.lastSlipReq != null ? car.physics.lastSlipReq : 0;
+        const gbLine = gbState ? ` G${gbState.gear} ${Math.round(gbState.rpm||0)}rpm ReqF=${Math.round(gbState.requestedForce||0)} Slip=${Math.round(Math.abs(slipReq)*100)}%` : '';
+        const line = `fwd=${(p.lastFwd!=null?p.lastFwd:1)} ${(p.lastReversing?'REV ':'')}|v|=${speedMag.toFixed(1)} vx=${(car.physics.vx||0).toFixed(1)} vy=${(car.physics.vy||0).toFixed(1)} dEff=${(p.lastDeltaEff||0).toFixed(3)} slipF=${(p.lastSlipF||0).toFixed(3)} slipR=${(p.lastSlipR||0).toFixed(3)} lambda=${lambda.toFixed(2)} ax=${(p.lastAx||0).toFixed(2)} FzF=${(p.lastFzf||0).toFixed(0)} FzR=${(p.lastFzr||0).toFixed(0)} ${(p.lastAlphaBlend<0.999)?'KIN':''}${gbLine}`;
         ctx.font = '11px monospace';
         ctx.textBaseline = 'top';
         const x = car.x + 20, y = car.y - 30;
@@ -852,10 +907,9 @@ import { buildTrackBodies } from './trackCollision.js';
         ctx.fillStyle = (lambda>1.01) ? '#ff5050' : '#e0f2f1';
         ctx.fillText(line, x, y);
       }
-    } catch(_){}
+    } catch(_){ }
     ctx.restore();
   }
-
   // Dev tools UI
   function injectDevTools(getCars){
     if (document.getElementById('rv-devtools')) return; // once
