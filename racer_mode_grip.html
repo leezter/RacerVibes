@@ -13,6 +13,7 @@
   <script type="module" src="physics.js"></script>
     <script src="decor_generator.js"></script>
     <script src="track_storage.js"></script>
+    <script src="ui/speedometer.js"></script>
     <style>
       html, body, #root { height: 100%; margin: 0; }
   body { background: #0a0a0a; color: #eee; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; overflow:hidden; overscroll-behavior:none; }
@@ -943,6 +944,38 @@ const { useEffect, useRef, useState } = React;
           }
           const steeringModePreference = getSteeringModeSetting();
           const player = makeCar({ x: 0, y: 0, angle: 0, color: "#e53935", kind: getInitialCar(), steeringMode: steeringModePreference });
+          // --- Speedometer init ---
+          let speedoCtrl = null;
+          let speedoScriptRequested = false;
+          function ensureSpeedometerScript(){
+            if (window.RacerUI && window.RacerUI.Speedometer) return true;
+            if (speedoScriptRequested) return false;
+            const script = document.createElement('script');
+            script.src = `ui/speedometer.js?v=${Date.now()}`;
+            script.defer = true;
+            script.onload = () => {
+              speedoScriptRequested = false;
+              tryInitSpeedometer();
+            };
+            script.onerror = () => { speedoScriptRequested = false; };
+            document.head.appendChild(script);
+            speedoScriptRequested = true;
+            return false;
+          }
+          function tryInitSpeedometer(){
+            if (speedoCtrl) return;
+            if (!(window.RacerUI && window.RacerUI.Speedometer)) {
+              ensureSpeedometerScript();
+              return;
+            }
+            try {
+              speedoCtrl = window.RacerUI.Speedometer.init({ bottomOffset: 10, width: 420, mphMax: 180, smoothing: 0.18 });
+            } catch (err) {
+              console.warn('Speedometer init failed', err);
+            }
+          }
+          ensureSpeedometerScript();
+          tryInitSpeedometer();
           window.playerCar = player;
           import('./gearbox.js').then(mod => {
             const { Gearbox, gearboxDefaults } = mod;
@@ -1940,6 +1973,20 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
             if (physicsAPI && typeof physicsAPI.planckStep === 'function') {
               try { physicsAPI.planckStep(); } catch(err){ console.warn('[Planck] step failed', err); }
             }
+            tryInitSpeedometer();
+            // --- Speedometer update ---
+            if (speedoCtrl) {
+              const ppm = (window.PlanckWorld && window.PlanckWorld.PPM_DEFAULT) || 30;
+              // speed (px/s -> m/s -> mph)
+              const mph = ((player?.speed || 0) / ppm) * 2.23694;
+              // gearbox
+              const gb = player?.gearbox;
+              const gear = gb?.gear || 1;
+              const rpm  = gb?.rpm  || 0;
+              const red  = (gb?.c && gb.c.redlineRPM) || 7600;
+              const idle = (gb?.c && gb.c.idleRPM)    || 1100;
+              speedoCtrl.update({ gear, rpm, redline: red, idle, mph });
+            }
             if (running) {
               const planckActive = physicsAPI && typeof physicsAPI.usesPlanckWorld === 'function' && physicsAPI.usesPlanckWorld();
               if (!planckActive) {
@@ -1980,6 +2027,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
           return () => {
             window.removeEventListener("keydown", kd);
             window.removeEventListener("keyup", ku);
+            if (speedoCtrl && typeof speedoCtrl.destroy === 'function') speedoCtrl.destroy();
             loadTrackRef.current = () => {};
           };
         }, [trackName]);
