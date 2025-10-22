@@ -20,7 +20,7 @@ export function buildTrackBodies(world, trackSegments, ppm, opts = {}) {
     const edge = pl.Edge(a, b);
     ground.createFixture(edge, {
       density: 0,
-      friction: 0.0,
+      friction: 0.35,
       restitution
     });
   });

@@ -104,7 +104,12 @@ function drawSkids(ctx){
       
 // ===== WebAudio SFX =====
 let SFX = null;
+let audioPrimed = false;
+function primeAudio(){ audioPrimed = true; }
 function ensureAudio() {
+  if (!audioPrimed) {
+    return SFX && SFX.ctx ? SFX : null;
+  }
   if (SFX && SFX.ctx && SFX.ctx.state !== 'suspended') return SFX;
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -202,7 +207,7 @@ function updateSFX(player, dt){
   sfx.eng.lp.frequency.setTargetAtTime(360 + (pitch - 0.8) / 0.8 * 1200, sfx.ctx.currentTime, 0.05);
 
   // Wind
-  const windVol = Math.min(0.5, spd*0.0025);
+  const windVol = Math.min(0.5, spd*0.0025) * 0.12;
   sfx.wind.g.gain.setTargetAtTime(windVol, sfx.ctx.currentTime, 0.08);
 
   // Skid squeal (depends on slip; quieter on grass)
@@ -907,7 +912,25 @@ const { useEffect, useRef, useState } = React;
           ensureSpeedometerScript();
           tryInitSpeedometer();
           window.playerCar = player;
-          import('./gearbox.js').then(mod => {
+          const loadGearboxModule = () => {
+            if (window.GearboxModule) return Promise.resolve(window.GearboxModule);
+            if (window.__gearboxModulePromise) return window.__gearboxModulePromise;
+            let loader;
+            if (typeof window.importShim === 'function') {
+              loader = window.importShim('./gearbox.js');
+            } else {
+              loader = eval('import("./gearbox.js")');
+            }
+            window.__gearboxModulePromise = loader.then((mod) => {
+              window.GearboxModule = mod;
+              return mod;
+            }).catch((err) => {
+              window.__gearboxModulePromise = null;
+              throw err;
+            });
+            return window.__gearboxModulePromise;
+          };
+          loadGearboxModule().then(mod => {
             const { Gearbox, gearboxDefaults } = mod;
             window.GEARBOX_DEFAULTS = { ...gearboxDefaults };
             let stored = null;
@@ -1539,7 +1562,6 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
             
             // Ensure player has valid position and track data is loaded
             if (!player || typeof player.x !== 'number' || typeof player.y !== 'number' || !trackData) {
-              console.warn('Invalid player position or track not loaded yet');
               return;
             }
             
@@ -1668,7 +1690,8 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               ctx.fillStyle = "#cbd5e1"; ctx.font = "11px system-ui"; ctx.fillText(activeTrack && activeTrack.name ? activeTrack.name : trackName, x+8, y+14);
             }
             if (player && player.gearbox) {
-              const hudText = `G${player.gearbox.gear}  ${(player.gearbox.rpm|0)} rpm`;
+              const gearLabel = player.gearbox.gear;
+              const hudText = `${gearLabel}  ${(player.gearbox.rpm|0)} rpm`;
               ctx.font = "14px system-ui";
               const w = ctx.measureText(hudText).width + 16;
               const hudX = 16, hudY = H - 44;
@@ -1700,7 +1723,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
             ) : null;
 
             // Skid marks
-            const skidAmount = res && typeof res.skid === 'number' ? res.skid : 0;
+            const skidAmount = res && typeof res.skid === 'number' && res.skidEligible ? res.skid : 0;
             if (skidAmount > 0.28){
               const wp = window.RacerPhysics ? window.RacerPhysics.wheelPositions(car) : null;
               if (wp){
@@ -1800,6 +1823,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
 
           // ===== Input =====
           function key(e, down) {
+            if (down) primeAudio();
             const k = e.key.toLowerCase();
             if (down && !e.repeat) {
               if (k === 'q' && player && player.gearbox) { player.gearbox.shiftDown(); e.preventDefault(); }
@@ -1846,7 +1870,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
           window.addEventListener("keyup", ku);
 
           // Touch HUD bindings
-          function bindTouchButton(el, onDown, onUp){ if(!el) return; const d=(e)=>{ e.preventDefault(); onDown(); try{ const a=ensureAudio(); if(a&&a.ctx.state==='suspended') a.ctx.resume(); }catch{} }; const u=(e)=>{ e.preventDefault(); onUp(); }; el.addEventListener('touchstart', d, {passive:false}); el.addEventListener('touchend', u, {passive:false}); el.addEventListener('touchcancel', u, {passive:false}); el.addEventListener('mousedown', d); el.addEventListener('mouseup', u); el.addEventListener('mouseleave', u); }
+          function bindTouchButton(el, onDown, onUp){ if(!el) return; const d=(e)=>{ e.preventDefault(); primeAudio(); onDown(); try{ const a=ensureAudio(); if(a&&a.ctx.state==='suspended') a.ctx.resume(); }catch{} }; const u=(e)=>{ e.preventDefault(); onUp(); }; el.addEventListener('touchstart', d, {passive:false}); el.addEventListener('touchend', u, {passive:false}); el.addEventListener('touchcancel', u, {passive:false}); el.addEventListener('mousedown', d); el.addEventListener('mouseup', u); el.addEventListener('mouseleave', u); }
           const hud = document.querySelector('.hud');
           if (hud){
             bindTouchButton(hud.querySelector('.btn.left'),  ()=>keys.a=true, ()=>keys.a=false);
@@ -1862,7 +1886,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
           async function enableWakeLock(){
             try { if ('wakeLock' in navigator) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', ()=>{}); } } catch(_){}
           }
-          window.addEventListener('pointerdown', ()=>{ try{ const a=ensureAudio(); if(a&&a.ctx.state==='suspended') a.ctx.resume(); }catch{} enableWakeLock(); }, { once:true });
+          window.addEventListener('pointerdown', ()=>{ primeAudio(); try{ const a=ensureAudio(); if(a&&a.ctx.state==='suspended') a.ctx.resume(); }catch{} enableWakeLock(); }, { once:true });
           document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState === 'visible' && wakeLock && wakeLock.released){ enableWakeLock(); } });
           // Pause when tab/app is hidden
           document.addEventListener('visibilitychange', ()=>{ if (document.hidden) setRunning(false); });
@@ -2211,11 +2235,13 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
         if (e.code === 'F9') {
           if (panel.style.display === 'none' || !panel.style.display) openPanel(); else closePanel();
         }
+        if (panel.style.display !== 'block') return;
         const car = getPlayerCar();
         if (!car?.gearbox) return;
-        if (e.code === 'KeyQ' && !e.defaultPrevented) car.gearbox.shiftDown();
-        if (e.code === 'KeyE' && !e.defaultPrevented) car.gearbox.shiftUp();
-        if (e.code === 'KeyM' && !e.defaultPrevented) car.gearbox.setManual(!(car.gearbox.c.auto));
+        if (e.defaultPrevented) return;
+        if (e.code === 'KeyQ') car.gearbox.shiftDown();
+        if (e.code === 'KeyE') car.gearbox.shiftUp();
+        if (e.code === 'KeyM') car.gearbox.setManual(!(car.gearbox.c.auto));
       });
 
       // Save and Reset

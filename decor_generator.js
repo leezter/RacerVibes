@@ -35,8 +35,13 @@
     atlasPromise = new Promise((resolve) => {
       const img = new Image();
       img.onload = function () {
-        atlasImage = img;
-        resolve(img);
+      if (img.naturalWidth < 160 || img.naturalHeight < 64) {
+        atlasImage = null;
+        resolve(null);
+        return;
+      }
+      atlasImage = img;
+      resolve(img);
       };
       img.onerror = function () {
         atlasImage = null;
@@ -85,7 +90,7 @@
   function readMask(canvas) {
     const width = canvas.width;
     const height = canvas.height;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true }) || canvas.getContext("2d");
     const data = ctx.getImageData(0, 0, width, height).data;
     const mask = new Uint8Array(width * height);
     for (let i = 0; i < mask.length; i++) {
@@ -100,7 +105,7 @@
     const tmp = document.createElement("canvas");
     tmp.width = width;
     tmp.height = height;
-    const tctx = tmp.getContext("2d");
+    const tctx = tmp.getContext("2d", { willReadFrequently: true }) || tmp.getContext("2d");
     tctx.clearRect(0, 0, width, height);
     try {
       tctx.filter = `blur(${radius}px)`;

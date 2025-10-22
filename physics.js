@@ -61,7 +61,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       cgHeight: 8,
       yawDampK: 0.12,
     reverseEntrySpeed: 40, // px/s threshold below which brake engages reverse
-    reverseTorqueScale: 0.60, // fraction of engineForce when reversing
+    reverseTorqueScale: 0.50, // fraction of engineForce when reversing
       touchSteer: {
         maxSteerLowSpeed: 0.65,
         maxSteerHighSpeed: 0.24,
@@ -100,7 +100,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       cgHeight: 7,
       yawDampK: 0.12,
     reverseEntrySpeed: 40,
-    reverseTorqueScale: 0.60,
+    reverseTorqueScale: 0.50,
       touchSteer: {
         maxSteerLowSpeed: 0.58,
         maxSteerHighSpeed: 0.28,
@@ -139,7 +139,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       cgHeight: 8,
       yawDampK: 0.12,
     reverseEntrySpeed: 40,
-    reverseTorqueScale: 0.60,
+    reverseTorqueScale: 0.50,
       touchSteer: {
         maxSteerLowSpeed: 0.68,
         maxSteerHighSpeed: 0.32,
@@ -178,7 +178,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       cgHeight: 10,
       yawDampK: 0.12,
     reverseEntrySpeed: 40,
-    reverseTorqueScale: 0.60,
+    reverseTorqueScale: 0.50,
       touchSteer: {
         maxSteerLowSpeed: 0.50,
         maxSteerHighSpeed: 0.24,
@@ -326,7 +326,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     const shape = pl.Box(Math.max(0.01, w * 0.5), Math.max(0.01, h * 0.5));
     body.createFixture(shape, {
       density,
-      friction: 0.0,
+      friction: 0.45,
       restitution: P && typeof P.restitution === 'number' ? P.restitution : planckState.restitution
     });
     car.physics.planckBody = body;
@@ -463,6 +463,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       params,
       a, b,
       Izz,
+      dir: 1,           // +1 forward, -1 backward (persistent direction)
       skid: 0,            // last computed skid intensity 0..1
       planckBody: null
     };
@@ -535,6 +536,19 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     // Body-frame velocity
     const vb = worldToBody(car.physics.vx, car.physics.vy, car.angle);
     let vx = vb.x, vy = vb.y;
+    const vxBody = vx;
+    const gb = car.gearbox instanceof Gearbox ? car.gearbox : null;
+    const VX_HYST = 18; // px/s hysteresis for forward/backward direction
+    let dir = (car.physics.dir == null ? 1 : car.physics.dir);
+    if (vxBody > VX_HYST) dir = 1;
+    else if (vxBody < -VX_HYST) dir = -1;
+    car.physics.dir = dir;
+    const fwd = dir;
+    const vxAbs = Math.max(12, Math.abs(vxBody));
+    const vxSigned = vxAbs * fwd;
+    let reversing = (gb && gb.gearIndex === -1) || (fwd < 0);
+    let yawDamp = (P.yawDampK != null ? P.yawDampK : 0.12);
+    if (reversing) yawDamp *= 1.3;
 
     // Steering mode and filtered speed for adaptive touch steering
     const steeringMode = (car && car.steeringMode === 'touch') ? 'touch' : 'manual';
@@ -583,7 +597,10 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     if (steeringMode === 'touch') {
       car.physics.steer = clamp(car.physics.steer, -steerMax, steerMax);
     }
-    const delta = car.physics.steer;
+    let steerEff = car.physics.steer;
+    if (reversing) steerEff *= 0.5;
+    const delta = steerEff;
+    const deltaEff = delta; // body-frame wheel angle; reverse handled in slipF
     car.steerVis = (car.steerVis==null?0:car.steerVis) + (steerNormTarget - (car.steerVis||0))*Math.min(1, dt*10);
     car.steerVis = clamp(car.steerVis, -1, 1);
 
@@ -613,49 +630,118 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
 
     // Avoid singularity at very low speed
   const eps = 0.001;
-  const speedBody = Math.hypot(vx, vy);
-  const fwd = Math.abs(vx) < 0.5 ? 1 : sign(vx); // stable forward reference near zero
-  const vxEff = fwd * Math.max(eps, Math.abs(vx));
-  const deltaEff = delta * fwd; // invert steering when rolling backwards
-  let slipF = Math.atan2(vy + a*car.physics.r, vxEff) - deltaEff;
-  let slipR = Math.atan2(vy - b*car.physics.r, vxEff);
+  const vyFront = vy + a * car.physics.r;
+  const vyRear  = vy - b * car.physics.r;
+  let slipF = Math.atan2(vyFront, vxAbs) - fwd * delta;
+  let slipR = Math.atan2(vyRear, vxAbs);
+  const slipLimit = 0.7; // cap extreme slip angles to avoid runaway forces at very low speed
+  slipF = clamp(slipF, -slipLimit, slipLimit);
+  slipR = clamp(slipR, -slipLimit, slipLimit);
 
   // Lateral forces will be computed after load transfer adjustments
   let FyF = 0;
   let FyR_unc = 0;
 
   // Longitudinal forces (drive on rear axle), limited by traction; analog inputs 0..1
-  const throttle = clamp(+((input && input.throttle) || 0), 0, 1);
-  const brake = clamp(+((input && input.brake) || 0), 0, 1);
+  let throttle = clamp(+((input && input.throttle) || 0), 0, 1);
+  let brake = clamp(+((input && input.brake) || 0), 0, 1);
   if (car.physics.prevDriveSlip == null) car.physics.prevDriveSlip = 0;
   const slipInfo = { driveSlip: car.physics.prevDriveSlip || 0 };
 
-    // Reverse mode: if near stopped and braking, allow controlled reverse torque
-    let reversing = false;
-    const reverseEntrySpeed = P.reverseEntrySpeed != null ? P.reverseEntrySpeed : 40;
-    const reverseTorqueScale = P.reverseTorqueScale != null ? P.reverseTorqueScale : 0.60;
-    const almostStopped = speedWorld < reverseEntrySpeed;
-    if (almostStopped && brake && !throttle && reverseTorqueScale > 0 && reverseEntrySpeed > 0){
-      reversing = true;
-    }
+  const throttlePressedGlobal = throttle > 0.05;
+  const brakePressedGlobal = brake > 0.05;
   const vForward = vx / Math.max(1e-3, ppm); // m/s forward velocity (body X projected)
-  const gb = car.gearbox instanceof Gearbox ? car.gearbox : null;
   let gbState = null;
   if (gb) {
-    gbState = gb.step(dt, reversing ? 0 : vForward, reversing ? 0 : throttle, slipInfo);
+    if (gb.c.auto) {
+      const throttlePressed = throttlePressedGlobal;
+      const brakePressed = brakePressedGlobal;
+      const speedMag = Math.hypot(car.physics.vx, car.physics.vy);
+      const forwardSpeed = vx;
+
+      if (brakePressed && !throttlePressed) {
+        if (gb.gearIndex > -1 && Math.abs(forwardSpeed) < 35 && speedMag < 45) {
+          if (gb.gearIndex > 0) gb.shiftDown();
+          if (gb.gearIndex > -1) gb.shiftDown();
+        }
+      } else if (throttlePressed) {
+        if (gb.gearIndex <= 0 && Math.abs(forwardSpeed) < 35 && speedMag < 45) {
+          while (gb.gearIndex < 1) gb.shiftUp();
+        }
+      }
+
+      if (gb.gearIndex === 1 && throttlePressed && forwardSpeed < -12) {
+        brake = Math.max(brake, Math.min(1, Math.abs(forwardSpeed) / 60));
+        throttle = 0;
+      }
+      if (gb.gearIndex === -1 && throttlePressed && forwardSpeed > 12) {
+        brake = Math.max(brake, Math.min(1, forwardSpeed / 60));
+        throttle = 0;
+      }
+
+      if (gb.gearIndex === -1) {
+        if (brakePressed && !throttlePressed) {
+          throttle = brake;
+          brake = 0;
+        }
+      } else if (gb.gearIndex >= 1) {
+        if (throttlePressed && forwardSpeed < -12) {
+          const ramp = Math.min(1, Math.abs(forwardSpeed) / 60);
+          brake = Math.max(brake, ramp);
+          throttle = 0;
+        }
+      }
+    }
+
+    // --- universal anti-reverse assist (runs for auto & manual) ---
+    const throttlePressed = throttle > 0.05;
+    const forwardSpeed = vxBody;
+    if (gb.gearIndex >= 1 && throttlePressed && fwd < 0 && forwardSpeed < -12) {
+      const ramp = Math.min(1, Math.abs(forwardSpeed) / 60);
+      brake = Math.max(brake, ramp);
+      throttle = 0;
+    }
+    if (gb.gearIndex === -1 && throttlePressed && fwd > 0 && forwardSpeed > 12) {
+      const ramp = Math.min(1, forwardSpeed / 60);
+      brake = Math.max(brake, ramp);
+      throttle = 0;
+    }
+    // --------------------------------------------------------------
+    gbState = gb.step(dt, vForward, throttle, slipInfo);
+  }
+  if (gbState) {
+    reversing = reversing || gbState.isReverse;
   }
   let Fx_drive;
   let gbForceScale = 1;
-  if (reversing) {
-    Fx_drive = -P.engineForce * reverseTorqueScale;
-  } else if (gbState) {
-    const norm = Math.max(1e-4, gbState.forceNorm || (gb && gb._lastForceNorm) || 1);
-    gbForceScale = P.engineForce / norm;
-    Fx_drive = gbState.requestedForce * gbForceScale;
+  if (gbState) {
+    if (!gbState.isNeutral) {
+      const norm = Math.max(1e-4, gbState.forceNorm || (gb && gb._lastForceNorm) || 1);
+      gbForceScale = P.engineForce / norm;
+      Fx_drive = gbState.requestedForce * gbForceScale;
+      const reverseCap = -Math.abs(P.engineForce) * 0.55;
+      const forwardCap = Math.abs(P.engineForce) * 1.2;
+      Fx_drive = clamp(Fx_drive, reverseCap, forwardCap);
+      if (gbState.isReverse) {
+        Fx_drive = Math.max(Fx_drive, reverseCap);
+      }
+    } else {
+      Fx_drive = 0;
+    }
   } else {
     Fx_drive = throttle * P.engineForce;
   }
-    let Fx_brake = reversing ? 0 : (brake * P.brakeForce * sign(vx));
+  if (!reversing && !throttlePressedGlobal && !brakePressedGlobal) {
+    Fx_drive -= clamp(Fx_drive, -P.engineForce * 0.18, P.engineForce * 0.18);
+  }
+    const brakeForceCmd = brake * P.brakeForce;
+    let Fx_brake = 0;
+    if (brakeForceCmd > 0) {
+      const velSign = (Math.abs(vxBody) > 2)
+        ? fwd
+        : ((Math.abs(vxBody) > 0.25) ? fwd : clamp(-vx / 0.25, -1, 1));
+      Fx_brake = brakeForceCmd * velSign;
+    }
     // Body X resistances (drag/roll) oppose motion
     const vmag = Math.max(eps, Math.hypot(vx, vy));
     const ux_bx = vx / vmag; // projection of velocity direction on body X
@@ -681,6 +767,10 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     car.physics.lastFzf = Fzf; car.physics.lastFzr = Fzr;
 
     // Now compute lateral forces with updated loads (mu load-sensitive per axle)
+    if (reversing) {
+      Cf *= 0.9;
+      Cr *= 0.9;
+    }
     let FyF_unc = tireLateralForce(muLatF, Fzf, Cf, slipF);
     FyR_unc = tireLateralForce(muLatR, Fzr, Cr, slipR);
 
@@ -692,7 +782,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     // Front combined-slip ellipse (trail-braking reduces lateral)
     const frontCircle = (P.frontCircle != null ? P.frontCircle : (P.rearCircle != null ? P.rearCircle : 0.5));
     const brakeFrontShare = (P.brakeFrontShare != null ? P.brakeFrontShare : 0.6);
-    const FxF_cmd = -brakeFrontShare * (brake * P.brakeForce) * sign(vxEff);
+    const FxF_cmd = -brakeFrontShare * (brake * P.brakeForce) * fwd;
     if (frontCircle > 0) {
       const uxF = (muLongEffF * Fzf > 1e-6) ? (FxF_cmd / (muLongEffF * Fzf)) : 0;
       const uyF = (muLatF * Fzf > 1e-6) ? (FyF_unc  / (muLatF * Fzf)) : 0;
@@ -713,8 +803,10 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       // Use wheel-originated longitudinal at rear contact for combined slip
       const brakeFrontShare = (P.brakeFrontShare != null ? P.brakeFrontShare : 0.6);
       const brakeRearShare = 1 - brakeFrontShare;
-      const FxR_cmd = Fx_drive - brakeRearShare * (brake * P.brakeForce) * sign(vx);
-      const uxR = (muLongEffR*Fzr>1e-6) ? (FxR_cmd / (muLongEffR * Fzr)) : 0;
+      const FxR_cmd_raw = Fx_drive - brakeRearShare * (brake * P.brakeForce) * (reversing ? -1 : fwd);
+      const Fr_cap = Math.max(1e-6, muLongEffR * Fzr);
+      const FxR_cmd = Math.max(-Fr_cap, Math.min(Fr_cap, FxR_cmd_raw));
+      const uxR = FxR_cmd / Fr_cap;
       const uy = (muLatR*Fzr>1e-6) ? (FyR_unc / (muLatR * Fzr)) : 0;
       lambda = Math.hypot(uxR, uy);
       if (lambda > 1) {
@@ -735,12 +827,14 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       FyR *= latScale;
     }
     const falloff= (P.longSlipFalloff != null ? P.longSlipFalloff : 0.80);
-    const Fx_trac = Fr_max * slipRatioResponse(s_eff, sPeak, falloff);
+    let Fx_trac = Fr_max * slipRatioResponse(s_eff, sPeak, falloff);
+    const FxCapAbs = Math.abs(P && typeof P.engineForce === 'number' ? P.engineForce : 500) * 1.6;
+    Fx_trac = clamp(Fx_trac, -FxCapAbs, FxCapAbs);
     if (gb) {
       const gbOut = gbState ? { ...gbState } : { rpm: gb.rpm|0, gear: gb.gear, requestedForce: Fx_drive, clutchLock: gb.clutchLock };
       gbOut.forceScale = gbForceScale;
       gbOut.requestedForceRaw = gbState ? gbState.requestedForce : Fx_drive;
-      gbOut.requestedForce = reversing ? Fx_drive : Fx_drive;
+      gbOut.requestedForce = Fx_drive;
       car.physics.lastGb = gbOut;
       gb.lastRequestedForce = Fx_drive;
       gb.lastForceScale = gbForceScale;
@@ -750,6 +844,8 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     car.physics.lastSlipReq = s_req;
     car.physics.prevDriveSlip = Math.max(0, Math.abs(s_req) - sPeak);
     let Fx_long = Fx_trac - F_drag - F_roll;
+    const FxLongCap = FxCapAbs * 1.1;
+    Fx_long = clamp(Fx_long, -FxLongCap, FxLongCap);
     const ax = Fx_long / mass;
     car.physics.lastAx = ax;
     car.physics._dbgFyR_avail = muLatR * Fzr;
@@ -776,9 +872,8 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
         planckBody.applyForce(scaleForce(rearWorld), planckBody.getWorldPoint(rearLocal));
         const resist = pl.Vec2((dragWorld.x + rollWorld.x) / ppm, (dragWorld.y + rollWorld.y) / ppm);
         planckBody.applyForce(resist, planckBody.getWorldCenter());
-        const yawDampK = (P.yawDampK!=null?P.yawDampK:0.12);
-        if (yawDampK) {
-          const torquePx = -yawDampK * car.physics.r * Izz;
+        if (yawDamp) {
+          const torquePx = -yawDamp * car.physics.r * Izz;
           planckBody.applyTorque(torquePx / (ppm * ppm));
         }
       }
@@ -789,16 +884,15 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     const dvy_dyn = (FyF * Math.cos(deltaEff) + FyR - vx * car.physics.r) / mass;
     let dr_dyn = (a * FyF * Math.cos(deltaEff) - b * FyR) / Izz;
     // Yaw damping
-    const yawDampK = (P.yawDampK!=null?P.yawDampK:0.12);
-    dr_dyn += -yawDampK * car.physics.r;
+    dr_dyn += -yawDamp * car.physics.r;
 
     // Kinematic fallback
     const vKineBlend = (P.vKineBlend!=null?P.vKineBlend:40);
     const speedBody2 = Math.hypot(vx, vy);
     let dvx_kine = 0, dvy_kine = 0, dr_kine = 0;
     if (vKineBlend > 0) {
-      dr_kine = (vxEff / L) * Math.tan(deltaEff);
-      dvy_kine = dr_kine * vxEff; // rotate forward velocity into lateral
+      dr_kine = (vxSigned / L) * Math.tan(deltaEff);
+      dvy_kine = dr_kine * vxSigned; // rotate forward velocity into lateral
     }
     let alphaBlend = 1;
     if (vKineBlend > 0) {
@@ -836,6 +930,81 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
   car.physics.lastLambda = car.physics._dbgLambda || 0;
   car.physics.lastReversing = reversing;
 
+    // Additional damping at very low speeds to prevent runaway spin/creep
+    const speedMag = Math.hypot(car.physics.vx, car.physics.vy);
+    const maxSpeedClamp = 520;
+    if (speedMag > maxSpeedClamp) {
+      const scale = maxSpeedClamp / speedMag;
+      car.physics.vx *= scale;
+      car.physics.vy *= scale;
+      car.vx = car.physics.vx;
+      car.vy = car.physics.vy;
+      if (usePlanck && car.physics.planckBody && typeof car.physics.planckBody.getLinearVelocity === 'function') {
+        const lv = car.physics.planckBody.getLinearVelocity();
+        if (lv && typeof lv === 'object' && typeof car.physics.planckBody.setLinearVelocity === 'function') {
+          lv.x *= scale;
+          lv.y *= scale;
+          car.physics.planckBody.setLinearVelocity(lv);
+        }
+      }
+    }
+    const angMax = 7.5;
+    if (Math.abs(car.physics.r) > angMax) {
+      car.physics.r = clamp(car.physics.r, -angMax, angMax);
+      if (usePlanck && car.physics.planckBody && typeof car.physics.planckBody.getAngularVelocity === 'function' && typeof car.physics.planckBody.setAngularVelocity === 'function') {
+        const omega = car.physics.planckBody.getAngularVelocity();
+        const clampedOmega = Math.max(-angMax, Math.min(angMax, omega));
+        car.physics.planckBody.setAngularVelocity(clampedOmega);
+      }
+    }
+    const lowInput = Math.abs(throttle) < 0.04 && brake < 0.04;
+    const neutralHold = gbState && gbState.isNeutral && speedMag < 10;
+    if (neutralHold) {
+      car.physics.vx = 0;
+      car.physics.vy = 0;
+      car.physics.r = 0;
+      car.vx = 0;
+      car.vy = 0;
+      if (usePlanck && car.physics.planckBody) {
+        if (typeof car.physics.planckBody.setLinearVelocity === "function") {
+          const pl = (typeof window !== "undefined" && window.planck) ? window.planck : null;
+          if (pl && typeof pl.Vec2 === "function") {
+            car.physics.planckBody.setLinearVelocity(pl.Vec2(0, 0));
+          } else if (typeof car.physics.planckBody.getLinearVelocity === "function") {
+            const lv = car.physics.planckBody.getLinearVelocity();
+            if (lv && typeof lv === "object" && "x" in lv && "y" in lv) {
+              lv.x = 0;
+              lv.y = 0;
+              car.physics.planckBody.setLinearVelocity(lv);
+            }
+          }
+        }
+        if (typeof car.physics.planckBody.setAngularVelocity === "function") {
+          car.physics.planckBody.setAngularVelocity(0);
+        }
+      }
+    } else if (speedMag < 35 && lowInput) {
+      const linDamp = Math.exp(-dt * 18);
+      const angDamp = Math.exp(-dt * 22);
+      car.physics.vx *= linDamp;
+      car.physics.vy *= linDamp;
+      car.physics.r *= angDamp;
+      const body = car.physics.planckBody;
+      if (usePlanck && body) {
+        if (typeof body.getLinearVelocity === 'function' && typeof body.setLinearVelocity === 'function') {
+          const lv = body.getLinearVelocity();
+          if (lv && typeof lv === 'object') {
+            lv.x *= linDamp;
+            lv.y *= linDamp;
+            body.setLinearVelocity(lv);
+          }
+        }
+        if (typeof body.getAngularVelocity === 'function' && typeof body.setAngularVelocity === 'function') {
+          body.setAngularVelocity(body.getAngularVelocity() * angDamp);
+        }
+      }
+    }
+
     // Derived properties for compatibility
     car.speed = Math.hypot(car.physics.vx, car.physics.vy);
     car.sfxThrottle = throttle;
@@ -845,9 +1014,11 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     car.sfxGrass = !onRoad;
 
     // Skid intensity from combined slip
-    const skidLat = Math.max(0, Math.min(1, (Math.abs(slipF) + Math.abs(slipR)) / (2*0.35)));
-  const driveSlip = Math.max(0, Math.min(1, Math.abs(Fx_long) / Math.max(1, muLong * Fzr) - 0.85));
-    const skid = clamp(0.5*skidLat + 0.5*driveSlip, 0, 1);
+    const skidLatRaw = Math.max(0, Math.min(1, (Math.abs(slipF) + Math.abs(slipR)) / (2*0.35)));
+    const driveSlipRaw = Math.max(0, Math.min(1, Math.abs(Fx_long) / Math.max(1, muLong * Fzr) - 0.85));
+    const skidSpeedThreshold = (P.skidSpeedThreshold != null ? P.skidSpeedThreshold : 120);
+    const skidEligible = (fwd > 0) && vxAbs > 60 && car.speed > skidSpeedThreshold; // suppress low-speed or backward skids
+    const skid = skidEligible ? clamp(0.5*skidLatRaw + 0.5*driveSlipRaw, 0, 1) : 0;
     car.physics.skid = skid;
     car.sfxSlip = (car.sfxSlip||0) * 0.85 + skid * 0.15;
 
@@ -862,7 +1033,8 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       slipF, slipR,
       speed: car.speed,
       fwd,
-      reversing
+      reversing,
+      skidEligible
     };
   }
 
@@ -1157,7 +1329,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
             body.setLinearDamping(p.linearDamp ?? 0);
             body.setAngularDamping(p.angularDamp ?? 0);
             for (let fix = body.getFixtureList(); fix; fix = fix.getNext()) {
-              fix.setFriction(0);
+              fix.setFriction(p.contactFriction != null ? p.contactFriction : 0.45);
               fix.setRestitution(p.restitution ?? planckState.restitution);
             }
           } catch(_){/* ignore */}
@@ -1220,3 +1392,20 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
   };
   window.RacerPhysics = API;
 })();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
