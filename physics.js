@@ -199,6 +199,210 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     return mass * (length*length + width*width) / 12;
   }
 
+  // -- Reverse stability knobs (single source of truth) --
+  const REVERSE_CFG_DEFAULTS = {
+    vxHyst: 18,   // hysteresis band (px/s) for forward/backward direction
+    steerScale: 0.55, // steering scale when reversing (0.3..1.0)
+    yawMul: 1.30  // yaw damping multiplier when reversing (1.0..2.0)
+  };
+  let REVERSE_CFG = { ...REVERSE_CFG_DEFAULTS };
+
+  function loadReverseCfg(){
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const j = JSON.parse(localStorage.getItem('RacingVibesReverseCfg.json') || '{}');
+      REVERSE_CFG = { ...REVERSE_CFG, ...j };
+    } catch(_){}
+  }
+  function saveReverseCfg(){
+    try {
+      if (typeof localStorage === 'undefined') return;
+      localStorage.setItem('RacingVibesReverseCfg.json', JSON.stringify(REVERSE_CFG));
+    } catch(_){}
+  }
+  loadReverseCfg();
+  // -------------------------------------------------------------
+
+  const DEVTOOLS_SAVE_KEY = 'RacingVibesSavedDevTools.json';
+  let DEVTOOLS_SAVED = {};
+  function loadDevtoolsSaved(){
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const raw = localStorage.getItem(DEVTOOLS_SAVE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          DEVTOOLS_SAVED = parsed;
+        }
+      }
+    } catch(_){}
+  }
+  function saveDevtoolsSaved(){
+    try {
+      if (typeof localStorage === 'undefined') return;
+      localStorage.setItem(DEVTOOLS_SAVE_KEY, JSON.stringify(DEVTOOLS_SAVED));
+    } catch(_){}
+  }
+  loadDevtoolsSaved();
+
+  async function ensureStoragePersistence(){
+    try {
+      if (typeof navigator === 'undefined' || !navigator.storage || !navigator.storage.persist) return;
+      const already = await navigator.storage.persisted();
+      if (!already) await navigator.storage.persist();
+    } catch(_){/* ignore */}
+  }
+  ensureStoragePersistence();
+
+
+  const PRESET_DB_NAME = 'RacingVibesDevPresets';
+  const PRESET_DB_STORE = 'presets';
+  const PRESET_FALLBACK_KEY = 'RacingVibesDevPresetsFallback';
+  let presetDBPromise = null;
+
+  function loadPresetFallbackMap(){
+    try {
+      const raw = localStorage.getItem(PRESET_FALLBACK_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch(_){/* ignore */}
+    return {};
+  }
+
+  function savePresetFallbackMap(map){
+    try {
+      localStorage.setItem(PRESET_FALLBACK_KEY, JSON.stringify(map));
+    } catch(_){/* ignore */}
+  }
+
+  function hasIndexedDB(){
+    try {
+      return typeof indexedDB !== 'undefined';
+    } catch(_){
+      return false;
+    }
+  }
+
+  function openPresetDB(){
+    if (!hasIndexedDB()) return Promise.resolve(null);
+    if (presetDBPromise) return presetDBPromise;
+    presetDBPromise = new Promise((resolve, reject) => {
+      const request = indexedDB.open(PRESET_DB_NAME, 1);
+      request.onerror = () => reject(request.error || new Error('Preset DB open failed'));
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(PRESET_DB_STORE)) {
+          db.createObjectStore(PRESET_DB_STORE, { keyPath: 'name' });
+        }
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        db.onversionchange = () => db.close();
+        resolve(db);
+      };
+    }).catch((err) => {
+      console.warn('[DevTools] Unable to open preset storage', err);
+      presetDBPromise = null;
+      return null;
+    });
+    return presetDBPromise;
+  }
+
+  async function listPresetEntries(){
+    try {
+      const db = await openPresetDB();
+      if (!db) {
+        const map = loadPresetFallbackMap();
+        const arr = Object.values(map);
+        arr.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+        return arr;
+      }
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(PRESET_DB_STORE, 'readonly');
+        const store = tx.objectStore(PRESET_DB_STORE);
+        const request = store.getAll();
+        request.onsuccess = () => {
+          const arr = Array.isArray(request.result) ? request.result : [];
+          arr.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+          resolve(arr);
+        };
+        request.onerror = () => reject(request.error || new Error('Preset getAll failed'));
+        tx.onerror = () => reject(tx.error || new Error('Preset transaction failed'));
+      });
+    } catch (err) {
+      console.warn('[DevTools] Failed to read presets', err);
+      const map = loadPresetFallbackMap();
+      return Object.values(map);
+    }
+  }
+
+  async function savePresetRecord(entry){
+    try {
+      const db = await openPresetDB();
+      entry.updatedAt = Date.now();
+      if (!db) {
+        const map = loadPresetFallbackMap();
+        map[entry.name] = entry;
+        savePresetFallbackMap(map);
+        return entry;
+      }
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(PRESET_DB_STORE, 'readwrite');
+        tx.objectStore(PRESET_DB_STORE).put(entry);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error('Preset save failed'));
+        tx.onabort = () => reject(tx.error || new Error('Preset save aborted'));
+      });
+      return entry;
+    } catch (err) {
+      console.error('[DevTools] Failed to save preset', err);
+      const map = loadPresetFallbackMap();
+      map[entry.name] = entry;
+      savePresetFallbackMap(map);
+      return entry;
+    }
+  }
+
+  async function deletePresetRecord(name){
+    try {
+      const db = await openPresetDB();
+      if (!db) {
+        const map = loadPresetFallbackMap();
+        if (map[name]) {
+          delete map[name];
+          savePresetFallbackMap(map);
+        }
+        return;
+      }
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(PRESET_DB_STORE, 'readwrite');
+        tx.objectStore(PRESET_DB_STORE).delete(name);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error('Preset delete failed'));
+        tx.onabort = () => reject(tx.error || new Error('Preset delete aborted'));
+      });
+    } catch (err) {
+      console.error('[DevTools] Failed to delete preset', err);
+      const map = loadPresetFallbackMap();
+      if (map[name]) {
+        delete map[name];
+        savePresetFallbackMap(map);
+      }
+    }
+  }
+
+  let DEVTOOLS_PRESETS = {};
+  async function loadDevtoolsPresets(){
+    const entries = await listPresetEntries();
+    DEVTOOLS_PRESETS = {};
+    for (const entry of entries) {
+      if (entry && entry.name) DEVTOOLS_PRESETS[entry.name] = entry;
+    }
+    return DEVTOOLS_PRESETS;
+  }
+  loadDevtoolsPresets().catch(()=>{});
+
   function worldToBody(vx, vy, angle){
     const c=Math.cos(angle), s=Math.sin(angle);
     return { x:  c*vx + s*vy, y: -s*vx + c*vy };
@@ -538,7 +742,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     let vx = vb.x, vy = vb.y;
     const vxBody = vx;
     const gb = car.gearbox instanceof Gearbox ? car.gearbox : null;
-    const VX_HYST = 18; // px/s hysteresis for forward/backward direction
+    const VX_HYST = REVERSE_CFG.vxHyst;
     let dir = (car.physics.dir == null ? 1 : car.physics.dir);
     if (vxBody > VX_HYST) dir = 1;
     else if (vxBody < -VX_HYST) dir = -1;
@@ -548,7 +752,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     const vxSigned = vxAbs * fwd;
     let reversing = (gb && gb.gearIndex === -1) || (fwd < 0);
     let yawDamp = (P.yawDampK != null ? P.yawDampK : 0.12);
-    if (reversing) yawDamp *= 1.3;
+    if (reversing) yawDamp *= REVERSE_CFG.yawMul;
 
     // Steering mode and filtered speed for adaptive touch steering
     const steeringMode = (car && car.steeringMode === 'touch') ? 'touch' : 'manual';
@@ -598,7 +802,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       car.physics.steer = clamp(car.physics.steer, -steerMax, steerMax);
     }
     let steerEff = car.physics.steer;
-    if (reversing) steerEff *= 0.5;
+    if (reversing) steerEff *= REVERSE_CFG.steerScale;
     const delta = steerEff;
     const deltaEff = delta; // body-frame wheel angle; reverse handled in slipF
     car.steerVis = (car.steerVis==null?0:car.steerVis) + (steerNormTarget - (car.steerVis||0))*Math.min(1, dt*10);
@@ -632,11 +836,23 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
   const eps = 0.001;
   const vyFront = vy + a * car.physics.r;
   const vyRear  = vy - b * car.physics.r;
+  // IMPORTANT: Reverse is handled by fwd*delta in slipF. Do NOT also flip vy or multiply delta again elsewhere.
   let slipF = Math.atan2(vyFront, vxAbs) - fwd * delta;
   let slipR = Math.atan2(vyRear, vxAbs);
   const slipLimit = 0.7; // cap extreme slip angles to avoid runaway forces at very low speed
   slipF = clamp(slipF, -slipLimit, slipLimit);
   slipR = clamp(slipR, -slipLimit, slipLimit);
+  const devReverseCheckEnabled = ((typeof window !== 'undefined' && window.__DEV__) || (typeof DEBUG !== 'undefined' && DEBUG));
+  if (devReverseCheckEnabled) {
+    if (Math.abs(vxBody) < 1 && Math.abs(delta) > 0.02) {
+      const expected = Math.sign(-fwd * delta) || 0;
+      const got = Math.sign(slipF) || 0;
+      if (expected && got && expected !== got) {
+        console.warn('[ReverseCheck] Slip sign mismatch near vx≈0', { vxBody, fwd, delta, slipF });
+      }
+    }
+    
+  }
 
   // Lateral forces will be computed after load transfer adjustments
   let FyF = 0;
@@ -1083,19 +1299,31 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     ctx.restore();
   }
   // Dev tools UI
-  function injectDevTools(getCars){
+  async function injectDevTools(getCars){
     if (document.getElementById('rv-devtools')) return; // once
     const style = document.createElement('style');
     style.textContent = `
     .rv-devtools{position:fixed;top:12px;left:12px;z-index:40;font:12px system-ui;}
     .rv-devtools .toggle{appearance:none;border:1px solid #334; background:#0b1322; color:#e6eef6; padding:8px 10px; border-radius:8px; cursor:pointer;}
-    .rv-panel{display:none; margin-top:8px; padding:10px; border:1px solid #334; background:#0e1729ee; color:#e6eef6; border-radius:10px; min-width:280px; max-width:340px; box-shadow:0 8px 24px rgba(0,0,0,.5)}
+    .rv-panel{display:none; margin-top:8px; padding:10px; border:1px solid #334; background:#0e1729ee; color:#e6eef6; border-radius:10px; min-width:280px; max-width:340px; box-shadow:0 8px 24px rgba(0,0,0,.5); max-height:80vh; overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; -webkit-overflow-scrolling:touch}
     .rv-panel.open{display:block;}
     .rv-row{display:flex; align-items:center; gap:8px; margin:6px 0}
     .rv-row label{width:120px; opacity:.9}
     .rv-row input[type=range]{flex:1}
     .rv-row input[type=number]{width:80px;background:#0b1322;color:#e6eef6;border:1px solid #334;border-radius:6px;padding:4px}
     .rv-row .val{width:40px; text-align:right; opacity:.8}
+    .rv-row .rv-btns{display:flex;flex-direction:column;gap:4px}
+    .rv-row .rv-mini{appearance:none;border:1px solid #334;background:#18253c;color:#e6eef6;font-size:11px;padding:2px 6px;border-radius:4px;cursor:pointer}
+    .rv-row .rv-mini:hover{background:#223454}
+    .rv-row.preset-row{justify-content:space-between;align-items:flex-start}
+    .rv-row.preset-row .rv-mini{font-size:12px;padding:6px 10px}
+    .rv-preset-chooser{position:relative;flex:1;display:flex;flex-direction:column;gap:4px}
+    .rv-preset-chooser .toggle{width:100%}
+    .rv-preset-menu{position:absolute;top:100%;left:0;right:0;background:#0b1322;border:1px solid #334;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.45);margin-top:4px;max-height:240px;overflow-y:auto;display:none;z-index:60}
+    .rv-preset-menu.open{display:block}
+    .rv-preset-menu button{width:100%;text-align:left;padding:6px 10px;border:none;background:transparent;color:#e6eef6;font-size:12px;cursor:pointer}
+    .rv-preset-menu button:hover{background:#1a2640}
+    .rv-preset-menu .rv-empty{padding:8px 10px;font-size:12px;opacity:.75}
     .rv-row .small{opacity:.75;font-size:11px}
     `;
     document.head.appendChild(style);
@@ -1138,6 +1366,9 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       rebuildWorld: "Rebuild the Planck physics world/bodies with current settings.",
       resetDefaults: "Reset this vehicle’s sliders to default values."
     };
+    DESCRIPTIONS.vxHyst = "Hysteresis around 0 px/s before direction flips (prevents sign flapping).";
+    DESCRIPTIONS.reverseSteer = "Steering scale when reversing (lower = calmer).";
+    DESCRIPTIONS.yawReverseMul = "Yaw damping multiplier when reversing.";
 
     const escapeAttr = (value) => String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
     const tipAttr = (key) => {
@@ -1151,6 +1382,13 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     wrap.innerHTML = `
       <button class="toggle">Dev tools ▾</button>
       <div class="rv-panel" role="dialog" aria-label="Dev tools">
+        <div class="rv-row preset-row">
+          <button id="rv-preset-save" class="rv-mini">Save Preset</button>
+          <div class="rv-preset-chooser">
+            <button id="rv-preset-load" class="rv-mini toggle">Choose Preset ▾</button>
+            <div id="rv-preset-menu" class="rv-preset-menu"></div>
+          </div>
+        </div>
         <div class="rv-row"><label for="rv-kind"><span class="rv-name"${tipAttr('vehicle')}>Vehicle</span></label>
           <select id="rv-kind">
             <option>F1</option><option selected>GT</option><option>Rally</option><option>Truck</option>
@@ -1187,6 +1425,18 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
         <div class="rv-row"><label for="rv-vkine"><span class="rv-name"${tipAttr('vKineBlend')}>vKineBlend</span></label><input id="rv-vkine" type="range" min="0.0" max="5.0" step="0.1"><div class="val" id="rv-vkine-v"></div></div>
         <div class="rv-row"><label for="rv-cgh"><span class="rv-name"${tipAttr('cgHeight')}>cgHeight</span></label><input id="rv-cgh" type="range" min="0" max="14" step="1"><div class="val" id="rv-cgh-v"></div></div>
         <div class="rv-row"><label for="rv-yawd"><span class="rv-name"${tipAttr('yawDampK')}>Yaw damp</span></label><input id="rv-yawd" type="range" min="0" max="0.30" step="0.02"><div class="val" id="rv-yawd-v"></div></div>
+        <div class="rv-row">
+          <label for="rv-vxhyst" title="Hysteresis band around 0 px/s before direction flips">VX hysteresis</label>
+          <input id="rv-vxhyst" type="range" min="6" max="40" step="1"><div class="val" id="rv-vxhyst-v"></div>
+        </div>
+        <div class="rv-row">
+          <label for="rv-rsteer" title="Steering scale when reversing (lower = calmer)">Reverse steer</label>
+          <input id="rv-rsteer" type="range" min="0.30" max="1.00" step="0.01"><div class="val" id="rv-rsteer-v"></div>
+        </div>
+        <div class="rv-row">
+          <label for="rv-yawmul" title="Yaw damping multiplier when reversing">Yaw reverse×</label>
+          <input id="rv-yawmul" type="range" min="1.00" max="2.00" step="0.05"><div class="val" id="rv-yawmul-v"></div>
+        </div>
         <div class="rv-row"><label for="rv-reventry"><span class="rv-name"${tipAttr('reverseEntry')}>Reverse entry</span></label><input id="rv-reventry" type="range" min="0" max="120" step="5"><div class="val" id="rv-reventry-v"></div></div>
         <div class="rv-row"><label for="rv-revtorque"><span class="rv-name"${tipAttr('reverseTorque')}>Reverse torque</span></label><input id="rv-revtorque" type="range" min="0.30" max="1.00" step="0.05"><div class="val" id="rv-revtorque-v"></div></div>
         <div class="rv-row"><button id="rv-planck-rebuild"${tipAttr('rebuildWorld')}>Rebuild physics world</button></div>
@@ -1232,10 +1482,342 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
   cgh: wrap.querySelector('#rv-cgh'), cghV: wrap.querySelector('#rv-cgh-v'),
   yawd: wrap.querySelector('#rv-yawd'), yawdV: wrap.querySelector('#rv-yawd-v'),
   reventry: wrap.querySelector('#rv-reventry'), reventryV: wrap.querySelector('#rv-reventry-v'),
-  revtorque: wrap.querySelector('#rv-revtorque'), revtorqueV: wrap.querySelector('#rv-revtorque-v'),
+      revtorque: wrap.querySelector('#rv-revtorque'), revtorqueV: wrap.querySelector('#rv-revtorque-v'),
       planckRebuild: wrap.querySelector('#rv-planck-rebuild'),
       reset: wrap.querySelector('#rv-reset')
     };
+
+    const vxh = document.getElementById('rv-vxhyst');
+    const rsteer = document.getElementById('rv-rsteer');
+    const yawm = document.getElementById('rv-yawmul');
+    const vxhv = document.getElementById('rv-vxhyst-v');
+    const rsteerv = document.getElementById('rv-rsteer-v');
+    const yawmv = document.getElementById('rv-yawmul-v');
+
+    const syncReverseUI = () => {
+      if (!vxh || !rsteer || !yawm) return;
+      vxh.value = REVERSE_CFG.vxHyst;
+      rsteer.value = REVERSE_CFG.steerScale;
+      yawm.value = REVERSE_CFG.yawMul;
+      if (vxhv) vxhv.textContent = String(REVERSE_CFG.vxHyst);
+      if (rsteerv) rsteerv.textContent = REVERSE_CFG.steerScale.toFixed(2);
+      if (yawmv) yawmv.textContent = REVERSE_CFG.yawMul.toFixed(2);
+    };
+    
+
+    const onReverseInput = () => {
+      if (!vxh || !rsteer || !yawm) return;
+      REVERSE_CFG.vxHyst = Math.round(Number(vxh.value));
+      REVERSE_CFG.steerScale = Math.max(0.3, Math.min(1.0, Number(rsteer.value)));
+      REVERSE_CFG.yawMul = Math.max(1.0, Math.min(2.0, Number(yawm.value)));
+      saveReverseCfg();
+      syncReverseUI();
+    };
+    if (vxh) vxh.addEventListener('input', onReverseInput);
+    if (rsteer) rsteer.addEventListener('input', onReverseInput);
+    if (yawm) yawm.addEventListener('input', onReverseInput);
+    if (toggle) toggle.addEventListener('click', syncReverseUI);
+    const fmtInt = (v) => String(Math.round(Number(v)));
+    const fmtTwo = (v) => (+v).toFixed(2);
+    const fmtOne = (v) => (+v).toFixed(1);
+    const fmtFour = (v) => (+v).toFixed(4);
+    const fmtFive = (v) => (+v).toFixed(5);
+
+    const controlHandlers = {};
+    const CONTROL_META = {};
+
+    function attachControlButtons(input, id){
+      if (!input) return;
+      const row = input.closest('.rv-row');
+      if (!row) return;
+      if (row.querySelector(`.rv-btns[data-for="${id}"]`)) return;
+      const btns = document.createElement('div');
+      btns.className = 'rv-btns';
+      btns.dataset.for = id;
+      const saveBtn = document.createElement('button');
+      saveBtn.type = 'button';
+      saveBtn.className = 'rv-mini';
+      saveBtn.textContent = 'Save';
+      const defaultBtn = document.createElement('button');
+      defaultBtn.type = 'button';
+      defaultBtn.className = 'rv-mini';
+      defaultBtn.textContent = 'Default';
+      btns.append(saveBtn, defaultBtn);
+      row.appendChild(btns);
+      saveBtn.addEventListener('click', () => handleSave(id));
+      defaultBtn.addEventListener('click', () => handleDefault(id));
+    }
+
+    function handleSave(id){
+      const handler = controlHandlers[id];
+      if (!handler) return;
+      const meta = CONTROL_META[id] || {};
+      const value = handler.get();
+      if (meta.skipStorage) {
+        if (typeof meta.onSave === 'function') meta.onSave(value);
+        return;
+      }
+      DEVTOOLS_SAVED[id] = value;
+      saveDevtoolsSaved();
+      if (typeof meta.onSave === 'function') meta.onSave(value);
+    }
+
+    function handleDefault(id){
+      const handler = controlHandlers[id];
+      if (!handler) return;
+      const meta = CONTROL_META[id] || {};
+      if (meta.skipStorage) {
+        if (typeof meta.getDefault === 'function') {
+          const val = meta.getDefault();
+          if (val != null) handler.set(val);
+        }
+        if (typeof meta.onDefault === 'function') meta.onDefault(handler.get());
+        return;
+      }
+      const kind = els.kind.value;
+      const defaultVal = typeof handler.getDefault === 'function' ? handler.getDefault(kind) : undefined;
+      if (defaultVal == null) return;
+      handler.set(defaultVal);
+      delete DEVTOOLS_SAVED[id];
+      saveDevtoolsSaved();
+      if (typeof meta.onDefault === 'function') meta.onDefault(defaultVal);
+      if (typeof handler.applyChange === 'function') handler.applyChange();
+    }
+
+    function registerControl(id, meta){
+      const input = document.getElementById(id);
+      if (!input) return;
+      CONTROL_META[id] = meta || {};
+      const effectiveMeta = CONTROL_META[id];
+      const valueEl = effectiveMeta.valueEl || document.getElementById(`${id}-v`);
+      const type = effectiveMeta.type || input.type || 'range';
+      const parser = effectiveMeta.parse || ((value) => Number(value));
+      const formatter = effectiveMeta.format || ((value) => {
+        if (type === 'checkbox') return value ? 'On' : 'Off';
+        if (typeof value === 'number') {
+          if (Number.isInteger(value)) return String(value);
+          return value.toFixed(2);
+        }
+        return String(value);
+      });
+      controlHandlers[id] = {
+        get: () => {
+          if (type === 'checkbox') return !!input.checked;
+          if (type === 'number' || type === 'range') return parser(input.value);
+          return input.value;
+        },
+        set: (value) => {
+          if (type === 'checkbox') {
+            input.checked = !!value;
+          } else {
+            input.value = `${value}`;
+          }
+          if (valueEl) valueEl.textContent = formatter(value);
+          if (typeof effectiveMeta.afterSet === 'function') effectiveMeta.afterSet(value);
+        },
+        getDefault: effectiveMeta.getDefault,
+        applyChange: effectiveMeta.apply === false
+          ? (typeof effectiveMeta.onApply === 'function' ? effectiveMeta.onApply : undefined)
+          : (() => apply())
+      };
+      attachControlButtons(input, id);
+    }
+
+    function applySavedControlValues(){
+      for (const [id, handler] of Object.entries(controlHandlers)) {
+        const meta = CONTROL_META[id] || {};
+        if (meta.skipStorage) continue;
+        if (!Object.prototype.hasOwnProperty.call(DEVTOOLS_SAVED, id)) continue;
+        handler.set(DEVTOOLS_SAVED[id]);
+      }
+    }
+
+    const vehicleDefault = (prop, fallback) => (kind) => {
+      const defaults = defaultSnapshot[kind] || {};
+      let val = defaults[prop];
+      if ((val === undefined || val === null) && fallback !== undefined) {
+        val = typeof fallback === 'function' ? fallback(defaults) : fallback;
+      }
+      return val;
+    };
+
+    const CONTROL_SETUP = [
+      ['rv-debug', { kind: 'global', type: 'checkbox', getDefault: () => false, apply: false, afterSet: () => setDebugEnabled(!!els.debug.checked) }],
+      ['rv-planck', { kind: 'vehicle', type: 'checkbox', getDefault: (kind) => {
+        const defaults = defaultSnapshot[kind] || {};
+        return defaults.usePlanck !== false;
+      }}],
+      ['rv-apply-ai', { kind: 'global', type: 'checkbox', getDefault: () => false, apply: false }],
+      ['rv-ppm', { kind: 'vehicle', type: 'number', format: fmtInt, getDefault: (kind) => {
+        const defaults = defaultSnapshot[kind] || {};
+        return defaults.pixelsPerMeter != null ? defaults.pixelsPerMeter : PLANCK_DEFAULTS.pixelsPerMeter;
+      }}],
+      ['rv-ldamp', { kind: 'vehicle', valueEl: els.ldampV, format: fmtTwo, getDefault: vehicleDefault('linearDamp', 0) }],
+      ['rv-adamp', { kind: 'vehicle', valueEl: els.adampV, format: fmtTwo, getDefault: vehicleDefault('angularDamp', 0) }],
+      ['rv-rest', { kind: 'vehicle', valueEl: els.restV, format: fmtTwo, getDefault: vehicleDefault('restitution', 0) }],
+      ['rv-veliters', { kind: 'vehicle', type: 'number', parse: (v) => parseInt(v, 10) || 0, format: fmtInt, getDefault: vehicleDefault('velIters', PLANCK_DEFAULTS.velIters) }],
+      ['rv-positers', { kind: 'vehicle', type: 'number', parse: (v) => parseInt(v, 10) || 0, format: fmtInt, getDefault: vehicleDefault('posIters', PLANCK_DEFAULTS.posIters) }],
+      ['rv-mass', { kind: 'vehicle', valueEl: els.massV, format: fmtTwo, getDefault: vehicleDefault('mass') }],
+      ['rv-eng', { kind: 'vehicle', valueEl: els.engV, format: fmtInt, getDefault: vehicleDefault('engineForce') }],
+      ['rv-brk', { kind: 'vehicle', valueEl: els.brkV, format: fmtInt, getDefault: vehicleDefault('brakeForce') }],
+      ['rv-steer', { kind: 'vehicle', valueEl: els.steerV, format: fmtTwo, getDefault: vehicleDefault('maxSteer') }],
+      ['rv-steers', { kind: 'vehicle', valueEl: els.steersV, format: fmtOne, getDefault: vehicleDefault('steerSpeed') }],
+      ['rv-mulr', { kind: 'vehicle', valueEl: els.mulrV, format: fmtTwo, getDefault: vehicleDefault('muLatRoad') }],
+      ['rv-muor', { kind: 'vehicle', valueEl: els.muorV, format: fmtTwo, getDefault: vehicleDefault('muLongRoad') }],
+      ['rv-mulg', { kind: 'vehicle', valueEl: els.mulgV, format: fmtTwo, getDefault: vehicleDefault('muLatGrass') }],
+      ['rv-muog', { kind: 'vehicle', valueEl: els.muogV, format: fmtTwo, getDefault: vehicleDefault('muLongGrass') }],
+      ['rv-drag', { kind: 'vehicle', valueEl: els.dragV, format: fmtFour, getDefault: vehicleDefault('dragK') }],
+      ['rv-roll', { kind: 'vehicle', valueEl: els.rollV, format: fmtTwo, getDefault: vehicleDefault('rollK') }],
+      ['rv-rearc', { kind: 'vehicle', valueEl: els.rearcV, format: fmtTwo, getDefault: vehicleDefault('rearCircle', 0.50) }],
+      ['rv-frontc', { kind: 'vehicle', valueEl: els.frontcV, format: fmtTwo, getDefault: vehicleDefault('frontCircle', 0.50) }],
+      ['rv-brkfs', { kind: 'vehicle', valueEl: els.brkfsV, format: fmtTwo, getDefault: vehicleDefault('brakeFrontShare', 0.60) }],
+      ['rv-lspe', { kind: 'vehicle', valueEl: els.lspeV, format: fmtTwo, getDefault: vehicleDefault('longSlipPeak', 0.18) }],
+      ['rv-lsfo', { kind: 'vehicle', valueEl: els.lsfoV, format: fmtTwo, getDefault: vehicleDefault('longSlipFalloff', 0.80) }],
+      ['rv-llat', { kind: 'vehicle', valueEl: els.llatV, format: fmtTwo, getDefault: vehicleDefault('loadSenseK', 0.08) }],
+      ['rv-llong', { kind: 'vehicle', valueEl: els.llongV, format: fmtTwo, getDefault: vehicleDefault('muLongLoadSenseK', 0.04) }],
+      ['rv-df', { kind: 'vehicle', valueEl: els.dfV, format: fmtFive, getDefault: vehicleDefault('downforceK', 0.00025) }],
+      ['rv-vkine', { kind: 'vehicle', valueEl: els.vkineV, format: fmtInt, getDefault: vehicleDefault('vKineBlend', 40) }],
+      ['rv-cgh', { kind: 'vehicle', valueEl: els.cghV, format: fmtInt, getDefault: vehicleDefault('cgHeight', 8) }],
+      ['rv-yawd', { kind: 'vehicle', valueEl: els.yawdV, format: fmtTwo, getDefault: vehicleDefault('yawDampK', 0.12) }],
+      ['rv-reventry', { kind: 'vehicle', valueEl: els.reventryV, format: fmtInt, getDefault: vehicleDefault('reverseEntrySpeed', 40) }],
+      ['rv-revtorque', { kind: 'vehicle', valueEl: els.revtorqueV, format: fmtTwo, getDefault: vehicleDefault('reverseTorqueScale', 0.60) }],
+      ['rv-vxhyst', { kind: 'reverse', valueEl: vxhv, format: fmtInt, skipStorage: true, getDefault: () => REVERSE_CFG_DEFAULTS.vxHyst, afterSet: (value) => {
+        REVERSE_CFG.vxHyst = Math.round(Number(value));
+        saveReverseCfg();
+      }, onSave: () => {
+        saveReverseCfg();
+      }}],
+      ['rv-rsteer', { kind: 'reverse', valueEl: rsteerv, format: fmtTwo, skipStorage: true, getDefault: () => REVERSE_CFG_DEFAULTS.steerScale, afterSet: (value) => {
+        REVERSE_CFG.steerScale = Math.max(0.3, Math.min(1.0, Number(value)));
+        saveReverseCfg();
+      }, onSave: () => {
+        saveReverseCfg();
+      }}],
+      ['rv-yawmul', { kind: 'reverse', valueEl: yawmv, format: fmtTwo, skipStorage: true, getDefault: () => REVERSE_CFG_DEFAULTS.yawMul, afterSet: (value) => {
+        REVERSE_CFG.yawMul = Math.max(1.0, Math.min(2.0, Number(value)));
+        saveReverseCfg();
+      }, onSave: () => {
+        saveReverseCfg();
+      }}]
+    ];
+    CONTROL_SETUP.forEach(([id, meta]) => registerControl(id, meta));
+
+    const presetChooser = wrap.querySelector('.rv-preset-chooser');
+    const presetSaveBtn = document.getElementById('rv-preset-save');
+    const presetLoadBtn = document.getElementById('rv-preset-load');
+    const presetMenu = document.getElementById('rv-preset-menu');
+
+    const closePresetMenu = () => { if (presetMenu) presetMenu.classList.remove('open'); };
+    const gatherControlValues = () => {
+      const values = {};
+      for (const [id, handler] of Object.entries(controlHandlers)) {
+        values[id] = handler.get();
+      }
+      return values;
+    };
+
+    let refreshPresetMenu;
+    const applyPresetData = async (preset) => {
+      if (!preset) return;
+      closePresetMenu();
+      const { name, kind, values, reverse, savedValues } = preset;
+      if (kind) {
+        els.kind.value = kind;
+      }
+      refresh(els.kind.value);
+      DEVTOOLS_SAVED = savedValues ? { ...savedValues } : {};
+      saveDevtoolsSaved();
+      applySavedControlValues();
+      if (values) {
+        for (const [id, handler] of Object.entries(controlHandlers)) {
+          if (Object.prototype.hasOwnProperty.call(values, id)) {
+            handler.set(values[id]);
+          }
+        }
+      }
+      if (reverse) {
+        REVERSE_CFG = { ...REVERSE_CFG, ...reverse };
+        saveReverseCfg();
+        syncReverseUI();
+      } else {
+        syncReverseUI();
+      }
+      if (name) {
+        const existing = DEVTOOLS_PRESETS[name] || {};
+        DEVTOOLS_PRESETS[name] = { ...existing, ...preset, updatedAt: preset.updatedAt ?? existing.updatedAt ?? Date.now() };
+      }
+      apply();
+      if (refreshPresetMenu) await refreshPresetMenu();
+    };
+
+    refreshPresetMenu = async () => {
+      if (!presetMenu) return;
+      presetMenu.innerHTML = '';
+      await loadDevtoolsPresets();
+      const entries = Object.values(DEVTOOLS_PRESETS);
+      entries.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      if (!entries.length) {
+        const empty = document.createElement('div');
+        empty.className = 'rv-empty';
+        empty.textContent = 'No presets saved.';
+        presetMenu.appendChild(empty);
+        return;
+      }
+      for (const entry of entries) {
+        if (!entry || !entry.name) continue;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = entry.name;
+        btn.addEventListener('click', () => {
+          applyPresetData(entry);
+        });
+        presetMenu.appendChild(btn);
+      }
+    };
+
+    await refreshPresetMenu();
+
+    if (presetSaveBtn) {
+      presetSaveBtn.addEventListener('click', async () => {
+        const name = (window.prompt('Enter a name for this preset:') || '').trim();
+        if (!name) return;
+        if (DEVTOOLS_PRESETS[name] && !window.confirm(`Preset "${name}" exists. Overwrite?`)) return;
+        const presetData = {
+          name,
+          kind: els.kind.value,
+          values: gatherControlValues(),
+          reverse: { ...REVERSE_CFG },
+          savedValues: { ...DEVTOOLS_SAVED }
+        };
+        try {
+          const savedEntry = await savePresetRecord({ ...presetData });
+          DEVTOOLS_PRESETS[name] = savedEntry;
+          await refreshPresetMenu();
+          closePresetMenu();
+        } catch (err) {
+          console.error('[DevTools] Unable to save preset', err);
+          window.alert('Failed to save preset. See console for details.');
+        }
+      });
+    }
+
+    if (presetLoadBtn && presetMenu) {
+      presetLoadBtn.addEventListener('click', async () => {
+        if (presetMenu.classList.contains('open')) {
+          closePresetMenu();
+        } else {
+          await refreshPresetMenu();
+          presetMenu.classList.add('open');
+        }
+      });
+      document.addEventListener('click', (evt) => {
+        if (!presetMenu.classList.contains('open')) return;
+        if (!presetChooser || !presetChooser.contains(evt.target)) closePresetMenu();
+      });
+      document.addEventListener('keydown', (evt) => {
+        if (evt.key === 'Escape') closePresetMenu();
+      });
+    }
 
     function refresh(kind){
       const k = kind || els.kind.value;
@@ -1275,8 +1857,8 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
   els.vkine.value = (d.vKineBlend!=null?d.vKineBlend:40).toFixed(0); els.vkineV.textContent = els.vkine.value;
   els.cgh.value = (d.cgHeight!=null?d.cgHeight:8).toFixed(0); els.cghV.textContent = els.cgh.value;
   els.yawd.value = (d.yawDampK!=null?d.yawDampK:0.12).toFixed(2); els.yawdV.textContent = (+els.yawd.value).toFixed(2);
-      els.reventry.value = (d.reverseEntrySpeed!=null?d.reverseEntrySpeed:40).toFixed(0); els.reventryV.textContent = els.reventry.value;
-      els.revtorque.value = (d.reverseTorqueScale!=null?d.reverseTorqueScale:0.60).toFixed(2); els.revtorqueV.textContent = (+els.revtorque.value).toFixed(2);
+  els.reventry.value = (d.reverseEntrySpeed!=null?d.reverseEntrySpeed:40).toFixed(0); els.reventryV.textContent = els.reventry.value;
+  els.revtorque.value = (d.reverseTorqueScale!=null?d.reverseTorqueScale:0.60).toFixed(2); els.revtorqueV.textContent = (+els.revtorque.value).toFixed(2);
     }
     refresh(els.kind.value);
 
@@ -1349,13 +1931,25 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     }
 
   for (const key of ['ldamp','adamp','rest','mass','eng','brk','steer','steers','mulr','muor','mulg','muog','drag','roll','rearc','frontc','brkfs','lspe','lsfo','llat','llong','df','vkine','cgh','yawd','reventry','revtorque']){
-      els[key].addEventListener('input', ()=>{ const v = els[key].value; const label = key+'V'; if (els[label]) els[label].textContent = (''+v).slice(0, (key==='drag'?6:(key==='revtorque'?6:4))); apply(); });
+    const controlId = `rv-${key}`;
+      els[key].addEventListener('input', ()=>{
+        const v = els[key].value;
+        const label = key+'V';
+        if (els[label]) els[label].textContent = (''+v).slice(0, (key==='drag'?6:(key==='revtorque'?6:4)));
+        apply();
+        handleSave(controlId);
+      });
     }
-    els.kind.addEventListener('change', ()=>refresh(els.kind.value));
-    if (els.planck) els.planck.addEventListener('change', apply);
-    if (els.ppm) els.ppm.addEventListener('change', apply);
-    if (els.veliters) els.veliters.addEventListener('change', apply);
-    if (els.positers) els.positers.addEventListener('change', apply);
+    els.kind.addEventListener('change', ()=>{
+      refresh(els.kind.value);
+      applySavedControlValues();
+      apply();
+      applySavedControlValues();
+    });
+    if (els.planck) els.planck.addEventListener('change', ()=>{ apply(); handleSave('rv-planck'); });
+    if (els.ppm) els.ppm.addEventListener('change', ()=>{ apply(); handleSave('rv-ppm'); });
+    if (els.veliters) els.veliters.addEventListener('change', ()=>{ apply(); handleSave('rv-veliters'); });
+    if (els.positers) els.positers.addEventListener('change', ()=>{ apply(); handleSave('rv-positers'); });
     if (els.planckRebuild) {
       els.planckRebuild.addEventListener('click', ()=>{
         apply();
@@ -1369,7 +1963,15 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       });
     }
     els.reset.addEventListener('click', ()=>{ VEHICLE_DEFAULTS[els.kind.value] = { ...defaultSnapshot[els.kind.value] }; refresh(els.kind.value); apply(); });
-    els.debug.addEventListener('change', ()=>setDebugEnabled(!!els.debug.checked));
+    els.debug.addEventListener('change', ()=>{
+      setDebugEnabled(!!els.debug.checked);
+      handleSave('rv-debug');
+    });
+    if (els.applyAI) {
+      els.applyAI.addEventListener('change', ()=>{
+        handleSave('rv-apply-ai');
+      });
+    }
   }
 
   // Snapshot factory defaults for reset
@@ -1392,20 +1994,4 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
   };
   window.RacerPhysics = API;
 })();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
