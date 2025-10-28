@@ -2122,144 +2122,530 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
       root.render(<TopDownRacer />);
     </script>
     <style>
-    #gbxPanel { position:fixed; right:12px; top:12px; width:320px; max-height:80vh; overflow:auto; background:rgba(0,0,0,0.75); color:#fff; font:12px/1.4 system-ui, Arial; padding:10px; border:1px solid #444; border-radius:8px; display:none; z-index:9999; }
-    #gbxPanel input[type="number"] { width:72px; margin:2px; }
-    #gbxPanel .row { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-bottom:6px; }
-    #gbxToggle { position:fixed; right:12px; bottom:12px; z-index:9999; }
+  #gbxPanel { position:fixed; right:12px; top:12px; width:340px; max-height:80vh; overflow:auto; background:rgba(3,5,12,0.88); color:#e6edf6; font:12px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding:12px 20px 12px 12px; border:1px solid rgba(59,130,246,0.4); border-radius:10px; display:none; z-index:9999; backdrop-filter:blur(6px); box-sizing:border-box; }
+    #gbxPanel .gbx-header { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+    #gbxPanel .gbx-header button { appearance:none; border:0; background:rgba(148,163,184,0.2); color:#e2e8f0; padding:2px 8px; border-radius:6px; cursor:pointer; }
+    #gbxPanel .gbx-header button:hover { background:rgba(148,163,184,0.35); }
+  #gbxPanel .gbx-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; padding-right:6px; }
+    #gbxPanel .gbx-row label { flex:0 0 130px; font-weight:600; }
+    #gbxPanel .gbx-row input[type="range"] { flex:1; accent-color:#2563eb; }
+    #gbxPanel .gbx-row input[type="checkbox"] { width:18px; height:18px; }
+  #gbxPanel .gbx-value { width:52px; text-align:right; font-feature-settings:"tnum"; opacity:0.85; }
+  #gbxPanel .gbx-btns { display:flex; flex-direction:column; gap:4px; }
+  #gbxPanel .gbx-mini { appearance:none; border:1px solid rgba(148,163,184,0.35); background:rgba(23,37,84,0.68); color:#dde8ff; font-size:11px; padding:2px 6px; border-radius:4px; cursor:pointer; }
+  #gbxPanel .gbx-mini:hover { background:rgba(59,130,246,0.45); }
+    #gbxPanel .gbx-actions { display:flex; gap:8px; margin-top:12px; }
+    #gbxPanel .gbx-actions button { flex:1; appearance:none; border:1px solid rgba(59,130,246,0.5); background:#1d335f; color:#e2e8f0; padding:6px 0; border-radius:6px; cursor:pointer; font-weight:600; }
+    #gbxPanel .gbx-actions button:hover { filter:brightness(1.1); }
+    #gbxToggle { position:fixed; right:12px; bottom:12px; z-index:9999; padding:8px 12px; border-radius:8px; border:1px solid rgba(59,130,246,0.45); background:#14203a; color:#e2e8f0; cursor:pointer; font:13px system-ui; }
+    #gbxToggle:hover { filter:brightness(1.1); }
     </style>
     <div id="gbxPanel">
-      <div class="row"><strong>Gearbox Tuner</strong><button id="gbxClose" style="margin-left:auto">X</button></div>
-      <div class="row">Auto <input id="gbxAuto" type="checkbox"></div>
-      <div class="row">Ratios:
-        <input id="gbxR0" type="number" step="0.01">
-        <input id="gbxR1" type="number" step="0.01">
-        <input id="gbxR2" type="number" step="0.01">
-        <input id="gbxR3" type="number" step="0.01">
-        <input id="gbxR4" type="number" step="0.01">
-        <input id="gbxR5" type="number" step="0.01">
+      <div class="gbx-header">
+        <strong>Gearbox Tuner</strong>
+        <button id="gbxClose" type="button" title="Close tuner">✕</button>
       </div>
-      <div class="row">finalDrive <input id="gbxFD" type="number" step="0.01"></div>
-      <div class="row">wheelRadius <input id="gbxWR" type="number" step="0.01"></div>
-      <div class="row">idleRPM <input id="gbxIdle" type="number" step="50"></div>
-      <div class="row">redlineRPM <input id="gbxRed" type="number" step="50"></div>
-      <div class="row">upshiftRPM <input id="gbxUp" type="number" step="50"></div>
-      <div class="row">downshiftRPM <input id="gbxDown" type="number" step="50"></div>
-      <div class="row">drivelineEff <input id="gbxEff" type="number" step="0.01" min="0" max="1"></div>
-      <div class="row">torquePeak <input id="gbxTq" type="number" step="1"></div>
-      <div class="row">shiftCutMs <input id="gbxCut" type="number" step="5"></div>
-      <div class="row">engineInertia <input id="gbxIn" type="number" step="0.01" min="0" max="1"></div>
-      <div class="row">clutchEngageRate <input id="gbxCE" type="number" step="0.1" min="0"></div>
-      <div class="row">clutchSlipBoost <input id="gbxSB" type="number" step="0.01" min="0" max="1"></div>
-      <div class="row" style="gap:10px">
-        <button id="gbxSave">Save</button>
-        <button id="gbxReset">Reset</button>
+      <div class="gbx-row" title="Enable automatic shifting handled by the gearbox.">
+        <label for="gbxAuto">Auto shift</label>
+        <input id="gbxAuto" type="checkbox">
+      </div>
+      <div class="gbx-row" title="Primary gear ratio for first gear. Higher values shorten the gear but increase torque.">
+        <label for="gbxR0">1st gear</label>
+        <input id="gbxR0" type="range" min="0.50" max="7.00" step="0.01" data-default="5.28">
+        <span class="gbx-value" id="gbxR0Val">5.28</span>
+      </div>
+      <div class="gbx-row" title="Gear ratio for second gear.">
+        <label for="gbxR1">2nd gear</label>
+        <input id="gbxR1" type="range" min="0.40" max="5.00" step="0.01" data-default="2.64">
+        <span class="gbx-value" id="gbxR1Val">2.64</span>
+      </div>
+      <div class="gbx-row" title="Gear ratio for third gear.">
+        <label for="gbxR2">3rd gear</label>
+        <input id="gbxR2" type="range" min="0.30" max="4.00" step="0.01" data-default="1.76">
+        <span class="gbx-value" id="gbxR2Val">1.76</span>
+      </div>
+      <div class="gbx-row" title="Gear ratio for fourth gear.">
+        <label for="gbxR3">4th gear</label>
+        <input id="gbxR3" type="range" min="0.20" max="3.00" step="0.01" data-default="1.32">
+        <span class="gbx-value" id="gbxR3Val">1.32</span>
+      </div>
+      <div class="gbx-row" title="Gear ratio for fifth gear.">
+        <label for="gbxR4">5th gear</label>
+        <input id="gbxR4" type="range" min="0.15" max="2.50" step="0.01" data-default="1.056">
+        <span class="gbx-value" id="gbxR4Val">1.06</span>
+      </div>
+      <div class="gbx-row" title="Gear ratio for sixth gear (top gear).">
+        <label for="gbxR5">6th gear</label>
+        <input id="gbxR5" type="range" min="0.10" max="2.00" step="0.01" data-default="0.88">
+        <span class="gbx-value" id="gbxR5Val">0.88</span>
+      </div>
+      <div class="gbx-row" title="Final drive multiplies each gear ratio. Higher values shorten all gears.">
+        <label for="gbxFD">Final drive</label>
+        <input id="gbxFD" type="range" min="2.00" max="6.00" step="0.01" data-default="3.90">
+        <span class="gbx-value" id="gbxFDVal">3.90</span>
+      </div>
+      <div class="gbx-row" title="Effective wheel radius in metres. Smaller wheels multiply wheel torque.">
+        <label for="gbxWR">Wheel radius</label>
+        <input id="gbxWR" type="range" min="0.20" max="0.50" step="0.005" data-default="0.30">
+        <span class="gbx-value" id="gbxWRVal">0.30</span>
+      </div>
+      <div class="gbx-row" title="Engine idle speed. Determines minimum RPM when throttle is released.">
+        <label for="gbxIdle">Idle RPM</label>
+        <input id="gbxIdle" type="range" min="600" max="3000" step="50" data-default="1100">
+        <span class="gbx-value" id="gbxIdleVal">1100</span>
+      </div>
+      <div class="gbx-row" title="Maximum allowed engine speed. The limiter fades drive torque as you approach this value.">
+        <label for="gbxRed">Redline RPM</label>
+        <input id="gbxRed" type="range" min="5000" max="9500" step="50" data-default="7600">
+        <span class="gbx-value" id="gbxRedVal">7600</span>
+      </div>
+      <div class="gbx-row" title="RPM target for automatic upshifts.">
+        <label for="gbxUp">Upshift RPM</label>
+        <input id="gbxUp" type="range" min="2500" max="9000" step="50" data-default="6900">
+        <span class="gbx-value" id="gbxUpVal">6900</span>
+      </div>
+      <div class="gbx-row" title="RPM threshold to downshift when in automatic mode.">
+        <label for="gbxDown">Downshift RPM</label>
+        <input id="gbxDown" type="range" min="1500" max="5000" step="50" data-default="3000">
+        <span class="gbx-value" id="gbxDownVal">3000</span>
+      </div>
+      <div class="gbx-row" title="Overall driveline efficiency from engine to wheels.">
+        <label for="gbxEff">Driveline eff.</label>
+        <input id="gbxEff" type="range" min="0.70" max="1.00" step="0.01" data-default="0.90">
+        <span class="gbx-value" id="gbxEffVal">0.90</span>
+      </div>
+      <div class="gbx-row" title="Peak engine torque available at full throttle (before gearing).">
+        <label for="gbxTq">Torque peak</label>
+        <input id="gbxTq" type="range" min="5" max="40" step="0.5" data-default="17">
+        <span class="gbx-value" id="gbxTqVal">17.0</span>
+      </div>
+      <div class="gbx-row" title="Maximum engine braking torque applied when off throttle.">
+        <label for="gbxBrakePeak">Engine brake</label>
+        <input id="gbxBrakePeak" type="range" min="0" max="20" step="0.2" data-default="6">
+        <span class="gbx-value" id="gbxBrakePeakVal">6.0</span>
+      </div>
+      <div class="gbx-row" title="Dead zone before throttle engages (helps avoid accidental inputs).">
+        <label for="gbxThrottle">Throttle deadzone</label>
+        <input id="gbxThrottle" type="range" min="0" max="0.20" step="0.005" data-default="0.05">
+        <span class="gbx-value" id="gbxThrottleVal">0.050</span>
+      </div>
+      <div class="gbx-row" title="Time in milliseconds where drive torque is cut during upshifts.">
+        <label for="gbxCut">Shift cut (ms)</label>
+        <input id="gbxCut" type="range" min="0" max="200" step="5" data-default="110">
+        <span class="gbx-value" id="gbxCutVal">110</span>
+      </div>
+      <div class="gbx-row" title="Engine flywheel inertia. Higher values slow RPM changes.">
+        <label for="gbxIn">Engine inertia</label>
+        <input id="gbxIn" type="range" min="0.05" max="0.60" step="0.01" data-default="0.20">
+        <span class="gbx-value" id="gbxInVal">0.20</span>
+      </div>
+      <div class="gbx-row" title="Rate at which the clutch locks after a shift.">
+        <label for="gbxCE">Clutch engage</label>
+        <input id="gbxCE" type="range" min="1" max="12" step="0.1" data-default="6.0">
+        <span class="gbx-value" id="gbxCEVal">6.0</span>
+      </div>
+      <div class="gbx-row" title="Extra RPM boost allowed while slipping the clutch under throttle.">
+        <label for="gbxSB">Clutch slip boost</label>
+        <input id="gbxSB" type="range" min="0" max="1" step="0.01" data-default="0.35">
+        <span class="gbx-value" id="gbxSBVal">0.35</span>
+      </div>
+      <div class="gbx-actions">
+        <button id="gbxSave" type="button">Save</button>
+        <button id="gbxPresetChoose" type="button">Choose Preset</button>
+        <button id="gbxPresetSave" type="button">Save Preset</button>
+        <button id="gbxReset" type="button">Reset</button>
       </div>
     </div>
     <button id="gbxToggle">GBX</button>
     <script>
     (function(){
-      const QS = id => document.getElementById(id);
+      const QS = (id) => document.getElementById(id);
       const panel = QS('gbxPanel');
       const toggle = QS('gbxToggle');
       const closeBtn = QS('gbxClose');
+  const presetBtn = QS('gbxPresetSave');
+  const presetChooseBtn = QS('gbxPresetChoose');
+
+      if (!panel || !toggle || !closeBtn) {
+        window.GEARBOX_DEFAULTS = window.GEARBOX_DEFAULTS || {};
+        return;
+      }
+
+      const CONTROL_DEFS = [
+        { id: 'gbxAuto', prop: 'auto', type: 'checkbox' },
+        { id: 'gbxR0', prop: 'ratios', index: 0, type: 'range', format: (v) => v.toFixed(2) },
+        { id: 'gbxR1', prop: 'ratios', index: 1, type: 'range', format: (v) => v.toFixed(2) },
+        { id: 'gbxR2', prop: 'ratios', index: 2, type: 'range', format: (v) => v.toFixed(2) },
+        { id: 'gbxR3', prop: 'ratios', index: 3, type: 'range', format: (v) => v.toFixed(2) },
+        { id: 'gbxR4', prop: 'ratios', index: 4, type: 'range', format: (v) => v.toFixed(2) },
+        { id: 'gbxR5', prop: 'ratios', index: 5, type: 'range', format: (v) => v.toFixed(2) },
+        { id: 'gbxFD', prop: 'finalDrive', type: 'range', format: (v) => v.toFixed(2) },
+        { id: 'gbxWR', prop: 'wheelRadius', type: 'range', format: (v) => v.toFixed(3) },
+        { id: 'gbxIdle', prop: 'idleRPM', type: 'range', format: (v) => Math.round(v) },
+        { id: 'gbxRed', prop: 'redlineRPM', type: 'range', format: (v) => Math.round(v) },
+        { id: 'gbxUp', prop: 'upshiftRPM', type: 'range', format: (v) => Math.round(v) },
+        { id: 'gbxDown', prop: 'downshiftRPM', type: 'range', format: (v) => Math.round(v) },
+        { id: 'gbxEff', prop: 'drivelineEff', type: 'range', format: (v) => v.toFixed(2) },
+        { id: 'gbxTq', prop: 'torquePeak', type: 'range', format: (v) => v.toFixed(1) },
+        { id: 'gbxBrakePeak', prop: 'engineBrakePeak', type: 'range', format: (v) => v.toFixed(1) },
+        { id: 'gbxThrottle', prop: 'throttleDead', type: 'range', format: (v) => v.toFixed(3) },
+        { id: 'gbxCut', prop: 'shiftCutMs', type: 'range', format: (v) => Math.round(v) },
+        { id: 'gbxIn', prop: 'engineInertia', type: 'range', format: (v) => v.toFixed(2) },
+        { id: 'gbxCE', prop: 'clutchEngageRate', type: 'range', format: (v) => v.toFixed(1) },
+        { id: 'gbxSB', prop: 'clutchSlipBoost', type: 'range', format: (v) => v.toFixed(2) }
+      ];
+      const CONTROL_LOOKUP = {};
+      CONTROL_DEFS.forEach((def) => { CONTROL_LOOKUP[def.id] = def; });
+      const RANGE_CONTROLS = CONTROL_DEFS.filter((def) => def.type === 'range');
+
+      const PRESET_STORAGE_KEY = 'gearboxCfg_presets';
+
+      function getDefaultConfig() {
+        const defaults = window.GEARBOX_DEFAULTS;
+        if (defaults && Object.keys(defaults).length) return defaults;
+        const moduleDefaults = window.GearboxModule?.gearboxDefaults;
+        return moduleDefaults || null;
+      }
+
+      function cloneConfig(source){
+        if (!source) return null;
+        const cfg = { ...source };
+        if (Array.isArray(source.ratios)) cfg.ratios = [...source.ratios];
+        return cfg;
+      }
 
       function getPlayerCar(){
-        // Adjust this accessor to your game if needed
         return window.game?.playerCar || window.playerCar || window.car || null;
       }
+
       function readCfgFromCar(){
         const car = getPlayerCar();
         if (!car?.gearbox) return null;
-        return { ...car.gearbox.c };
+        return cloneConfig(car.gearbox.c);
       }
+
       function applyCfgToCar(cfg){
         const car = getPlayerCar();
-        if (!car?.gearbox) return;
-        Object.assign(car.gearbox.c, cfg);
+        if (!car?.gearbox || !cfg) return;
+        if (Array.isArray(cfg.ratios)) {
+          car.gearbox.c.ratios = [...cfg.ratios];
+        }
+        const assignable = { ...cfg };
+        delete assignable.ratios;
+        Object.assign(car.gearbox.c, assignable);
       }
+
       function loadStore(){
-        try { return JSON.parse(localStorage.getItem('gearboxCfg_activeProfile')||'null'); } catch(e){ return null; }
+        try {
+          const raw = localStorage.getItem('gearboxCfg_activeProfile');
+          return raw ? cloneConfig(JSON.parse(raw)) : null;
+        } catch (e) {
+          return null;
+        }
       }
+
       function saveStore(cfg){
-        localStorage.setItem('gearboxCfg_activeProfile', JSON.stringify(cfg));
+        if (!cfg) return;
+        try {
+          localStorage.setItem('gearboxCfg_activeProfile', JSON.stringify(cfg));
+        } catch (e) {}
       }
+
+      function resolveDefault(def){
+        const defaults = getDefaultConfig() || {};
+        if (def.type === 'checkbox') {
+          if (def.prop && defaults[def.prop] != null) return !!defaults[def.prop];
+          const input = QS(def.id);
+          if (input) return !!input.defaultChecked;
+          return true;
+        }
+        if (def.prop === 'ratios') {
+          const arr = defaults.ratios;
+          if (Array.isArray(arr) && arr[def.index] != null) return arr[def.index];
+        } else if (def.prop && defaults[def.prop] != null) {
+          return defaults[def.prop];
+        }
+        const input = QS(def.id);
+        if (input) {
+          const dataDefault = input.dataset.default;
+          if (dataDefault != null) {
+            const num = parseFloat(dataDefault);
+            if (!Number.isNaN(num)) return num;
+          }
+          const base = parseFloat(input.defaultValue);
+          if (!Number.isNaN(base)) return base;
+          const min = parseFloat(input.min);
+          if (!Number.isNaN(min)) return min;
+        }
+        return 0;
+      }
+
+      function updateSliderLabel(def, value){
+        const display = QS(def.id + 'Val');
+        if (!display) return;
+        const formatter = def.format || ((v) => v);
+        const numeric = Number(value);
+        display.textContent = formatter(Number.isNaN(numeric) ? 0 : numeric);
+      }
+
+      function setSlider(def, value){
+        const input = QS(def.id);
+        if (!input) return null;
+        let assigned = Number(value);
+        if (Number.isNaN(assigned)) assigned = Number(resolveDefault(def));
+        if (Number.isNaN(assigned)) assigned = 0;
+        input.value = String(assigned);
+        updateSliderLabel(def, assigned);
+        return assigned;
+      }
+
+      function setControl(def, value){
+        const input = QS(def.id);
+        if (!input) return null;
+        if (def.type === 'checkbox') {
+          const assigned = value != null ? !!value : !!resolveDefault(def);
+          input.checked = assigned;
+          return assigned;
+        }
+        return setSlider(def, value);
+      }
+
       function fillForm(cfg){
-        QS('gbxAuto').checked = !!cfg.auto;
-        const r = cfg.ratios || [];
-        ['gbxR0','gbxR1','gbxR2','gbxR3','gbxR4','gbxR5'].forEach((id,i)=>{ QS(id).value = r[i] ?? ''; });
-        QS('gbxFD').value = cfg.finalDrive;
-        QS('gbxWR').value = cfg.wheelRadius;
-        QS('gbxIdle').value = cfg.idleRPM;
-        QS('gbxRed').value = cfg.redlineRPM;
-        QS('gbxUp').value = cfg.upshiftRPM;
-        QS('gbxDown').value = cfg.downshiftRPM;
-        QS('gbxEff').value = cfg.drivelineEff;
-        QS('gbxTq').value = cfg.torquePeak;
-        QS('gbxCut').value = cfg.shiftCutMs;
-        QS('gbxIn').value = cfg.engineInertia;
-        QS('gbxCE').value = cfg.clutchEngageRate;
-        QS('gbxSB').value = cfg.clutchSlipBoost;
+        const defaults = getDefaultConfig() || {};
+        CONTROL_DEFS.forEach((def) => {
+          let value;
+          if (def.prop === 'ratios') {
+            value = cfg?.ratios?.[def.index];
+            if (value == null) value = defaults.ratios?.[def.index];
+          } else {
+            value = cfg?.[def.prop];
+            if (value == null) value = defaults[def.prop];
+          }
+          setControl(def, value);
+        });
       }
+
       function readForm(){
-        const ratios = ['gbxR0','gbxR1','gbxR2','gbxR3','gbxR4','gbxR5'].map(id => parseFloat(QS(id).value || ''));
-        return {
-          auto: QS('gbxAuto').checked,
-          ratios: ratios.filter(n => !isNaN(n) && n>0),
-          finalDrive: parseFloat(QS('gbxFD').value),
-          wheelRadius: parseFloat(QS('gbxWR').value),
-          idleRPM: parseFloat(QS('gbxIdle').value),
-          redlineRPM: parseFloat(QS('gbxRed').value),
-          upshiftRPM: parseFloat(QS('gbxUp').value),
-          downshiftRPM: parseFloat(QS('gbxDown').value),
-          drivelineEff: parseFloat(QS('gbxEff').value),
-          torquePeak: parseFloat(QS('gbxTq').value),
-          shiftCutMs: parseFloat(QS('gbxCut').value),
-          engineInertia: parseFloat(QS('gbxIn').value),
-          clutchEngageRate: parseFloat(QS('gbxCE').value),
-          clutchSlipBoost: parseFloat(QS('gbxSB').value)
-        };
+        const defaults = getDefaultConfig();
+        const base = readCfgFromCar() || loadStore() || cloneConfig(defaults) || { auto: true, ratios: [] };
+        const cfg = cloneConfig(base) || { auto: true, ratios: [] };
+        if (!Array.isArray(cfg.ratios)) cfg.ratios = [];
+        CONTROL_DEFS.forEach((def) => {
+          const input = QS(def.id);
+          if (!input) return;
+          if (def.type === 'checkbox') {
+            cfg[def.prop] = input.checked;
+            return;
+          }
+          const val = parseFloat(input.value);
+          if (Number.isNaN(val)) return;
+          if (def.prop === 'ratios') {
+            cfg.ratios[def.index] = val;
+          } else {
+            cfg[def.prop] = val;
+          }
+        });
+        const defaultRatios = Array.isArray(defaults?.ratios) ? defaults.ratios : [];
+        const maxLen = Math.max(cfg.ratios.length, defaultRatios.length, 6);
+        for (let i = 0; i < maxLen; i += 1) {
+          if (cfg.ratios[i] == null && defaultRatios[i] != null) {
+            cfg.ratios[i] = defaultRatios[i];
+          }
+        }
+        cfg.ratios = cfg.ratios.slice(0, maxLen);
+        return cfg;
+      }
+
+      function persistConfig(cfg){
+        const payload = cloneConfig(cfg);
+        applyCfgToCar(payload);
+        const stored = readCfgFromCar();
+        if (stored) {
+          saveStore(stored);
+          return stored;
+        }
+        if (payload) saveStore(payload);
+        return stored || payload;
+      }
+
+      function handleControlAction(def, action){
+        if (!def) return;
+        if (action === 'default') {
+          const value = resolveDefault(def);
+          setControl(def, value);
+        }
+        const stored = persistConfig(readForm());
+        fillForm(stored || {});
+      }
+
+      function ensureControlButtons(def){
+        const input = QS(def.id);
+        if (!input) return;
+        const row = input.closest('.gbx-row');
+        if (!row || row.querySelector(`.gbx-btns[data-for="${def.id}"]`)) return;
+        const btns = document.createElement('div');
+        btns.className = 'gbx-btns';
+        btns.dataset.for = def.id;
+        const saveBtn = document.createElement('button');
+        saveBtn.type = 'button';
+        saveBtn.className = 'gbx-mini';
+        saveBtn.dataset.control = def.id;
+        saveBtn.dataset.action = 'save';
+        saveBtn.textContent = 'Save';
+        const defaultBtn = document.createElement('button');
+        defaultBtn.type = 'button';
+        defaultBtn.className = 'gbx-mini';
+        defaultBtn.dataset.control = def.id;
+        defaultBtn.dataset.action = 'default';
+        defaultBtn.textContent = 'Default';
+        btns.append(saveBtn, defaultBtn);
+        row.appendChild(btns);
+      }
+
+      function loadPresetMap(){
+        try {
+          const raw = localStorage.getItem(PRESET_STORAGE_KEY);
+          return raw ? JSON.parse(raw) : {};
+        } catch (e) {
+          return {};
+        }
+      }
+
+      function savePresetMap(map){
+        try {
+          localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(map));
+        } catch (e) {}
       }
 
       function openPanel(){
-        const cfg = readCfgFromCar() || loadStore();
-        if (cfg) fillForm(cfg);
+        const cfg = readCfgFromCar() || loadStore() || cloneConfig(getDefaultConfig());
+        fillForm(cfg || {});
         panel.style.display = 'block';
       }
-      function closePanel(){ panel.style.display = 'none'; }
+
+      function closePanel(){
+        panel.style.display = 'none';
+      }
+
+      CONTROL_DEFS.forEach(ensureControlButtons);
+
+      RANGE_CONTROLS.forEach((def) => {
+        const input = QS(def.id);
+        if (!input) return;
+        input.addEventListener('input', () => {
+          updateSliderLabel(def, parseFloat(input.value));
+        });
+      });
+
+      panel.addEventListener('click', (event) => {
+        const target = event.target.closest('button[data-control]');
+        if (!target || !panel.contains(target)) return;
+        const def = CONTROL_LOOKUP[target.dataset.control];
+        if (!def) return;
+        handleControlAction(def, target.dataset.action);
+        event.preventDefault();
+        event.stopPropagation();
+      });
 
       toggle.addEventListener('click', openPanel);
       closeBtn.addEventListener('click', closePanel);
 
-      // Keyboard toggle
-      window.addEventListener('keydown', (e)=>{
+      window.addEventListener('keydown', (e) => {
         if (e.code === 'F9') {
-          if (panel.style.display === 'none' || !panel.style.display) openPanel(); else closePanel();
+          if (panel.style.display === 'none' || !panel.style.display) openPanel();
+          else closePanel();
         }
         if (panel.style.display !== 'block') return;
         const car = getPlayerCar();
         if (!car?.gearbox) return;
-        if (e.defaultPrevented) return;
-        if (e.code === 'KeyQ') car.gearbox.shiftDown();
-        if (e.code === 'KeyE') car.gearbox.shiftUp();
-        if (e.code === 'KeyM') car.gearbox.setManual(!(car.gearbox.c.auto));
+        if (e.defaultPrevented || e.repeat) return;
+        const stop = () => {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation?.();
+        };
+        if (e.code === 'KeyQ') {
+          car.gearbox.shiftDown();
+          stop();
+        } else if (e.code === 'KeyE') {
+          car.gearbox.shiftUp();
+          stop();
+        } else if (e.code === 'KeyM') {
+          car.gearbox.setManual(!(car.gearbox.c.auto));
+          stop();
+        }
       });
 
-      // Save and Reset
-      QS('gbxSave').addEventListener('click', ()=>{
-        const cfg = readForm();
-        applyCfgToCar(cfg);
-        saveStore({ ...readCfgFromCar() });
-      });
-      QS('gbxReset').addEventListener('click', ()=>{
-        const car = getPlayerCar();
-        if (!car?.gearbox) return;
-        const d = (window.GEARBOX_DEFAULTS || {});
-        Object.assign(car.gearbox.c, d);
-        fillForm(car.gearbox.c);
-        saveStore(car.gearbox.c);
-      });
+      const saveBtn = QS('gbxSave');
+      if (saveBtn) {
+        saveBtn.addEventListener('click', () => {
+          const stored = persistConfig(readForm());
+          fillForm(stored || {});
+        });
+      }
 
-      // Expose defaults for Reset
+      const resetBtn = QS('gbxReset');
+      if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+          const defaults = cloneConfig(getDefaultConfig());
+          if (!defaults) return;
+          const stored = persistConfig(defaults);
+          fillForm(stored || defaults);
+        });
+      }
+
+      if (presetBtn) {
+        presetBtn.addEventListener('click', () => {
+          const name = (window.prompt('Enter a name for this gearbox preset:') || '').trim();
+          if (!name) return;
+          const presets = loadPresetMap();
+          if (presets[name] && !window.confirm(`Preset "${name}" exists. Overwrite?`)) return;
+          const stored = persistConfig(readForm());
+          if (!stored) return;
+          presets[name] = cloneConfig(stored);
+          savePresetMap(presets);
+          console.info(`[Gearbox] Saved preset "${name}"`, stored);
+        });
+      }
+
+      if (presetChooseBtn) {
+        presetChooseBtn.addEventListener('click', () => {
+          const presets = loadPresetMap();
+          const names = Object.keys(presets);
+          if (!names.length) {
+            window.alert('No presets saved yet. Save one first.');
+            return;
+          }
+          const list = names.map((name, index) => `${index + 1}. ${name}`).join('\n');
+          const response = (window.prompt(`Select a preset by number or name:\n${list}`) || '').trim();
+          if (!response) return;
+          let chosen = null;
+          if (presets[response]) {
+            chosen = response;
+          } else {
+            const asNumber = parseInt(response, 10);
+            if (!Number.isNaN(asNumber) && asNumber >= 1 && asNumber <= names.length) {
+              chosen = names[asNumber - 1];
+            } else {
+              const match = names.find((name) => name.toLowerCase() === response.toLowerCase());
+              if (match) chosen = match;
+            }
+          }
+          if (!chosen) {
+            window.alert('Preset not found.');
+            return;
+          }
+          const selected = cloneConfig(presets[chosen]);
+          if (!selected) {
+            window.alert('Preset data is unavailable.');
+            return;
+          }
+          const applied = persistConfig(selected);
+          fillForm(applied || selected);
+          console.info(`[Gearbox] Loaded preset "${chosen}"`, applied || selected);
+        });
+      }
+
       window.GEARBOX_DEFAULTS = window.GEARBOX_DEFAULTS || {};
     })();
     </script>

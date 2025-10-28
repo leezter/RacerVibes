@@ -684,14 +684,12 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     return clamp(Fy_lin, -Fy_max, Fy_max);
   }
 
-  // Longitudinal slip ratio response: linear rise up to sPeak, soft falloff towards `falloff`
-  function slipRatioResponse(s, sPeak = 0.15, falloff = 0.65){
-    // s approx in [-1,1]
-    const x = Math.min(1, Math.max(0, Math.abs(s)));
-    const up = Math.min(1, x / Math.max(1e-6, sPeak));
-    const down = (x <= sPeak) ? 1 : (1 - (x - sPeak) / Math.max(1e-6, 1 - sPeak));
-    const y = up * (falloff + (1 - falloff) * down);
-    return Math.sign(s) * y;
+  // Longitudinal slip ratio response: unity gain around zero, saturates at |1|
+  function slipRatioResponse(s, _sPeak = 0.15, _falloff = 0.65){
+    if (!Number.isFinite(s)) return 0;
+    if (s > 1) return 1;
+    if (s < -1) return -1;
+    return s;
   }
   function lerp(a,b,t){ return a + (b - a) * t; }
 
@@ -928,27 +926,13 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
   if (gbState) {
     reversing = reversing || gbState.isReverse;
   }
-  let Fx_drive;
-  let gbForceScale = 1;
-  if (gbState) {
-    if (!gbState.isNeutral) {
-      const norm = Math.max(1e-4, gbState.forceNorm || (gb && gb._lastForceNorm) || 1);
-      gbForceScale = P.engineForce / norm;
-      Fx_drive = gbState.requestedForce * gbForceScale;
-      const reverseCap = -Math.abs(P.engineForce) * 0.55;
-      const forwardCap = Math.abs(P.engineForce) * 1.2;
-      Fx_drive = clamp(Fx_drive, reverseCap, forwardCap);
-      if (gbState.isReverse) {
-        Fx_drive = Math.max(Fx_drive, reverseCap);
-      }
-    } else {
-      Fx_drive = 0;
-    }
+  let Fx_drive = 0;
+  if (gbState && !gbState.isNeutral) {
+    const wheelR = (gb && gb.c && gb.c.wheelRadius) || 0.30;
+    const Tw = typeof gbState.T_wheel === 'number' ? gbState.T_wheel : 0;
+    Fx_drive = Tw / Math.max(1e-4, wheelR);
   } else {
-    Fx_drive = throttle * P.engineForce;
-  }
-  if (!reversing && !throttlePressedGlobal && !brakePressedGlobal) {
-    Fx_drive -= clamp(Fx_drive, -P.engineForce * 0.18, P.engineForce * 0.18);
+    Fx_drive = 0;
   }
     const brakeForceCmd = brake * P.brakeForce;
     let Fx_brake = 0;
@@ -1036,32 +1020,28 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     const Fr_max = muLongEffR * Fzr;
     const sPeak  = (P.longSlipPeak != null ? P.longSlipPeak : 0.18);
     const s_req  = Fr_max > 1e-6 ? (Fx_cmd / Fr_max) : 0;
-    const s_eff  = clamp(s_req, -1, 1);
     if (Math.abs(s_req) > sPeak) {
       const overPeak = Math.min(1, Math.abs(s_req) - sPeak);
       const latScale = Math.max(0, 1 - 0.35 * overPeak);
       FyR *= latScale;
     }
     const falloff= (P.longSlipFalloff != null ? P.longSlipFalloff : 0.80);
-    let Fx_trac = Fr_max * slipRatioResponse(s_eff, sPeak, falloff);
-    const FxCapAbs = Math.abs(P && typeof P.engineForce === 'number' ? P.engineForce : 500) * 1.6;
-    Fx_trac = clamp(Fx_trac, -FxCapAbs, FxCapAbs);
+    const tractionRatio = slipRatioResponse(s_req, sPeak, falloff);
+    let Fx_trac = Fr_max * tractionRatio;
     if (gb) {
-      const gbOut = gbState ? { ...gbState } : { rpm: gb.rpm|0, gear: gb.gear, requestedForce: Fx_drive, clutchLock: gb.clutchLock };
-      gbOut.forceScale = gbForceScale;
-      gbOut.requestedForceRaw = gbState ? gbState.requestedForce : Fx_drive;
-      gbOut.requestedForce = Fx_drive;
+      const gbOut = gbState ? { ...gbState } : null;
+      if (gbOut) {
+        gbOut.requestedForceRaw = gbState.requestedForce;
+        gbOut.requestedForce = Fx_drive;
+      }
       car.physics.lastGb = gbOut;
       gb.lastRequestedForce = Fx_drive;
-      gb.lastForceScale = gbForceScale;
     } else {
       car.physics.lastGb = null;
     }
     car.physics.lastSlipReq = s_req;
     car.physics.prevDriveSlip = Math.max(0, Math.abs(s_req) - sPeak);
     let Fx_long = Fx_trac - F_drag - F_roll;
-    const FxLongCap = FxCapAbs * 1.1;
-    Fx_long = clamp(Fx_long, -FxLongCap, FxLongCap);
     const ax = Fx_long / mass;
     car.physics.lastAx = ax;
     car.physics._dbgFyR_avail = muLatR * Fzr;
@@ -1148,22 +1128,6 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
 
     // Additional damping at very low speeds to prevent runaway spin/creep
     const speedMag = Math.hypot(car.physics.vx, car.physics.vy);
-    const maxSpeedClamp = 520;
-    if (speedMag > maxSpeedClamp) {
-      const scale = maxSpeedClamp / speedMag;
-      car.physics.vx *= scale;
-      car.physics.vy *= scale;
-      car.vx = car.physics.vx;
-      car.vy = car.physics.vy;
-      if (usePlanck && car.physics.planckBody && typeof car.physics.planckBody.getLinearVelocity === 'function') {
-        const lv = car.physics.planckBody.getLinearVelocity();
-        if (lv && typeof lv === 'object' && typeof car.physics.planckBody.setLinearVelocity === 'function') {
-          lv.x *= scale;
-          lv.y *= scale;
-          car.physics.planckBody.setLinearVelocity(lv);
-        }
-      }
-    }
     const angMax = 7.5;
     if (Math.abs(car.physics.r) > angMax) {
       car.physics.r = clamp(car.physics.r, -angMax, angMax);

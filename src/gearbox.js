@@ -1,5 +1,7 @@
+const clamp01 = (x) => Math.max(0, Math.min(1, x));
+
 export const gearboxDefaults = {
-  ratios:       [3.10, 2.05, 1.55, 1.25, 1.05, 0.88],
+  ratios:       [5.28, 2.64, 1.76, 1.32, 1.056, 0.88],
   reverseRatio: 3.30,
   finalDrive:   3.90,
   redlineRPM:   7600,
@@ -8,8 +10,10 @@ export const gearboxDefaults = {
   downshiftRPM: 3000,
   wheelRadius:  0.30,
   drivelineEff: 0.90,
-  torquePeak:   290,
+  torquePeak:   17,
   torqueCurve:  null,
+  engineBrakePeak: 10,
+  throttleDead: 0.05,
   shiftCutMs:   110,
   engineInertia: 0.2,
   clutchEngageRate: 6.0,
@@ -86,6 +90,14 @@ export class Gearbox {
     return throttle * this.c.torquePeak * shape;
   }
 
+  _engineBrakeAt(rpm) {
+    const c = this.c;
+    const span = Math.max(1, c.redlineRPM - c.idleRPM);
+    const x = Math.max(0, Math.min(1, (rpm - c.idleRPM) / span));
+    const shape = Math.min(1, x / 0.7);
+    return c.engineBrakePeak * shape;
+  }
+
   _currentRatio() {
     if (this._gearIndex === -1 && this.c.enableReverse !== false) {
       return -Math.abs(this.c.reverseRatio || this.c.ratios[0] || 3);
@@ -105,9 +117,9 @@ export class Gearbox {
         this._updateGearLabel();
       }
     }
-    const ratio = this._currentRatio();
-    const engaged = ratio !== 0;
-    const finalRatio = ratio * c.finalDrive;
+  const ratio = this._currentRatio();
+  const engaged = ratio !== 0;
+  const finalRatio = ratio * c.finalDrive;
     const wheelOmega = vForward / Math.max(1e-6, c.wheelRadius);
     const wheelRPM = wheelOmega * 60 / (2 * Math.PI);
     const lockedRPM = engaged ? Math.max(c.idleRPM, Math.abs(wheelRPM * finalRatio)) : c.idleRPM;
@@ -123,8 +135,13 @@ export class Gearbox {
       ? lockedRPM * this.clutchLock + freeTarget * (1 - this.clutchLock)
       : freeTarget;
 
-    if (engaged && ((slipInfo?.driveSlip || 0) > 0.15 || Math.abs(vForward) < 0.4)) {
-      targetRPM += c.clutchSlipBoost * (c.redlineRPM - targetRPM) * Math.min(1, throttle);
+    const redline = c.redlineRPM;
+    const onThrottle = throttle > c.throttleDead;
+    const limiterSoft = redline * 0.97;
+    const limiterActive = engaged && onThrottle && lockedRPM >= limiterSoft;
+
+    if (engaged && !limiterActive && ((slipInfo?.driveSlip || 0) > 0.15 || Math.abs(vForward) < 0.4)) {
+      targetRPM += c.clutchSlipBoost * (redline - targetRPM) * Math.min(1, throttle);
     }
 
     const inertia = Math.max(0.02, Math.min(1.0, c.engineInertia));
@@ -134,32 +151,42 @@ export class Gearbox {
     } else {
       const revGain = 0.7;
       const idleTarget = throttle > 0.02
-        ? c.idleRPM + revGain * throttle * (c.redlineRPM - c.idleRPM)
+        ? c.idleRPM + revGain * throttle * (redline - c.idleRPM)
         : c.idleRPM;
       rpmNext = inertia * idleTarget + (1 - inertia) * this.rpm;
     }
-    this.rpm = Math.min(c.redlineRPM, Math.max(c.idleRPM, rpmNext));
+    this.rpm = Math.min(redline, Math.max(c.idleRPM, rpmNext));
 
-   
-
-    let cut = 1.0;
+    let driveCut = 1.0;
     if (this.shiftCut > 0) {
       this.shiftCut -= dt * 1000;
-      cut = 0.35;
+      driveCut = 0.35;
       if (this.shiftCut <= 0) this._justShifted = false;
     }
 
-    let requestedForce = 0;
-    let forceNorm = 1;
+    if (limiterActive) {
+      const span = Math.max(1, redline - limiterSoft);
+      const limiterScale = lockedRPM >= redline
+        ? 0
+        : 1 - (lockedRPM - limiterSoft) / span;
+      driveCut *= clamp01(limiterScale);
+      this.clutchLock = 1;
+    }
+
+    const Te_drive = onThrottle ? this._torqueAt(this.rpm, throttle) * driveCut : 0;
+    const Te_brake = (!onThrottle && engaged) ? -this._engineBrakeAt(this.rpm) : 0;
+    const Te_total = Te_drive + Te_brake;
+    const Tw = Te_total * finalRatio * c.drivelineEff;
+    const denom = Math.max(1e-4, c.wheelRadius);
+    let requestedForce = Tw / denom;
+    let forceNorm = (c.torquePeak * Math.abs(finalRatio) * c.drivelineEff) / denom;
+
     if (engaged) {
-      const Te = this._torqueAt(this.rpm, throttle) * cut;
-      const Tw = Te * finalRatio * c.drivelineEff;
-      const denom = Math.max(1e-4, c.wheelRadius);
-      forceNorm = (c.torquePeak * Math.abs(finalRatio) * c.drivelineEff) / denom;
-      requestedForce = Tw / denom;
       this._lastForceNorm = forceNorm;
       this.lastRequestedForce = requestedForce;
     } else {
+      requestedForce = 0;
+      forceNorm = 1;
       this.lastRequestedForce = 0;
     }
 
@@ -173,7 +200,10 @@ export class Gearbox {
       forceNorm,
       gearRatio: finalRatio,
       isReverse: ratio < 0,
-      isNeutral: !engaged
+      isNeutral: !engaged,
+      T_engine: Te_total,
+      T_wheel: Tw,
+      wheelRadius: c.wheelRadius
     };
   }
 }
