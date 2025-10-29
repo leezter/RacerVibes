@@ -43,7 +43,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       brakeForce: 680,
       maxSteer: 0.55,
       steerSpeed: 6.0,
-  muLatRoad: 1.20,
+  muLatRoad: 1.00,
   muLongRoad: 1.80,
       muLatGrass: 0.55,
       muLongGrass: 0.45,
@@ -82,7 +82,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       brakeForce: 640,
       maxSteer: 0.50,
       steerSpeed: 5.0,
-  muLatRoad: 1.20,
+  muLatRoad: 1.00,
   muLongRoad: 1.80,
       muLatGrass: 0.50,
       muLongGrass: 0.40,
@@ -121,7 +121,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       brakeForce: 650,
       maxSteer: 0.58,
       steerSpeed: 6.5,
-  muLatRoad: 1.20,
+  muLatRoad: 1.00,
   muLongRoad: 1.80,
       muLatGrass: 0.46,
       muLongGrass: 0.38,
@@ -160,7 +160,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       brakeForce: 820,
       maxSteer: 0.40,
       steerSpeed: 3.5,
-  muLatRoad: 1.20,
+  muLatRoad: 1.00,
   muLongRoad: 1.80,
       muLatGrass: 0.42,
       muLongGrass: 0.34,
@@ -903,6 +903,32 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
           const ramp = Math.min(1, Math.abs(forwardSpeed) / 60);
           brake = Math.max(brake, ramp);
           throttle = 0;
+        }
+      }
+
+      const gearIndex = gb.gearIndex;
+      const ratios = Array.isArray(gb.c?.ratios) ? gb.c.ratios : null;
+      const maxForwardGear = ratios ? ratios.length : 0;
+      const rpm = gb.rpm || 0;
+      const upshiftRPM = (gb.c.upshiftRPM != null ? gb.c.upshiftRPM : (gb.c.redlineRPM * 0.94));
+      const downshiftRPM = (gb.c.downshiftRPM != null ? gb.c.downshiftRPM : (gb.c.redlineRPM * 0.52));
+      const slipMag = Math.abs(slipInfo.driveSlip || car.physics.prevDriveSlip || 0);
+      const canShiftNow = gearIndex >= 1 && maxForwardGear > 0 && gb.shiftCut <= 0 && !gb._justShifted;
+      let shiftedAuto = false;
+      if (canShiftNow && gearIndex < maxForwardGear) {
+        const allowUpshift = throttlePressed && rpm >= upshiftRPM && slipMag < 0.85 && vForward > 0.4 && !brakePressed;
+        if (allowUpshift) {
+          gb.shiftUp();
+          shiftedAuto = true;
+        }
+      }
+      if (canShiftNow && !shiftedAuto && gearIndex > 1) {
+        const slowForward = Math.abs(vForward) < 1.4;
+        const wantAccelDown = throttlePressed && rpm <= downshiftRPM;
+        const wantBrakeDown = brakePressed && rpm <= downshiftRPM * 1.1 && vForward > -0.5;
+        const wantCreepDown = !throttlePressed && !brakePressed && slowForward && rpm <= downshiftRPM * 1.2;
+        if (wantAccelDown || wantBrakeDown || wantCreepDown) {
+          gb.shiftDown();
         }
       }
     }
