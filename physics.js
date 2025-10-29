@@ -27,8 +27,8 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
   linearDamp: 0.0,
   angularDamp: 5.0,
   restitution: 1.0,
-    velIters: 8,
-    posIters: 3,
+    velIters: 20,
+    posIters: 8,
     planckDoSleep: true
   };
 
