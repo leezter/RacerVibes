@@ -2242,43 +2242,43 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
       </div>
       <div class="gbx-row" title="Primary gear ratio for first gear. Higher values shorten the gear but increase torque.">
         <label for="gbxR0">1st gear</label>
-        <input id="gbxR0" type="range" min="0.50" max="7.00" step="0.01" data-default="5.28">
-        <span class="gbx-value" id="gbxR0Val">5.28</span>
+        <input id="gbxR0" type="range" min="0.50" max="7.00" step="0.01" data-default="7.00">
+        <span class="gbx-value" id="gbxR0Val">7.00</span>
       </div>
       <div class="gbx-row" title="Gear ratio for second gear.">
         <label for="gbxR1">2nd gear</label>
-        <input id="gbxR1" type="range" min="0.40" max="5.00" step="0.01" data-default="2.64">
-        <span class="gbx-value" id="gbxR1Val">2.64</span>
+        <input id="gbxR1" type="range" min="0.40" max="5.00" step="0.01" data-default="5.00">
+        <span class="gbx-value" id="gbxR1Val">5.00</span>
       </div>
       <div class="gbx-row" title="Gear ratio for third gear.">
         <label for="gbxR2">3rd gear</label>
-        <input id="gbxR2" type="range" min="0.30" max="4.00" step="0.01" data-default="1.76">
-        <span class="gbx-value" id="gbxR2Val">1.76</span>
+        <input id="gbxR2" type="range" min="0.30" max="4.00" step="0.01" data-default="4.00">
+        <span class="gbx-value" id="gbxR2Val">4.00</span>
       </div>
       <div class="gbx-row" title="Gear ratio for fourth gear.">
         <label for="gbxR3">4th gear</label>
-        <input id="gbxR3" type="range" min="0.20" max="3.00" step="0.01" data-default="1.32">
-        <span class="gbx-value" id="gbxR3Val">1.32</span>
+        <input id="gbxR3" type="range" min="0.20" max="3.00" step="0.01" data-default="3.00">
+        <span class="gbx-value" id="gbxR3Val">3.00</span>
       </div>
       <div class="gbx-row" title="Gear ratio for fifth gear.">
         <label for="gbxR4">5th gear</label>
-        <input id="gbxR4" type="range" min="0.15" max="2.50" step="0.01" data-default="1.056">
-        <span class="gbx-value" id="gbxR4Val">1.06</span>
+        <input id="gbxR4" type="range" min="0.15" max="2.50" step="0.01" data-default="2.50">
+        <span class="gbx-value" id="gbxR4Val">2.50</span>
       </div>
       <div class="gbx-row" title="Gear ratio for sixth gear (top gear).">
         <label for="gbxR5">6th gear</label>
-        <input id="gbxR5" type="range" min="0.10" max="2.00" step="0.01" data-default="0.88">
-        <span class="gbx-value" id="gbxR5Val">0.88</span>
+        <input id="gbxR5" type="range" min="0.10" max="2.00" step="0.01" data-default="2.00">
+        <span class="gbx-value" id="gbxR5Val">2.00</span>
       </div>
       <div class="gbx-row" title="Final drive multiplies each gear ratio. Higher values shorten all gears.">
         <label for="gbxFD">Final drive</label>
-        <input id="gbxFD" type="range" min="2.00" max="6.00" step="0.01" data-default="3.90">
-        <span class="gbx-value" id="gbxFDVal">3.90</span>
+        <input id="gbxFD" type="range" min="2.00" max="6.00" step="0.01" data-default="6.00">
+        <span class="gbx-value" id="gbxFDVal">6.00</span>
       </div>
       <div class="gbx-row" title="Effective wheel radius in metres. Smaller wheels multiply wheel torque.">
         <label for="gbxWR">Wheel radius</label>
-        <input id="gbxWR" type="range" min="0.20" max="0.50" step="0.005" data-default="0.30">
-        <span class="gbx-value" id="gbxWRVal">0.30</span>
+        <input id="gbxWR" type="range" min="0.20" max="0.50" step="0.005" data-default="0.50">
+        <span class="gbx-value" id="gbxWRVal">0.500</span>
       </div>
       <div class="gbx-row" title="Engine idle speed. Determines minimum RPM when throttle is released.">
         <label for="gbxIdle">Idle RPM</label>
@@ -2287,8 +2287,8 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
       </div>
       <div class="gbx-row" title="Maximum allowed engine speed. The limiter fades drive torque as you approach this value.">
         <label for="gbxRed">Redline RPM</label>
-        <input id="gbxRed" type="range" min="5000" max="9500" step="50" data-default="7600">
-        <span class="gbx-value" id="gbxRedVal">7600</span>
+        <input id="gbxRed" type="range" min="5000" max="9500" step="50" data-default="9500">
+        <span class="gbx-value" id="gbxRedVal">9500</span>
       </div>
       <div class="gbx-row" title="RPM target for automatic upshifts.">
         <label for="gbxUp">Upshift RPM</label>
@@ -2307,13 +2307,13 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
       </div>
       <div class="gbx-row" title="Peak engine torque available at full throttle (before gearing).">
         <label for="gbxTq">Torque peak</label>
-        <input id="gbxTq" type="range" min="5" max="40" step="0.5" data-default="17">
-        <span class="gbx-value" id="gbxTqVal">17.0</span>
+        <input id="gbxTq" type="range" min="5" max="40" step="0.5" data-default="40">
+        <span class="gbx-value" id="gbxTqVal">40.0</span>
       </div>
       <div class="gbx-row" title="Maximum engine braking torque applied when off throttle.">
         <label for="gbxBrakePeak">Engine brake</label>
-        <input id="gbxBrakePeak" type="range" min="0" max="20" step="0.2" data-default="6">
-        <span class="gbx-value" id="gbxBrakePeakVal">6.0</span>
+        <input id="gbxBrakePeak" type="range" min="0" max="20" step="0.2" data-default="0.0">
+        <span class="gbx-value" id="gbxBrakePeakVal">0.0</span>
       </div>
       <div class="gbx-row" title="Dead zone before throttle engages (helps avoid accidental inputs).">
         <label for="gbxThrottle">Throttle deadzone</label>
@@ -2327,18 +2327,18 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
       </div>
       <div class="gbx-row" title="Engine flywheel inertia. Higher values slow RPM changes.">
         <label for="gbxIn">Engine inertia</label>
-        <input id="gbxIn" type="range" min="0.05" max="0.60" step="0.01" data-default="0.20">
-        <span class="gbx-value" id="gbxInVal">0.20</span>
+        <input id="gbxIn" type="range" min="0.05" max="0.60" step="0.01" data-default="0.60">
+        <span class="gbx-value" id="gbxInVal">0.60</span>
       </div>
       <div class="gbx-row" title="Rate at which the clutch locks after a shift.">
         <label for="gbxCE">Clutch engage</label>
-        <input id="gbxCE" type="range" min="1" max="12" step="0.1" data-default="6.0">
-        <span class="gbx-value" id="gbxCEVal">6.0</span>
+        <input id="gbxCE" type="range" min="1" max="12" step="0.1" data-default="12.0">
+        <span class="gbx-value" id="gbxCEVal">12.0</span>
       </div>
       <div class="gbx-row" title="Extra RPM boost allowed while slipping the clutch under throttle.">
         <label for="gbxSB">Clutch slip boost</label>
-        <input id="gbxSB" type="range" min="0" max="1" step="0.01" data-default="0.35">
-        <span class="gbx-value" id="gbxSBVal">0.35</span>
+        <input id="gbxSB" type="range" min="0" max="1" step="0.01" data-default="0.00">
+        <span class="gbx-value" id="gbxSBVal">0.00</span>
       </div>
       <div class="gbx-actions">
         <button id="gbxSave" type="button">Save</button>

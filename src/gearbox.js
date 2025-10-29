@@ -1,23 +1,23 @@
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 
 export const gearboxDefaults = {
-  ratios:       [5.28, 2.64, 1.76, 1.32, 1.056, 0.88],
+  ratios:       [7.00, 5.00, 4.00, 3.00, 2.50, 2.00],
   reverseRatio: 3.30,
-  finalDrive:   3.90,
-  redlineRPM:   7600,
+  finalDrive:   6.00,
+  redlineRPM:   9500,
   idleRPM:      1100,
   upshiftRPM:   6900,
   downshiftRPM: 3000,
-  wheelRadius:  0.30,
+  wheelRadius:  0.50,
   drivelineEff: 0.90,
-  torquePeak:   17,
+  torquePeak:   40,
   torqueCurve:  null,
-  engineBrakePeak: 10,
+  engineBrakePeak: 0.0,
   throttleDead: 0.05,
   shiftCutMs:   110,
-  engineInertia: 0.2,
-  clutchEngageRate: 6.0,
-  clutchSlipBoost: 0.35,
+  engineInertia: 0.6,
+  clutchEngageRate: 12.0,
+  clutchSlipBoost: 0.0,
   auto: true,
   enableReverse: true
 };
