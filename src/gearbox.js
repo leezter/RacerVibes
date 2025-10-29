@@ -9,7 +9,7 @@ export const gearboxDefaults = {
   upshiftRPM:   6900,
   downshiftRPM: 3000,
   wheelRadius:  0.50,
-  drivelineEff: 0.90,
+  drivelineEff: 1.00,
   torquePeak:   40,
   torqueCurve:  null,
   engineBrakePeak: 0.0,

@@ -35,7 +35,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
   const VEHICLE_DEFAULTS = {
     F1: {
       ...PLANCK_DEFAULTS,
-  mass: 1.75,
+  mass: 2.20,
       wheelbase: 42,
       cgToFront: 20,
       cgToRear: 22,
@@ -74,7 +74,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     },
     GT: {
       ...PLANCK_DEFAULTS,
-  mass: 1.75,
+  mass: 2.20,
       wheelbase: 36,
       cgToFront: 17,
       cgToRear: 19,
@@ -113,7 +113,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     },
     Rally: {
       ...PLANCK_DEFAULTS,
-  mass: 1.75,
+  mass: 2.20,
       wheelbase: 34,
       cgToFront: 16,
       cgToRear: 18,
@@ -152,7 +152,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     },
     Truck: {
       ...PLANCK_DEFAULTS,
-  mass: 1.75,
+  mass: 2.20,
       wheelbase: 44,
       cgToFront: 21,
       cgToRear: 23,
