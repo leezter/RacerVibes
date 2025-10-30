@@ -18,14 +18,17 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
   */
   // Gravity in pixel-units. Scale up so tire traction (mu*Fz) matches engineForce magnitudes
   // This fixes cars feeling like "slow motion" due to tiny normal loads.
-  const g = 600; // px/s^2 (tuned so GT tops ~330-350 px/s on road)
+  const GRAVITY_MIN = 100;
+  const GRAVITY_MAX = 1500;
+  const GRAVITY_DEFAULT = 750;
+  let g = GRAVITY_DEFAULT; // px/s^2 (tuned so GT tops ~330-350 px/s on road)
 
   // Default per-vehicle physical parameters (pixel-space, tuned empirically)
   const PLANCK_DEFAULTS = {
     usePlanck: true,
     pixelsPerMeter: PPM_DEFAULT,
-  linearDamp: 0.0,
-  angularDamp: 5.0,
+  linearDamp: 0.10,
+  angularDamp: 8.0,
   restitution: 1.0,
     velIters: 20,
     posIters: 8,
@@ -1319,6 +1322,13 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     .rv-preset-menu button:hover{background:#1a2640}
     .rv-preset-menu .rv-empty{padding:8px 10px;font-size:12px;opacity:.75}
     .rv-row .small{opacity:.75;font-size:11px}
+  .rv-section{margin:12px 0;padding:8px 10px;border-radius:8px;border:1px solid rgba(148,163,184,0.35);background:rgba(15,23,42,0.65)}
+  .rv-section h4{margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#cbd5f5}
+  .rv-section.planck{border-color:rgba(34,197,94,0.45);background:rgba(21,128,61,0.25)}
+  .rv-section.planck h4{color:#34d399}
+  .rv-section.legacy{border-color:rgba(251,146,60,0.45);background:rgba(180,83,9,0.25)}
+  .rv-section.legacy h4{color:#fb923c}
+  .rv-section .rv-row{margin:6px 0}
     `;
     document.head.appendChild(style);
 
@@ -1330,6 +1340,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       pixelsPerMeter: "Scale from pixels to physics meters. Affects body sizes in the solver.",
       linearDamp: "Planck: global damping on linear velocity. Prefer Drag/Rolling for coasting.",
       angularDamp: "Planck: damping on yaw (rotational) velocity. Prefer Yaw damp for tuning feel.",
+  gravity: "World gravity in px/s². Higher values increase weight transfer and available grip.",
       restitution: "Bounciness on wall impacts.",
       velIters: "Solver velocity iterations. Higher = more accurate contacts (slower).",
       posIters: "Solver position iterations. Higher = fewer penetrations (slower).",
@@ -1390,13 +1401,18 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
           <label class="small" for="rv-apply-ai"><input type="checkbox" id="rv-apply-ai"> <span class="rv-name"${tipAttr('applyToAI')}>Apply to AI</span></label>
         </div>
         <div class="rv-row"><label for="rv-debug"><span class="rv-name"${tipAttr('debugOverlay')}>Debug overlay</span></label><input type="checkbox" id="rv-debug"></div>
-        <div class="rv-row"><label for="rv-planck"><span class="rv-name"${tipAttr('usePlanck')}>Use Planck</span></label><input type="checkbox" id="rv-planck"></div>
-        <div class="rv-row"><label for="rv-ppm"><span class="rv-name"${tipAttr('pixelsPerMeter')}>Pixels / m</span></label><input id="rv-ppm" type="number" min="5" max="200" step="1"></div>
-        <div class="rv-row"><label for="rv-ldamp"><span class="rv-name"${tipAttr('linearDamp')}>Linear damp</span></label><input id="rv-ldamp" type="range" min="0" max="5" step="0.05"><div class="val" id="rv-ldamp-v"></div></div>
-        <div class="rv-row"><label for="rv-adamp"><span class="rv-name"${tipAttr('angularDamp')}>Angular damp</span></label><input id="rv-adamp" type="range" min="0" max="5" step="0.05"><div class="val" id="rv-adamp-v"></div></div>
-        <div class="rv-row"><label for="rv-rest"><span class="rv-name"${tipAttr('restitution')}>Restitution</span></label><input id="rv-rest" type="range" min="0" max="1" step="0.02"><div class="val" id="rv-rest-v"></div></div>
-        <div class="rv-row"><label for="rv-veliters"><span class="rv-name"${tipAttr('velIters')}>Vel iters</span></label><input id="rv-veliters" type="number" min="1" max="50" step="1"></div>
-        <div class="rv-row"><label for="rv-positers"><span class="rv-name"${tipAttr('posIters')}>Pos iters</span></label><input id="rv-positers" type="number" min="1" max="50" step="1"></div>
+        <div class="rv-section planck">
+          <h4>Planck</h4>
+          <div class="rv-row"><label for="rv-planck"><span class="rv-name"${tipAttr('usePlanck')}>Use Planck</span></label><input type="checkbox" id="rv-planck"></div>
+          <div class="rv-row"><label for="rv-ppm"><span class="rv-name"${tipAttr('pixelsPerMeter')}>Pixels / m</span></label><input id="rv-ppm" type="number" min="5" max="200" step="1"></div>
+          <div class="rv-row"><label for="rv-gravity"><span class="rv-name"${tipAttr('gravity')}>Gravity</span></label><input id="rv-gravity" type="range" min="${GRAVITY_MIN}" max="${GRAVITY_MAX}" step="10"><div class="val" id="rv-gravity-v"></div></div>
+          <div class="rv-row"><label for="rv-ldamp"><span class="rv-name"${tipAttr('linearDamp')}>Linear damp</span></label><input id="rv-ldamp" type="range" min="0" max="5" step="0.05"><div class="val" id="rv-ldamp-v"></div></div>
+          <div class="rv-row"><label for="rv-adamp"><span class="rv-name"${tipAttr('angularDamp')}>Angular damp</span></label><input id="rv-adamp" type="range" min="0" max="8" step="0.05"><div class="val" id="rv-adamp-v"></div></div>
+          <div class="rv-row"><label for="rv-rest"><span class="rv-name"${tipAttr('restitution')}>Restitution</span></label><input id="rv-rest" type="range" min="0" max="1" step="0.02"><div class="val" id="rv-rest-v"></div></div>
+          <div class="rv-row"><label for="rv-veliters"><span class="rv-name"${tipAttr('velIters')}>Vel iters</span></label><input id="rv-veliters" type="number" min="1" max="50" step="1"></div>
+          <div class="rv-row"><label for="rv-positers"><span class="rv-name"${tipAttr('posIters')}>Pos iters</span></label><input id="rv-positers" type="number" min="1" max="50" step="1"></div>
+          <div class="rv-row"><button id="rv-planck-rebuild"${tipAttr('rebuildWorld')}>Rebuild physics world</button></div>
+        </div>
         <div class="rv-row"><label for="rv-mass"><span class="rv-name"${tipAttr('mass')}>Mass</span></label><input id="rv-mass" type="range" min="0.6" max="2.2" step="0.05"><div class="val" id="rv-mass-v"></div></div>
   <div class="rv-row"><label for="rv-eng"><span class="rv-name"${tipAttr('enginePowerMult')}>Engine</span></label><input id="rv-eng" type="range" min="0.5" max="2" step="0.05"><div class="val" id="rv-eng-v"></div></div>
         <div class="rv-row"><label for="rv-brk"><span class="rv-name"${tipAttr('brakeForce')}>Brake</span></label><input id="rv-brk" type="range" min="380" max="1100" step="10"><div class="val" id="rv-brk-v"></div></div>
@@ -1416,24 +1432,26 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
         <div class="rv-row"><label for="rv-llat"><span class="rv-name"${tipAttr('loadSenseK')}>Lat load K</span></label><input id="rv-llat" type="range" min="0.00" max="0.20" step="0.01"><div class="val" id="rv-llat-v"></div></div>
         <div class="rv-row"><label for="rv-llong"><span class="rv-name"${tipAttr('muLongLoadSenseK')}>Long load K</span></label><input id="rv-llong" type="range" min="0.00" max="0.20" step="0.01"><div class="val" id="rv-llong-v"></div></div>
         <div class="rv-row"><label for="rv-df"><span class="rv-name"${tipAttr('downforceK')}>DownforceK</span></label><input id="rv-df" type="range" min="0.0000" max="0.0050" step="0.00005"><div class="val" id="rv-df-v"></div></div>
-        <div class="rv-row"><label for="rv-vkine"><span class="rv-name"${tipAttr('vKineBlend')}>vKineBlend</span></label><input id="rv-vkine" type="range" min="0.0" max="5.0" step="0.1"><div class="val" id="rv-vkine-v"></div></div>
         <div class="rv-row"><label for="rv-cgh"><span class="rv-name"${tipAttr('cgHeight')}>cgHeight</span></label><input id="rv-cgh" type="range" min="0" max="14" step="1"><div class="val" id="rv-cgh-v"></div></div>
         <div class="rv-row"><label for="rv-yawd"><span class="rv-name"${tipAttr('yawDampK')}>Yaw damp</span></label><input id="rv-yawd" type="range" min="0" max="0.30" step="0.02"><div class="val" id="rv-yawd-v"></div></div>
-        <div class="rv-row">
-          <label for="rv-vxhyst" title="Hysteresis band around 0 px/s before direction flips">VX hysteresis</label>
-          <input id="rv-vxhyst" type="range" min="6" max="40" step="1"><div class="val" id="rv-vxhyst-v"></div>
+        <div class="rv-section legacy">
+          <h4>Legacy</h4>
+          <div class="rv-row"><label for="rv-vkine"><span class="rv-name"${tipAttr('vKineBlend')}>vKineBlend</span></label><input id="rv-vkine" type="range" min="0.0" max="5.0" step="0.1"><div class="val" id="rv-vkine-v"></div></div>
+          <div class="rv-row">
+            <label for="rv-vxhyst" title="Hysteresis band around 0 px/s before direction flips">VX hysteresis</label>
+            <input id="rv-vxhyst" type="range" min="6" max="40" step="1"><div class="val" id="rv-vxhyst-v"></div>
+          </div>
+          <div class="rv-row">
+            <label for="rv-rsteer" title="Steering scale when reversing (lower = calmer)">Reverse steer</label>
+            <input id="rv-rsteer" type="range" min="0.30" max="1.00" step="0.01"><div class="val" id="rv-rsteer-v"></div>
+          </div>
+          <div class="rv-row">
+            <label for="rv-yawmul" title="Yaw damping multiplier when reversing">Yaw reverse×</label>
+            <input id="rv-yawmul" type="range" min="1.00" max="2.00" step="0.05"><div class="val" id="rv-yawmul-v"></div>
+          </div>
+          <div class="rv-row"><label for="rv-reventry"><span class="rv-name"${tipAttr('reverseEntry')}>Reverse entry</span></label><input id="rv-reventry" type="range" min="0" max="120" step="5"><div class="val" id="rv-reventry-v"></div></div>
+          <div class="rv-row"><label for="rv-revtorque"><span class="rv-name"${tipAttr('reverseTorque')}>Reverse torque</span></label><input id="rv-revtorque" type="range" min="0.30" max="1.00" step="0.05"><div class="val" id="rv-revtorque-v"></div></div>
         </div>
-        <div class="rv-row">
-          <label for="rv-rsteer" title="Steering scale when reversing (lower = calmer)">Reverse steer</label>
-          <input id="rv-rsteer" type="range" min="0.30" max="1.00" step="0.01"><div class="val" id="rv-rsteer-v"></div>
-        </div>
-        <div class="rv-row">
-          <label for="rv-yawmul" title="Yaw damping multiplier when reversing">Yaw reverse×</label>
-          <input id="rv-yawmul" type="range" min="1.00" max="2.00" step="0.05"><div class="val" id="rv-yawmul-v"></div>
-        </div>
-        <div class="rv-row"><label for="rv-reventry"><span class="rv-name"${tipAttr('reverseEntry')}>Reverse entry</span></label><input id="rv-reventry" type="range" min="0" max="120" step="5"><div class="val" id="rv-reventry-v"></div></div>
-        <div class="rv-row"><label for="rv-revtorque"><span class="rv-name"${tipAttr('reverseTorque')}>Reverse torque</span></label><input id="rv-revtorque" type="range" min="0.30" max="1.00" step="0.05"><div class="val" id="rv-revtorque-v"></div></div>
-        <div class="rv-row"><button id="rv-planck-rebuild"${tipAttr('rebuildWorld')}>Rebuild physics world</button></div>
         <div class="rv-row"><button id="rv-reset"${tipAttr('resetDefaults')}>Reset defaults</button></div>
       </div>`;
     document.body.appendChild(wrap);
@@ -1448,6 +1466,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       debug: wrap.querySelector('#rv-debug'),
   planck: wrap.querySelector('#rv-planck'),
   ppm: wrap.querySelector('#rv-ppm'),
+  gravity: wrap.querySelector('#rv-gravity'), gravityV: wrap.querySelector('#rv-gravity-v'),
   ldamp: wrap.querySelector('#rv-ldamp'),     ldampV: wrap.querySelector('#rv-ldamp-v'),
   adamp: wrap.querySelector('#rv-adamp'),     adampV: wrap.querySelector('#rv-adamp-v'),
   rest: wrap.querySelector('#rv-rest'),       restV: wrap.querySelector('#rv-rest-v'),
@@ -1646,6 +1665,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
         const defaults = defaultSnapshot[kind] || {};
         return defaults.pixelsPerMeter != null ? defaults.pixelsPerMeter : PLANCK_DEFAULTS.pixelsPerMeter;
       }}],
+      ['rv-gravity', { kind: 'global', valueEl: els.gravityV, format: fmtInt, getDefault: () => GRAVITY_DEFAULT }],
       ['rv-ldamp', { kind: 'vehicle', valueEl: els.ldampV, format: fmtTwo, getDefault: vehicleDefault('linearDamp', 0) }],
       ['rv-adamp', { kind: 'vehicle', valueEl: els.adampV, format: fmtTwo, getDefault: vehicleDefault('angularDamp', 0) }],
       ['rv-rest', { kind: 'vehicle', valueEl: els.restV, format: fmtTwo, getDefault: vehicleDefault('restitution', 0) }],
@@ -1816,6 +1836,11 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     function refresh(kind){
       const k = kind || els.kind.value;
       const d = VEHICLE_DEFAULTS[k];
+      if (els.gravity) {
+        const gv = Math.round(g);
+        els.gravity.value = gv;
+        if (els.gravityV) els.gravityV.textContent = String(gv);
+      }
       els.planck.checked = !!(d.usePlanck !== false);
       if (els.ppm) els.ppm.value = (d.pixelsPerMeter != null ? d.pixelsPerMeter : PPM_DEFAULT);
       const ld = d.linearDamp != null ? d.linearDamp : 0;
@@ -1861,6 +1886,15 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     function apply(){
       const k = els.kind.value;
       const powerMult = clamp(+els.eng.value || 1, 0.5, 2);
+      let gravityValue = g;
+      if (els.gravity) {
+        gravityValue = clamp(+els.gravity.value || GRAVITY_DEFAULT, GRAVITY_MIN, GRAVITY_MAX);
+        g = gravityValue;
+        els.gravity.value = gravityValue;
+        if (els.gravityV) {
+          els.gravityV.textContent = String(Math.round(gravityValue));
+        }
+      }
       const p = VEHICLE_DEFAULTS[k] = {
         ...VEHICLE_DEFAULTS[k],
         usePlanck: !!els.planck.checked,
@@ -1930,15 +1964,15 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       refresh(k);
     }
 
-  for (const key of ['ldamp','adamp','rest','mass','eng','brk','steer','steers','mulr','muor','mulg','muog','drag','roll','rearc','frontc','brkfs','lspe','lsfo','llat','llong','df','vkine','cgh','yawd','reventry','revtorque']){
+  for (const key of ['gravity','ldamp','adamp','rest','mass','eng','brk','steer','steers','mulr','muor','mulg','muog','drag','roll','rearc','frontc','brkfs','lspe','lsfo','llat','llong','df','vkine','cgh','yawd','reventry','revtorque']){
     const controlId = `rv-${key}`;
       els[key].addEventListener('input', ()=>{
         const v = els[key].value;
         const label = key+'V';
         if (els[label]) {
           if (key === 'drag') els[label].textContent = (+v).toFixed(4);
-          else if (key === 'revtorque') els[label].textContent = (+v).toFixed(2);
-          else if (key === 'eng') els[label].textContent = (+v).toFixed(2);
+          else if (key === 'revtorque' || key === 'eng') els[label].textContent = (+v).toFixed(2);
+          else if (key === 'gravity') els[label].textContent = String(Math.round(+v));
           else els[label].textContent = (''+v).slice(0, 4);
         }
         apply();
