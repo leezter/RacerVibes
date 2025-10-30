@@ -280,6 +280,10 @@ const { useEffect, useRef, useState } = React;
       const SCALE_STEP = 0.05;
       const SCALE_DEFAULT = 2.5;
       const CAM_BASE_ZOOM = 2.5;
+      const CAMERA_MIN = 0.6;
+      const CAMERA_MAX = 1.6;
+      const CAMERA_STEP = 0.05;
+      const CAMERA_DEFAULT = 1.0;
       function clampScale(value) {
         return Math.min(SCALE_MAX, Math.max(SCALE_MIN, value));
       }
@@ -296,6 +300,22 @@ const { useEffect, useRef, useState } = React;
       function writeScale(key, value) {
         try { localStorage.setItem(key, String(value)); } catch(_) {}
       }
+      function clampCamera(value) {
+        return Math.min(CAMERA_MAX, Math.max(CAMERA_MIN, value));
+      }
+      function readCameraDistance(fallback) {
+        try {
+          const stored = localStorage.getItem('cameraDistance');
+          if (stored === null) return fallback;
+          const parsed = parseFloat(stored);
+          return Number.isFinite(parsed) ? parsed : fallback;
+        } catch(_) {
+          return fallback;
+        }
+      }
+      function writeCameraDistance(value) {
+        try { localStorage.setItem('cameraDistance', String(value)); } catch(_) {}
+      }
       let GEO_SCALE = clampScale(readScale('geoScale', SCALE_DEFAULT));
       let WIDTH_SCALE = clampScale(readScale('widthScale', SCALE_DEFAULT));
 
@@ -310,6 +330,7 @@ const { useEffect, useRef, useState } = React;
         const [devPanelOpen, setDevPanelOpen] = useState(false);
         const [geoScaleInput, setGeoScaleInput] = useState(() => clampScale(GEO_SCALE));
         const [widthScaleInput, setWidthScaleInput] = useState(() => clampScale(WIDTH_SCALE));
+    const [cameraDistance, setCameraDistance] = useState(() => clampCamera(readCameraDistance(CAMERA_DEFAULT)));
 
         function readDecorSetting(key, fallback) {
           try {
@@ -351,6 +372,7 @@ const { useEffect, useRef, useState } = React;
   // Gyroscope removed: simplifying to keyboard / touch buttons only
   // camera state
   const camRef = useRef({ x: 0, y: 0, scale: CAM_BASE_ZOOM, targetScale: CAM_BASE_ZOOM });
+  const displayScaleRef = useRef(1);
   const camInitRef = useRef(false);
         const loadTrackRef = useRef(() => {});
         useEffect(() => {
@@ -389,6 +411,14 @@ const { useEffect, useRef, useState } = React;
           setWidthScaleInput(clamped);
           writeScale("widthScale", clamped);
           reloadTrack();
+        }
+
+        function applyCameraDistanceChange(nextValue) {
+          const parsed = typeof nextValue === "number" ? nextValue : parseFloat(nextValue);
+          if (!Number.isFinite(parsed)) return;
+          const clamped = clampCamera(parsed);
+          setCameraDistance(clamped);
+          writeCameraDistance(clamped);
         }
 
         function fallbackHash(str) {
@@ -474,9 +504,12 @@ const { useEffect, useRef, useState } = React;
           const rawMin = 0.70;
           const rawMax = 1.10;
           const rawTarget = Math.max(rawMin, Math.min(rawMax, 1.0 - Math.min(0.35, speed / 1200)));
-          const minZoom = rawMin * CAM_BASE_ZOOM;
-          const maxZoom = rawMax * CAM_BASE_ZOOM;
-          const targetZoom = Math.max(minZoom, Math.min(maxZoom, rawTarget * CAM_BASE_ZOOM));
+          const displayScale = displayScaleRef.current || 1;
+          const zoomFactor = cameraDistance || CAMERA_DEFAULT;
+          const zoomBase = (CAM_BASE_ZOOM * zoomFactor) / ((displayScale > 0) ? displayScale : 1);
+          const minZoom = rawMin * zoomBase;
+          const maxZoom = rawMax * zoomBase;
+          const targetZoom = Math.max(minZoom, Math.min(maxZoom, rawTarget * zoomBase));
           return { minZoom, maxZoom, targetZoom };
         }
 
@@ -544,6 +577,8 @@ const { useEffect, useRef, useState } = React;
             canvas.style.left = '50%';
             canvas.style.top = '50%';
             canvas.style.transform = 'translate(-50%, -50%)';
+            const scaleApplied = baseW > 0 ? (targetW / baseW) : 1;
+            displayScaleRef.current = scaleApplied > 0 ? scaleApplied : 1;
           }
 
           function applyWorldSize(width, height){
@@ -2108,6 +2143,27 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                     step={SCALE_STEP}
                     value={widthScaleInput.toFixed(2)}
                     onChange={(e) => applyWidthScaleChange(e.target.value)}
+                  />
+                </div>
+              </label>
+              <label>
+                <span>Camera distance</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={CAMERA_MIN}
+                    max={CAMERA_MAX}
+                    step={CAMERA_STEP}
+                    value={cameraDistance}
+                    onChange={(e) => applyCameraDistanceChange(e.target.value)}
+                  />
+                  <input
+                    type="number"
+                    min={CAMERA_MIN}
+                    max={CAMERA_MAX}
+                    step={CAMERA_STEP}
+                    value={cameraDistance.toFixed(2)}
+                    onChange={(e) => applyCameraDistanceChange(e.target.value)}
                   />
                 </div>
               </label>

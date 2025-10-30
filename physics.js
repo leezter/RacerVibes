@@ -39,7 +39,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       wheelbase: 42,
       cgToFront: 20,
       cgToRear: 22,
-      engineForce: 620,
+  enginePowerMult: 1.00,
       brakeForce: 680,
       maxSteer: 0.55,
       steerSpeed: 6.0,
@@ -78,7 +78,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       wheelbase: 36,
       cgToFront: 17,
       cgToRear: 19,
-      engineForce: 520,
+  enginePowerMult: 1.00,
       brakeForce: 640,
       maxSteer: 0.50,
       steerSpeed: 5.0,
@@ -117,7 +117,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       wheelbase: 34,
       cgToFront: 16,
       cgToRear: 18,
-      engineForce: 560,
+  enginePowerMult: 1.00,
       brakeForce: 650,
       maxSteer: 0.58,
       steerSpeed: 6.5,
@@ -156,7 +156,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       wheelbase: 44,
       cgToFront: 21,
       cgToRear: 23,
-      engineForce: 400,
+  enginePowerMult: 1.00,
       brakeForce: 820,
       maxSteer: 0.40,
       steerSpeed: 3.5,
@@ -673,6 +673,10 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     };
     if (!car.gearbox) {
       car.gearbox = new Gearbox(gearboxDefaults);
+    }
+    const basePowerMult = (base && base.enginePowerMult != null) ? base.enginePowerMult : 1;
+    if (car.gearbox && (car.gearbox.c.powerMult == null)) {
+      car.gearbox.c.powerMult = basePowerMult;
     }
     return car.physics;
   }
@@ -1330,7 +1334,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       velIters: "Solver velocity iterations. Higher = more accurate contacts (slower).",
       posIters: "Solver position iterations. Higher = fewer penetrations (slower).",
       mass: "Car mass & inertia. Higher = more planted, harder to spin; may need more Brake.",
-      engineForce: "Peak engine drive force. Higher = stronger acceleration.",
+  enginePowerMult: "Multiplier on gearbox drive torque. >1 = more power, <1 = detuned.",
       brakeForce: "Peak braking force. Higher = shorter stops; too high can overwhelm grip.",
       maxSteer: "Maximum steering lock. Higher = tighter turns, riskier at speed.",
       steerSpeed: "How fast steering moves toward target. Higher = snappier steering.",
@@ -1394,7 +1398,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
         <div class="rv-row"><label for="rv-veliters"><span class="rv-name"${tipAttr('velIters')}>Vel iters</span></label><input id="rv-veliters" type="number" min="1" max="50" step="1"></div>
         <div class="rv-row"><label for="rv-positers"><span class="rv-name"${tipAttr('posIters')}>Pos iters</span></label><input id="rv-positers" type="number" min="1" max="50" step="1"></div>
         <div class="rv-row"><label for="rv-mass"><span class="rv-name"${tipAttr('mass')}>Mass</span></label><input id="rv-mass" type="range" min="0.6" max="2.2" step="0.05"><div class="val" id="rv-mass-v"></div></div>
-        <div class="rv-row"><label for="rv-eng"><span class="rv-name"${tipAttr('engineForce')}>Engine</span></label><input id="rv-eng" type="range" min="280" max="900" step="10"><div class="val" id="rv-eng-v"></div></div>
+  <div class="rv-row"><label for="rv-eng"><span class="rv-name"${tipAttr('enginePowerMult')}>Engine</span></label><input id="rv-eng" type="range" min="0.5" max="2" step="0.05"><div class="val" id="rv-eng-v"></div></div>
         <div class="rv-row"><label for="rv-brk"><span class="rv-name"${tipAttr('brakeForce')}>Brake</span></label><input id="rv-brk" type="range" min="380" max="1100" step="10"><div class="val" id="rv-brk-v"></div></div>
         <div class="rv-row"><label for="rv-steer"><span class="rv-name"${tipAttr('maxSteer')}>Max steer</span></label><input id="rv-steer" type="range" min="0.25" max="0.85" step="0.01"><div class="val" id="rv-steer-v"></div></div>
         <div class="rv-row"><label for="rv-steers"><span class="rv-name"${tipAttr('steerSpeed')}>Steer speed</span></label><input id="rv-steers" type="range" min="2" max="10" step="0.1"><div class="val" id="rv-steers-v"></div></div>
@@ -1648,7 +1652,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       ['rv-veliters', { kind: 'vehicle', type: 'number', parse: (v) => parseInt(v, 10) || 0, format: fmtInt, getDefault: vehicleDefault('velIters', PLANCK_DEFAULTS.velIters) }],
       ['rv-positers', { kind: 'vehicle', type: 'number', parse: (v) => parseInt(v, 10) || 0, format: fmtInt, getDefault: vehicleDefault('posIters', PLANCK_DEFAULTS.posIters) }],
       ['rv-mass', { kind: 'vehicle', valueEl: els.massV, format: fmtTwo, getDefault: vehicleDefault('mass') }],
-      ['rv-eng', { kind: 'vehicle', valueEl: els.engV, format: fmtInt, getDefault: vehicleDefault('engineForce') }],
+  ['rv-eng', { kind: 'vehicle', valueEl: els.engV, format: fmtTwo, getDefault: vehicleDefault('enginePowerMult', 1) }],
       ['rv-brk', { kind: 'vehicle', valueEl: els.brkV, format: fmtInt, getDefault: vehicleDefault('brakeForce') }],
       ['rv-steer', { kind: 'vehicle', valueEl: els.steerV, format: fmtTwo, getDefault: vehicleDefault('maxSteer') }],
       ['rv-steers', { kind: 'vehicle', valueEl: els.steersV, format: fmtOne, getDefault: vehicleDefault('steerSpeed') }],
@@ -1826,7 +1830,9 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       els.veliters.value = (d.velIters != null ? d.velIters : PLANCK_DEFAULTS.velIters);
       els.positers.value = (d.posIters != null ? d.posIters : PLANCK_DEFAULTS.posIters);
       els.mass.value = d.mass; els.massV.textContent = d.mass.toFixed(2);
-      els.eng.value = d.engineForce; els.engV.textContent = d.engineForce|0;
+      const powerMult = (d.enginePowerMult != null ? d.enginePowerMult : 1);
+      els.eng.value = powerMult;
+      els.engV.textContent = (+powerMult).toFixed(2);
       els.brk.value = d.brakeForce; els.brkV.textContent = d.brakeForce|0;
       els.steer.value = d.maxSteer; els.steerV.textContent = (+d.maxSteer).toFixed(2);
       els.steers.value = d.steerSpeed; els.steersV.textContent = d.steerSpeed.toFixed(1);
@@ -1834,26 +1840,27 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       els.muor.value = d.muLongRoad; els.muorV.textContent = d.muLongRoad.toFixed(2);
       els.mulg.value = d.muLatGrass; els.mulgV.textContent = d.muLatGrass.toFixed(2);
       els.muog.value = d.muLongGrass; els.muogV.textContent = d.muLongGrass.toFixed(2);
-  els.drag.value = d.dragK; els.dragV.textContent = (+d.dragK).toFixed(4);
-  els.roll.value = d.rollK; els.rollV.textContent = d.rollK.toFixed(2);
-  els.rearc.value = (d.rearCircle!=null?d.rearCircle:0.50).toFixed(2); els.rearcV.textContent = (+els.rearc.value).toFixed(2);
-  els.frontc.value = (d.frontCircle!=null?d.frontCircle:0.50).toFixed(2); els.frontcV.textContent = (+els.frontc.value).toFixed(2);
-  els.brkfs.value = (d.brakeFrontShare!=null?d.brakeFrontShare:0.60).toFixed(2); els.brkfsV.textContent = (+els.brkfs.value).toFixed(2);
-  els.lspe.value = (d.longSlipPeak!=null?d.longSlipPeak:0.18).toFixed(2); els.lspeV.textContent = (+els.lspe.value).toFixed(2);
-  els.lsfo.value = (d.longSlipFalloff!=null?d.longSlipFalloff:0.80).toFixed(2); els.lsfoV.textContent = (+els.lsfo.value).toFixed(2);
-  els.llat.value = (d.loadSenseK!=null?d.loadSenseK:0.08).toFixed(2); els.llatV.textContent = (+els.llat.value).toFixed(2);
-  els.llong.value = (d.muLongLoadSenseK!=null?d.muLongLoadSenseK:0.04).toFixed(2); els.llongV.textContent = (+els.llong.value).toFixed(2);
-  els.df.value = (d.downforceK!=null?d.downforceK:0.00025).toFixed(5); els.dfV.textContent = (+els.df.value).toFixed(5);
-  els.vkine.value = (d.vKineBlend!=null?d.vKineBlend:40).toFixed(0); els.vkineV.textContent = els.vkine.value;
-  els.cgh.value = (d.cgHeight!=null?d.cgHeight:8).toFixed(0); els.cghV.textContent = els.cgh.value;
-  els.yawd.value = (d.yawDampK!=null?d.yawDampK:0.12).toFixed(2); els.yawdV.textContent = (+els.yawd.value).toFixed(2);
-  els.reventry.value = (d.reverseEntrySpeed!=null?d.reverseEntrySpeed:40).toFixed(0); els.reventryV.textContent = els.reventry.value;
-  els.revtorque.value = (d.reverseTorqueScale!=null?d.reverseTorqueScale:0.60).toFixed(2); els.revtorqueV.textContent = (+els.revtorque.value).toFixed(2);
+      els.drag.value = d.dragK; els.dragV.textContent = (+d.dragK).toFixed(4);
+      els.roll.value = d.rollK; els.rollV.textContent = d.rollK.toFixed(2);
+      els.rearc.value = (d.rearCircle!=null?d.rearCircle:0.50).toFixed(2); els.rearcV.textContent = (+els.rearc.value).toFixed(2);
+      els.frontc.value = (d.frontCircle!=null?d.frontCircle:0.50).toFixed(2); els.frontcV.textContent = (+els.frontc.value).toFixed(2);
+      els.brkfs.value = (d.brakeFrontShare!=null?d.brakeFrontShare:0.60).toFixed(2); els.brkfsV.textContent = (+els.brkfs.value).toFixed(2);
+      els.lspe.value = (d.longSlipPeak!=null?d.longSlipPeak:0.18).toFixed(2); els.lspeV.textContent = (+els.lspe.value).toFixed(2);
+      els.lsfo.value = (d.longSlipFalloff!=null?d.longSlipFalloff:0.80).toFixed(2); els.lsfoV.textContent = (+els.lsfo.value).toFixed(2);
+      els.llat.value = (d.loadSenseK!=null?d.loadSenseK:0.08).toFixed(2); els.llatV.textContent = (+els.llat.value).toFixed(2);
+      els.llong.value = (d.muLongLoadSenseK!=null?d.muLongLoadSenseK:0.04).toFixed(2); els.llongV.textContent = (+els.llong.value).toFixed(2);
+      els.df.value = (d.downforceK!=null?d.downforceK:0.00025).toFixed(5); els.dfV.textContent = (+els.df.value).toFixed(5);
+      els.vkine.value = (d.vKineBlend!=null?d.vKineBlend:40).toFixed(0); els.vkineV.textContent = els.vkine.value;
+      els.cgh.value = (d.cgHeight!=null?d.cgHeight:8).toFixed(0); els.cghV.textContent = els.cgh.value;
+      els.yawd.value = (d.yawDampK!=null?d.yawDampK:0.12).toFixed(2); els.yawdV.textContent = (+els.yawd.value).toFixed(2);
+      els.reventry.value = (d.reverseEntrySpeed!=null?d.reverseEntrySpeed:40).toFixed(0); els.reventryV.textContent = els.reventry.value;
+      els.revtorque.value = (d.reverseTorqueScale!=null?d.reverseTorqueScale:0.60).toFixed(2); els.revtorqueV.textContent = (+els.revtorque.value).toFixed(2);
     }
     refresh(els.kind.value);
 
     function apply(){
       const k = els.kind.value;
+      const powerMult = clamp(+els.eng.value || 1, 0.5, 2);
       const p = VEHICLE_DEFAULTS[k] = {
         ...VEHICLE_DEFAULTS[k],
         usePlanck: !!els.planck.checked,
@@ -1864,7 +1871,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
         velIters: clamp(+els.veliters.value || PLANCK_DEFAULTS.velIters, 1, 50),
         posIters: clamp(+els.positers.value || PLANCK_DEFAULTS.posIters, 1, 50),
         mass: +els.mass.value,
-        engineForce: +els.eng.value,
+        enginePowerMult: powerMult,
         brakeForce: +els.brk.value,
         maxSteer: +els.steer.value,
         steerSpeed: +els.steers.value,
@@ -1895,6 +1902,9 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
         if (!c) continue;
         if (!c.physics) initCar(c, c.kind);
         c.physics.params = { ...c.physics.params, ...p };
+        if (c.gearbox instanceof Gearbox) {
+          c.gearbox.c.powerMult = powerMult;
+        }
         if (c.physics.planckBody) {
           const body = c.physics.planckBody;
           try {
@@ -1925,7 +1935,12 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       els[key].addEventListener('input', ()=>{
         const v = els[key].value;
         const label = key+'V';
-        if (els[label]) els[label].textContent = (''+v).slice(0, (key==='drag'?6:(key==='revtorque'?6:4)));
+        if (els[label]) {
+          if (key === 'drag') els[label].textContent = (+v).toFixed(4);
+          else if (key === 'revtorque') els[label].textContent = (+v).toFixed(2);
+          else if (key === 'eng') els[label].textContent = (+v).toFixed(2);
+          else els[label].textContent = (''+v).slice(0, 4);
+        }
         apply();
         handleSave(controlId);
       });

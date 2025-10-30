@@ -10,6 +10,7 @@ export const gearboxDefaults = {
   downshiftRPM: 4400,
   wheelRadius:  0.50,
   drivelineEff: 1.00,
+  powerMult:   1.00,
   torquePeak:   40,
   torqueCurve:  null,
   engineBrakePeak: 0.0,
@@ -173,13 +174,14 @@ export class Gearbox {
       this.clutchLock = 1;
     }
 
-    const Te_drive = onThrottle ? this._torqueAt(this.rpm, throttle) * driveCut : 0;
+  const powerMult = (c.powerMult != null ? c.powerMult : 1);
+  const Te_drive = onThrottle ? this._torqueAt(this.rpm, throttle) * powerMult * driveCut : 0;
     const Te_brake = (!onThrottle && engaged) ? -this._engineBrakeAt(this.rpm) : 0;
     const Te_total = Te_drive + Te_brake;
     const Tw = Te_total * finalRatio * c.drivelineEff;
     const denom = Math.max(1e-4, c.wheelRadius);
     let requestedForce = Tw / denom;
-    let forceNorm = (c.torquePeak * Math.abs(finalRatio) * c.drivelineEff) / denom;
+  let forceNorm = (c.torquePeak * Math.abs(finalRatio) * c.drivelineEff * powerMult) / denom;
 
     if (engaged) {
       this._lastForceNorm = forceNorm;
