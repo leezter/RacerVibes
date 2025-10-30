@@ -117,15 +117,6 @@
           <button type="button" class="btn small" id="createTrackBtn">Create Track</button>
         </div>
       </fieldset>
-
-      <fieldset>
-        <legend>Steering Mode</legend>
-        <select id="steeringModeSel">
-          <option value="manual">Manual Steering</option>
-          <option value="touch">Touch Steering</option>
-        </select>
-      </fieldset>
-
       <div class="footer">
         <div class="muted">W/S/A/D drive • R restart • Space pause</div>
         <div class="row">
@@ -144,7 +135,6 @@
         const quitBtn = $("quitBtn");
         const trackSel = $("trackSel");
         const vehicleSel = $("vehicleSel");
-        const steeringSel = $("steeringModeSel");
         const createTrackBtn = $("createTrackBtn");
 
         let customGroup = null;
@@ -211,26 +201,15 @@
           refreshCustomTracks().catch((err) => console.warn("Track load failed", err));
         }
 
-        const validModes = new Set(["manual", "touch"]);
-        (function initSteeringMode(){
-          let initial = "manual";
+        const validSteeringModes = new Set(["manual", "touch"]);
+        (function ensureSteeringModePref(){
           try {
-            const saved = localStorage.getItem("steeringMode");
-            if (saved && validModes.has(saved)) {
-              initial = saved;
-            } else {
+            const stored = localStorage.getItem("steeringMode");
+            if (!stored || !validSteeringModes.has(stored)) {
               localStorage.setItem("steeringMode", "manual");
             }
-          } catch(_){}
-          if (steeringSel) steeringSel.value = initial;
+          } catch(_){ }
         })();
-
-        if (steeringSel) {
-          steeringSel.addEventListener("change", function(){
-            const mode = validModes.has(steeringSel.value) ? steeringSel.value : "manual";
-            try { localStorage.setItem("steeringMode", mode); } catch(_){}
-          });
-        }
 
         if (startBtn) {
           startBtn.addEventListener("click", function(){
@@ -239,10 +218,6 @@
             const track = encodeURIComponent(trackValue);
             const carValue = vehicleSel ? vehicleSel.value : "GT";
             const car = encodeURIComponent(carValue);
-            if (steeringSel) {
-              const modeValue = validModes.has(steeringSel.value) ? steeringSel.value : "manual";
-              try { localStorage.setItem("steeringMode", modeValue); } catch(_){}
-            }
             const file = mode === "drift" ? "racer_mode_drift.html" : "racer_mode_grip.html";
             window.location.href = file + "?track=" + track + "&car=" + car;
           });

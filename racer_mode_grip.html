@@ -1807,13 +1807,20 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
             if (player && player.gearbox) {
               const gearLabel = player.gearbox.gear;
               const hudText = `${gearLabel}  ${(player.gearbox.rpm|0)} rpm`;
-              ctx.font = "14px system-ui";
-              const w = ctx.measureText(hudText).width + 16;
-              const hudX = 16, hudY = H - 44;
+              const scale = 3;
+              const fontSize = 14 * scale;
+              const padX = 8 * scale;
+              const boxHeight = 28 * scale;
+              ctx.font = `${fontSize}px system-ui`;
+              const textWidth = ctx.measureText(hudText).width;
+              const boxWidth = textWidth + padX * 2;
+              const hudX = 16;
+              const hudY = H - (16 + boxHeight);
               ctx.fillStyle = "rgba(10,16,24,0.7)";
-              ctx.fillRect(hudX, hudY, w, 28);
+              ctx.fillRect(hudX, hudY, boxWidth, boxHeight);
               ctx.fillStyle = "#f8fafc";
-              ctx.fillText(hudText, hudX + 8, hudY + 19);
+              const baselineOffset = boxHeight - (9 * scale);
+              ctx.fillText(hudText, hudX + padX, hudY + baselineOffset);
             }
             ctx.restore();
           }

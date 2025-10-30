@@ -923,7 +923,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       const canShiftNow = gearIndex >= 1 && maxForwardGear > 0 && gb.shiftCut <= 0 && !gb._justShifted;
       let shiftedAuto = false;
       if (canShiftNow && gearIndex < maxForwardGear) {
-        const allowUpshift = throttlePressed && rpm >= upshiftRPM && slipMag < 0.85 && vForward > 0.4 && !brakePressed;
+        const allowUpshift = rpm >= upshiftRPM && vForward > 0.2 && !brakePressed && !reversing;
         if (allowUpshift) {
           gb.shiftUp();
           shiftedAuto = true;
@@ -1307,7 +1307,8 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     .rv-row{display:flex; align-items:center; gap:8px; margin:6px 0}
     .rv-row label{width:120px; opacity:.9}
     .rv-row input[type=range]{flex:1}
-    .rv-row input[type=number]{width:80px;background:#0b1322;color:#e6eef6;border:1px solid #334;border-radius:6px;padding:4px}
+  .rv-row input[type=number]{width:80px;background:#0b1322;color:#e6eef6;border:1px solid #334;border-radius:6px;padding:4px}
+  .rv-row select{flex:1;background:#0b1322;color:#e6eef6;border:1px solid #334;border-radius:6px;padding:6px 8px}
     .rv-row .val{width:40px; text-align:right; opacity:.8}
     .rv-row .rv-btns{display:flex;flex-direction:column;gap:4px}
     .rv-row .rv-mini{appearance:none;border:1px solid #334;background:#18253c;color:#e6eef6;font-size:11px;padding:2px 6px;border-radius:4px;cursor:pointer}
@@ -1349,6 +1350,14 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       brakeForce: "Peak braking force. Higher = shorter stops; too high can overwhelm grip.",
       maxSteer: "Maximum steering lock. Higher = tighter turns, riskier at speed.",
       steerSpeed: "How fast steering moves toward target. Higher = snappier steering.",
+  steerMode: "Switch player steering between manual input and adaptive touch assist.",
+  touchMaxLow: "Touch: steering lock available at low speeds before blending down.",
+  touchMaxHigh: "Touch: steering lock available at high speeds after blending.",
+  touchFalloff: "Touch: speed (px/s) where steering lock transitions toward the high-speed limit.",
+  touchBaseRate: "Touch: base steering slew rate before speed-based reductions.",
+  touchRateFalloff: "Touch: controls how quickly steer rate slows down as speed rises.",
+  touchReturn: "Touch: centering gain that eases the wheel back toward center.",
+  touchFilter: "Touch: smoothing constant (seconds) for the speed filter driving the assist.",
       muLatRoad: "Sideways (lateral) grip on road. Raises cornering limit before slide.",
       muLongRoad: "Forward/back (longitudinal) grip on road. Affects traction & braking.",
       muLatGrass: "Sideways grip on grass (usually much lower than road).",
@@ -1418,6 +1427,22 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
         <div class="rv-row"><label for="rv-brk"><span class="rv-name"${tipAttr('brakeForce')}>Brake</span></label><input id="rv-brk" type="range" min="380" max="1100" step="10"><div class="val" id="rv-brk-v"></div></div>
         <div class="rv-row"><label for="rv-steer"><span class="rv-name"${tipAttr('maxSteer')}>Max steer</span></label><input id="rv-steer" type="range" min="0.25" max="0.85" step="0.01"><div class="val" id="rv-steer-v"></div></div>
         <div class="rv-row"><label for="rv-steers"><span class="rv-name"${tipAttr('steerSpeed')}>Steer speed</span></label><input id="rv-steers" type="range" min="2" max="10" step="0.1"><div class="val" id="rv-steers-v"></div></div>
+        <div class="rv-section">
+          <h4>Steering</h4>
+          <div class="rv-row"><label for="rv-steerMode"><span class="rv-name"${tipAttr('steerMode')}>Player mode</span></label>
+            <select id="rv-steerMode">
+              <option value="manual">Manual</option>
+              <option value="touch">Touch</option>
+            </select>
+          </div>
+          <div class="rv-row"><label for="rv-touchMaxLow"><span class="rv-name"${tipAttr('touchMaxLow')}>Touch max (low)</span></label><input id="rv-touchMaxLow" type="range" min="0.30" max="0.90" step="0.01"><div class="val" id="rv-touchMaxLow-v"></div></div>
+          <div class="rv-row"><label for="rv-touchMaxHigh"><span class="rv-name"${tipAttr('touchMaxHigh')}>Touch max (high)</span></label><input id="rv-touchMaxHigh" type="range" min="0.10" max="0.60" step="0.01"><div class="val" id="rv-touchMaxHigh-v"></div></div>
+          <div class="rv-row"><label for="rv-touchFalloff"><span class="rv-name"${tipAttr('touchFalloff')}>Falloff speed</span></label><input id="rv-touchFalloff" type="range" min="80" max="460" step="5"><div class="val" id="rv-touchFalloff-v"></div></div>
+          <div class="rv-row"><label for="rv-touchBaseRate"><span class="rv-name"${tipAttr('touchBaseRate')}>Base steer rate</span></label><input id="rv-touchBaseRate" type="range" min="2" max="12" step="0.1"><div class="val" id="rv-touchBaseRate-v"></div></div>
+          <div class="rv-row"><label for="rv-touchRateFalloff"><span class="rv-name"${tipAttr('touchRateFalloff')}>Rate falloff</span></label><input id="rv-touchRateFalloff" type="range" min="0" max="0.0100" step="0.0001"><div class="val" id="rv-touchRateFalloff-v"></div></div>
+          <div class="rv-row"><label for="rv-touchReturn"><span class="rv-name"${tipAttr('touchReturn')}>Return gain</span></label><input id="rv-touchReturn" type="range" min="0" max="6" step="0.1"><div class="val" id="rv-touchReturn-v"></div></div>
+          <div class="rv-row"><label for="rv-touchFilter"><span class="rv-name"${tipAttr('touchFilter')}>Filter tau</span></label><input id="rv-touchFilter" type="range" min="0.05" max="0.40" step="0.01"><div class="val" id="rv-touchFilter-v"></div></div>
+        </div>
         <div class="rv-row"><label for="rv-mulr"><span class="rv-name"${tipAttr('muLatRoad')}>Grip lat (road)</span></label><input id="rv-mulr" type="range" min="0.8" max="2.2" step="0.05"><div class="val" id="rv-mulr-v"></div></div>
         <div class="rv-row"><label for="rv-muor"><span class="rv-name"${tipAttr('muLongRoad')}>Grip long (road)</span></label><input id="rv-muor" type="range" min="0.6" max="1.8" step="0.05"><div class="val" id="rv-muor-v"></div></div>
         <div class="rv-row"><label for="rv-mulg"><span class="rv-name"${tipAttr('muLatGrass')}>Grip lat (grass)</span></label><input id="rv-mulg" type="range" min="0.3" max="1.0" step="0.02"><div class="val" id="rv-mulg-v"></div></div>
@@ -1477,6 +1502,14 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       brk: wrap.querySelector('#rv-brk'),     brkV: wrap.querySelector('#rv-brk-v'),
       steer: wrap.querySelector('#rv-steer'), steerV: wrap.querySelector('#rv-steer-v'),
       steers: wrap.querySelector('#rv-steers'), steersV: wrap.querySelector('#rv-steers-v'),
+  steerMode: wrap.querySelector('#rv-steerMode'),
+  touchMaxLow: wrap.querySelector('#rv-touchMaxLow'), touchMaxLowV: wrap.querySelector('#rv-touchMaxLow-v'),
+  touchMaxHigh: wrap.querySelector('#rv-touchMaxHigh'), touchMaxHighV: wrap.querySelector('#rv-touchMaxHigh-v'),
+  touchFalloff: wrap.querySelector('#rv-touchFalloff'), touchFalloffV: wrap.querySelector('#rv-touchFalloff-v'),
+  touchBaseRate: wrap.querySelector('#rv-touchBaseRate'), touchBaseRateV: wrap.querySelector('#rv-touchBaseRate-v'),
+  touchRateFalloff: wrap.querySelector('#rv-touchRateFalloff'), touchRateFalloffV: wrap.querySelector('#rv-touchRateFalloff-v'),
+  touchReturn: wrap.querySelector('#rv-touchReturn'), touchReturnV: wrap.querySelector('#rv-touchReturn-v'),
+  touchFilter: wrap.querySelector('#rv-touchFilter'), touchFilterV: wrap.querySelector('#rv-touchFilter-v'),
       mulr: wrap.querySelector('#rv-mulr'),   mulrV: wrap.querySelector('#rv-mulr-v'),
       muor: wrap.querySelector('#rv-muor'),   muorV: wrap.querySelector('#rv-muor-v'),
       mulg: wrap.querySelector('#rv-mulg'),   mulgV: wrap.querySelector('#rv-mulg-v'),
@@ -1538,6 +1571,32 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
 
     const controlHandlers = {};
     const CONTROL_META = {};
+    const STEERING_MODES = new Set(['manual', 'touch']);
+    const getStoredSteeringMode = () => {
+      try {
+        const stored = (typeof localStorage !== 'undefined') ? localStorage.getItem('steeringMode') : null;
+        return STEERING_MODES.has(stored) ? stored : 'manual';
+      } catch(_) {
+        return 'manual';
+      }
+    };
+    const applySteeringModeSelection = (mode, carSet) => {
+      const chosen = STEERING_MODES.has(mode) ? mode : 'manual';
+      try {
+        if (typeof localStorage !== 'undefined') localStorage.setItem('steeringMode', chosen);
+      } catch(_){/* ignore */}
+      let set = carSet;
+      if (!set && typeof getCars === 'function') {
+        set = getCars() || {};
+      }
+      if (set) {
+        const player = set.player;
+        if (player) {
+          player.steeringMode = chosen;
+          if (player.physics) player.physics.steeringMode = chosen;
+        }
+      }
+    };
 
     function attachControlButtons(input, id){
       if (!input) return;
@@ -1653,6 +1712,15 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       }
       return val;
     };
+    const vehicleTouchDefault = (prop, fallback) => (kind) => {
+      const defaults = defaultSnapshot[kind] || {};
+      const touch = defaults.touchSteer || {};
+      let val = touch[prop];
+      if ((val === undefined || val === null) && fallback !== undefined) {
+        val = typeof fallback === 'function' ? fallback(defaults, touch) : fallback;
+      }
+      return val;
+    };
 
     const CONTROL_SETUP = [
       ['rv-debug', { kind: 'global', type: 'checkbox', getDefault: () => false, apply: false, afterSet: () => setDebugEnabled(!!els.debug.checked) }],
@@ -1676,6 +1744,17 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       ['rv-brk', { kind: 'vehicle', valueEl: els.brkV, format: fmtInt, getDefault: vehicleDefault('brakeForce') }],
       ['rv-steer', { kind: 'vehicle', valueEl: els.steerV, format: fmtTwo, getDefault: vehicleDefault('maxSteer') }],
       ['rv-steers', { kind: 'vehicle', valueEl: els.steersV, format: fmtOne, getDefault: vehicleDefault('steerSpeed') }],
+      ['rv-steerMode', { kind: 'global', type: 'select', getDefault: () => 'manual', format: (value) => value === 'touch' ? 'Touch' : 'Manual', afterSet: (value) => applySteeringModeSelection(value) }],
+      ['rv-touchMaxLow', { kind: 'vehicle', valueEl: els.touchMaxLowV, format: fmtTwo, getDefault: vehicleTouchDefault('maxSteerLowSpeed', (defaults) => (defaults.maxSteer != null ? defaults.maxSteer : 0.60)) }],
+      ['rv-touchMaxHigh', { kind: 'vehicle', valueEl: els.touchMaxHighV, format: fmtTwo, getDefault: vehicleTouchDefault('maxSteerHighSpeed', (defaults) => {
+        const base = defaults.maxSteer != null ? defaults.maxSteer : 0.50;
+        return base * 0.6;
+      }) }],
+      ['rv-touchFalloff', { kind: 'vehicle', valueEl: els.touchFalloffV, format: fmtInt, getDefault: vehicleTouchDefault('falloffSpeed', 260) }],
+      ['rv-touchBaseRate', { kind: 'vehicle', valueEl: els.touchBaseRateV, format: fmtOne, getDefault: vehicleTouchDefault('baseSteerRate', (defaults) => (defaults.steerSpeed != null ? defaults.steerSpeed : 5)) }],
+      ['rv-touchRateFalloff', { kind: 'vehicle', valueEl: els.touchRateFalloffV, format: fmtFour, getDefault: vehicleTouchDefault('steerRateFalloff', 0.0035) }],
+      ['rv-touchReturn', { kind: 'vehicle', valueEl: els.touchReturnV, format: fmtOne, getDefault: vehicleTouchDefault('returnGain', 0) }],
+      ['rv-touchFilter', { kind: 'vehicle', valueEl: els.touchFilterV, format: fmtTwo, getDefault: vehicleTouchDefault('filterTau', 0.12) }],
       ['rv-mulr', { kind: 'vehicle', valueEl: els.mulrV, format: fmtTwo, getDefault: vehicleDefault('muLatRoad') }],
       ['rv-muor', { kind: 'vehicle', valueEl: els.muorV, format: fmtTwo, getDefault: vehicleDefault('muLongRoad') }],
       ['rv-mulg', { kind: 'vehicle', valueEl: els.mulgV, format: fmtTwo, getDefault: vehicleDefault('muLatGrass') }],
@@ -1715,6 +1794,10 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       }}]
     ];
     CONTROL_SETUP.forEach(([id, meta]) => registerControl(id, meta));
+    const steerModeHandler = controlHandlers['rv-steerMode'];
+    if (steerModeHandler && !Object.prototype.hasOwnProperty.call(DEVTOOLS_SAVED, 'rv-steerMode')) {
+      steerModeHandler.set(getStoredSteeringMode());
+    }
 
     const presetChooser = wrap.querySelector('.rv-preset-chooser');
     const presetSaveBtn = document.getElementById('rv-preset-save');
@@ -1861,6 +1944,46 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       els.brk.value = d.brakeForce; els.brkV.textContent = d.brakeForce|0;
       els.steer.value = d.maxSteer; els.steerV.textContent = (+d.maxSteer).toFixed(2);
       els.steers.value = d.steerSpeed; els.steersV.textContent = d.steerSpeed.toFixed(1);
+      if (els.steerMode) {
+        els.steerMode.value = getStoredSteeringMode();
+      }
+      const ts = d.touchSteer || {};
+      if (els.touchMaxLow) {
+        const val = ts.maxSteerLowSpeed != null ? ts.maxSteerLowSpeed : (d.maxSteer != null ? d.maxSteer : 0.60);
+        els.touchMaxLow.value = val;
+        if (els.touchMaxLowV) els.touchMaxLowV.textContent = (+val).toFixed(2);
+      }
+      if (els.touchMaxHigh) {
+        const base = d.maxSteer != null ? d.maxSteer : 0.50;
+        const val = ts.maxSteerHighSpeed != null ? ts.maxSteerHighSpeed : base * 0.6;
+        els.touchMaxHigh.value = val;
+        if (els.touchMaxHighV) els.touchMaxHighV.textContent = (+val).toFixed(2);
+      }
+      if (els.touchFalloff) {
+        const val = ts.falloffSpeed != null ? ts.falloffSpeed : 260;
+        els.touchFalloff.value = val;
+        if (els.touchFalloffV) els.touchFalloffV.textContent = String(Math.round(+val));
+      }
+      if (els.touchBaseRate) {
+        const val = ts.baseSteerRate != null ? ts.baseSteerRate : (d.steerSpeed != null ? d.steerSpeed : 5);
+        els.touchBaseRate.value = val;
+        if (els.touchBaseRateV) els.touchBaseRateV.textContent = (+val).toFixed(1);
+      }
+      if (els.touchRateFalloff) {
+        const val = ts.steerRateFalloff != null ? ts.steerRateFalloff : 0.0035;
+        els.touchRateFalloff.value = val;
+        if (els.touchRateFalloffV) els.touchRateFalloffV.textContent = (+val).toFixed(4);
+      }
+      if (els.touchReturn) {
+        const val = ts.returnGain != null ? ts.returnGain : 0;
+        els.touchReturn.value = val;
+        if (els.touchReturnV) els.touchReturnV.textContent = (+val).toFixed(1);
+      }
+      if (els.touchFilter) {
+        const val = ts.filterTau != null ? ts.filterTau : 0.12;
+        els.touchFilter.value = val;
+        if (els.touchFilterV) els.touchFilterV.textContent = (+val).toFixed(2);
+      }
       els.mulr.value = d.muLatRoad; els.mulrV.textContent = d.muLatRoad.toFixed(2);
       els.muor.value = d.muLongRoad; els.muorV.textContent = d.muLongRoad.toFixed(2);
       els.mulg.value = d.muLatGrass; els.mulgV.textContent = d.muLatGrass.toFixed(2);
@@ -1885,6 +2008,15 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
 
     function apply(){
       const k = els.kind.value;
+      const steeringModeSelection = els.steerMode ? els.steerMode.value : getStoredSteeringMode();
+      const carSet = (typeof getCars === 'function') ? (getCars() || {}) : null;
+      const prevVehicle = VEHICLE_DEFAULTS[k] || {};
+      const prevTouch = prevVehicle.touchSteer || {};
+      const readTouch = (el, fallback) => {
+        if (!el) return fallback;
+        const num = Number(el.value);
+        return Number.isFinite(num) ? num : fallback;
+      };
       const powerMult = clamp(+els.eng.value || 1, 0.5, 2);
       let gravityValue = g;
       if (els.gravity) {
@@ -1895,8 +2027,17 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
           els.gravityV.textContent = String(Math.round(gravityValue));
         }
       }
+      const touchSteerCfg = {
+        maxSteerLowSpeed: readTouch(els.touchMaxLow, prevTouch.maxSteerLowSpeed ?? (prevVehicle.maxSteer ?? 0.60)),
+        maxSteerHighSpeed: readTouch(els.touchMaxHigh, prevTouch.maxSteerHighSpeed ?? ((prevVehicle.maxSteer ?? 0.50) * 0.6)),
+        falloffSpeed: readTouch(els.touchFalloff, prevTouch.falloffSpeed ?? 260),
+        baseSteerRate: readTouch(els.touchBaseRate, prevTouch.baseSteerRate ?? (prevVehicle.steerSpeed ?? 5)),
+        steerRateFalloff: readTouch(els.touchRateFalloff, prevTouch.steerRateFalloff ?? 0.0035),
+        returnGain: readTouch(els.touchReturn, prevTouch.returnGain ?? 0),
+        filterTau: readTouch(els.touchFilter, prevTouch.filterTau ?? 0.12)
+      };
       const p = VEHICLE_DEFAULTS[k] = {
-        ...VEHICLE_DEFAULTS[k],
+        ...prevVehicle,
         usePlanck: !!els.planck.checked,
         pixelsPerMeter: Math.max(1, +els.ppm.value || PLANCK_DEFAULTS.pixelsPerMeter),
         linearDamp: +els.ldamp.value,
@@ -1927,11 +2068,13 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
   cgHeight: +els.cgh.value,
   yawDampK: +els.yawd.value,
   reverseEntrySpeed: +els.reventry.value,
-  reverseTorqueScale: +els.revtorque.value
+  reverseTorqueScale: +els.revtorque.value,
+        touchSteer: { ...touchSteerCfg }
       };
-      const cars = (getCars && getCars()) || {};
+      const cars = carSet || {};
       const applyTo = [cars.player].filter(Boolean);
       if (els.applyAI.checked && Array.isArray(cars.ai)) applyTo.push(...cars.ai);
+      applySteeringModeSelection(steeringModeSelection, cars);
       for (const c of applyTo){
         if (!c) continue;
         if (!c.physics) initCar(c, c.kind);
@@ -1964,19 +2107,48 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       refresh(k);
     }
 
-  for (const key of ['gravity','ldamp','adamp','rest','mass','eng','brk','steer','steers','mulr','muor','mulg','muog','drag','roll','rearc','frontc','brkfs','lspe','lsfo','llat','llong','df','vkine','cgh','yawd','reventry','revtorque']){
+  for (const key of ['gravity','ldamp','adamp','rest','mass','eng','brk','steer','steers','touchMaxLow','touchMaxHigh','touchFalloff','touchBaseRate','touchRateFalloff','touchReturn','touchFilter','mulr','muor','mulg','muog','drag','roll','rearc','frontc','brkfs','lspe','lsfo','llat','llong','df','vkine','cgh','yawd','reventry','revtorque']){
     const controlId = `rv-${key}`;
       els[key].addEventListener('input', ()=>{
         const v = els[key].value;
         const label = key+'V';
         if (els[label]) {
-          if (key === 'drag') els[label].textContent = (+v).toFixed(4);
-          else if (key === 'revtorque' || key === 'eng') els[label].textContent = (+v).toFixed(2);
-          else if (key === 'gravity') els[label].textContent = String(Math.round(+v));
-          else els[label].textContent = (''+v).slice(0, 4);
+          let display;
+          switch (key) {
+            case 'drag':
+            case 'touchRateFalloff':
+              display = (+v).toFixed(4);
+              break;
+            case 'revtorque':
+            case 'eng':
+            case 'touchMaxLow':
+            case 'touchMaxHigh':
+              display = (+v).toFixed(2);
+              break;
+            case 'touchBaseRate':
+            case 'touchReturn':
+              display = (+v).toFixed(1);
+              break;
+            case 'touchFilter':
+              display = (+v).toFixed(2);
+              break;
+            case 'touchFalloff':
+            case 'gravity':
+              display = String(Math.round(+v));
+              break;
+            default:
+              display = (''+v).slice(0, 4);
+          }
+          els[label].textContent = display;
         }
         apply();
         handleSave(controlId);
+      });
+    }
+    if (els.steerMode) {
+      els.steerMode.addEventListener('change', ()=>{
+        apply();
+        handleSave('rv-steerMode');
       });
     }
     els.kind.addEventListener('change', ()=>{
