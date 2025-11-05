@@ -206,7 +206,7 @@
           try {
             const stored = localStorage.getItem("steeringMode");
             if (!stored || !validSteeringModes.has(stored)) {
-              localStorage.setItem("steeringMode", "manual");
+              localStorage.setItem("steeringMode", "touch");
             }
           } catch(_){ }
         })();

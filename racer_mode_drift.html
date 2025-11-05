@@ -261,9 +261,9 @@ const { useEffect, useRef, useState } = React;
       function getSteeringModeSetting() {
         try {
           const value = localStorage.getItem("steeringMode");
-          return value === "touch" ? "touch" : "manual";
+          return value === "manual" ? "manual" : "touch";
         } catch (_) {
-          return "manual";
+          return "touch";
         }
       }
 
