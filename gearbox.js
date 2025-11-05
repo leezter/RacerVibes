@@ -1,1 +1,1 @@
-export { Gearbox, gearboxDefaults } from './src/gearbox.js';
+export * from './src/gearbox.js';

@@ -1,213 +1,592 @@
-const clamp01 = (x) => Math.max(0, Math.min(1, x));
-
-export const gearboxDefaults = {
-  ratios:       [7.00, 4.50, 3.60, 3.00, 2.50, 2.00],
-  reverseRatio: 3.30,
-  finalDrive:   5.00,
-  redlineRPM:   9500,
-  idleRPM:      1100,
-  upshiftRPM:   7800,
-  downshiftRPM: 4400,
-  wheelRadius:  0.50,
-  drivelineEff: 1.00,
-  powerMult:   1.00,
-  torquePeak:   40,
-  torqueCurve:  null,
-  engineBrakePeak: 0.0,
-  throttleDead: 0.05,
-  shiftCutMs:   110,
-  engineInertia: 0.6,
-  clutchEngageRate: 12.0,
-  clutchSlipBoost: 0.0,
-  auto: true,
-  enableReverse: true
+const clamp = (value, lower, upper) => Math.max(lower, Math.min(upper, value));
+const clamp01 = (value) => clamp(value, 0, 1);
+const isFiniteNumber = (value) => typeof value === 'number' && Number.isFinite(value);
+const numberOr = (value, fallback) => (isFiniteNumber(value) ? value : fallback);
+const rpmToFrac = (rpm, redline) => (isFiniteNumber(rpm) && redline > 0 ? clamp(rpm / redline, 0, 1) : undefined);
+const resolveShiftFrac = (fraction, derived, fallback) => {
+	const source = isFiniteNumber(fraction) ? fraction : derived;
+	if (!isFiniteNumber(source)) return fallback;
+	return clamp(source, 0, 1);
 };
 
+export const GEARBOX_CONFIG = {
+	redlineRpm: 7200,
+	upshiftFrac: 0.93,
+	downshiftFrac: 0.70,
+	shiftCutMs: 90,
+	minShiftGapMs: 220,
+	effortMargin: 0.03,
+	drivelineEff: 0.90,
+	tireRadiusM: 0.33,
+	finalDrive: 3.90,
+	rpmRiseGain: 10.0,
+	rpmFallGain: 5.0,
+	idleRpm: 900
+};
+
+export function rpmFromSpeed(speedMps, gearRatio, finalDrive, tireRadiusM) {
+	const radius = Math.max(1e-6, numberOr(tireRadiusM, GEARBOX_CONFIG.tireRadiusM));
+	const totalRatio = numberOr(gearRatio, 0) * numberOr(finalDrive, GEARBOX_CONFIG.finalDrive);
+	if (!isFiniteNumber(totalRatio) || Math.abs(totalRatio) < 1e-6) return 0;
+	const wheelRps = numberOr(speedMps, 0) / (2 * Math.PI * radius);
+	return Math.abs(wheelRps * totalRatio * 60);
+}
+
+export function torqueCurve(rpm, throttle) {
+	const cfg = GEARBOX_CONFIG;
+	const rl = cfg.redlineRpm;
+	const peak = 5000;
+	const base = 120;
+	const maxTq = 260;
+	const r = clamp(rpm ?? 0, 0, rl);
+	let tq;
+	if (r < 1000) tq = base + (r / 1000) * 60;
+	else if (r < peak) tq = base + (maxTq - base) * ((r - 1000) / (peak - 1000));
+	else tq = maxTq - (maxTq - 180) * ((r - peak) / Math.max(1, rl - peak));
+	tq = clamp(tq, 0, maxTq);
+	return tq * clamp01(throttle ?? 0);
+}
+
+export function wheelForceAt(speedMps, gearRatio, finalDrive, tireRadiusM, rpm, throttle, drivelineEff, powerMult = 1, torqueFn = torqueCurve) {
+	const radius = Math.max(1e-6, numberOr(tireRadiusM, GEARBOX_CONFIG.tireRadiusM));
+	const fd = numberOr(finalDrive, GEARBOX_CONFIG.finalDrive);
+	const ratio = numberOr(gearRatio, 0);
+	if (!isFiniteNumber(ratio) || Math.abs(ratio) < 1e-6) return 0;
+	const rpmEff = numberOr(rpm, rpmFromSpeed(speedMps, Math.abs(ratio), fd, radius));
+	const eff = numberOr(drivelineEff, GEARBOX_CONFIG.drivelineEff);
+	const tq = torqueFn(Math.max(0, rpmEff), clamp01(throttle ?? 0)) * numberOr(powerMult, 1);
+	const wheelTorque = tq * ratio * fd * eff;
+	return wheelTorque / radius;
+}
+
+function sanitizeRatios(list) {
+	if (!Array.isArray(list)) return [];
+	const ratios = [];
+	for (const raw of list) {
+		const val = Number(raw);
+		if (Number.isFinite(val) && Math.abs(val) > 1e-4) ratios.push(Math.abs(val));
+	}
+	return ratios;
+}
+
+function arraysEqual(a, b) {
+	if (a === b) return true;
+	if (!Array.isArray(a) || !Array.isArray(b)) return false;
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) {
+		if (Math.abs(a[i] - b[i]) > 1e-6) return false;
+	}
+	return true;
+}
+
+let msAccumulator = 0;
+
+function clampGear(gear, state, maxForward) {
+	const allowReverse = state && state.enableReverse !== false;
+	const minGear = allowReverse ? -1 : 0;
+	const maxGear = Math.max(0, Math.round(maxForward || 0));
+	const g = Math.round(numberOr(gear, 0));
+	return clamp(g, minGear, maxGear);
+}
+
+function resolveCurrentRatio(state) {
+	if (!state) return 0;
+	const ratios = state.gearRatios || [];
+	if (!ratios.length) return 0;
+	if (state.gear >= 1) {
+		const idx = Math.min(ratios.length - 1, state.gear - 1);
+		return ratios[idx] || 0;
+	}
+	if (state.gear === -1) {
+		const rev = numberOr(state.reverseRatio, ratios[0] || 0);
+		return rev ? -Math.abs(rev) : 0;
+	}
+	return 0;
+}
+
+// Applies min-gap, overrev, and reverse guards before committing a shift.
+function attemptShift(state, targetGear, ctx = {}) {
+	if (!state) return false;
+	const ratios = state.gearRatios || [];
+	const gearCount = ratios.length;
+	const cfg = ctx.cfg || GEARBOX_CONFIG;
+	let next = clampGear(targetGear, state, gearCount);
+
+	const allowNeutral = state.allowNeutral !== false;
+	const manual = !!ctx.manual;
+	if (next === 0 && state.auto && !manual && !allowNeutral) {
+		next = next > state.gear ? clampGear(next + 1, state, gearCount) : clampGear(next - 1, state, gearCount);
+	}
+	if (next === state.gear) return false;
+
+	const now = ctx.now ?? msAccumulator;
+	const minGap = numberOr(state.minShiftGapMs, cfg.minShiftGapMs);
+	const since = now - numberOr(state.lastShiftMs, -1e9);
+	if (since < minGap) {
+		if (ctx.queueOnFail) {
+			if (next > state.gear) state.manualShiftUp = true;
+			else if (next < state.gear) state.manualShiftDown = true;
+		}
+		return false;
+	}
+
+	const fd = numberOr(ctx.finalDrive, state.finalDrive ?? cfg.finalDrive);
+	const tireR = Math.max(1e-6, numberOr(ctx.tireRadiusM, state.tireRadiusM ?? state.wheelRadius ?? cfg.tireRadiusM));
+	const redline = numberOr(ctx.redline, state.redlineRpm ?? state.redlineRPM ?? cfg.redlineRpm);
+	const idle = numberOr(state.idleRpm ?? state.idleRPM, cfg.idleRpm);
+	const speed = Math.max(0, numberOr(ctx.speed, numberOr(state.speedMps, 0)));
+
+	if (next >= 1 && next < state.gear) {
+		const ratio = ratios[next - 1] || 0;
+		if (ratio) {
+			const rpm = rpmFromSpeed(speed, ratio, fd, tireR);
+			if (rpm > redline * 0.995) {
+				state.shiftDeniedReason = 'overrev';
+				return false;
+			}
+		}
+	}
+	if (next === -1 && state.gear !== -1) {
+		const revLimit = numberOr(ctx.reverseSpeedLimit, 2.5);
+		if (speed > revLimit) {
+			state.shiftDeniedReason = 'reverse-speed';
+			return false;
+		}
+	}
+
+	const cutMs = numberOr(state.shiftCutMs, cfg.shiftCutMs);
+	state.prevGear = state.gear;
+	state.gear = next;
+	state.lastShiftMs = now;
+	state.cutRemainingMs = cutMs;
+	state.justShiftedAt = now;
+	state.shiftDeniedReason = null;
+
+	const ratioAfter = resolveCurrentRatio(state);
+	const rpmAfter = ratioAfter ? rpmFromSpeed(speed, Math.abs(ratioAfter), fd, tireR) : idle;
+	const rpmClamped = clamp(rpmAfter, idle, redline);
+	state.rpm = rpmClamped;
+	state.smoothedRpm = rpmClamped;
+	state.manualShiftUp = false;
+	state.manualShiftDown = false;
+	return true;
+}
+
+export function updateGearbox(state, dt, inputs = {}) {
+	if (!state) return;
+	const cfg = GEARBOX_CONFIG;
+	const dtSec = Math.max(0, numberOr(dt, 0));
+	msAccumulator += dtSec * 1000;
+	const now = msAccumulator;
+
+	if (!Array.isArray(state.gearRatios)) state.gearRatios = [];
+	state.maxGear = state.gearRatios.length;
+	state.gear = clampGear(state.gear, state, state.maxGear);
+
+	const fd = numberOr(state.finalDrive, cfg.finalDrive);
+	const tireR = Math.max(1e-6, numberOr(state.tireRadiusM ?? state.wheelRadius, cfg.tireRadiusM));
+	const redline = numberOr(state.redlineRpm ?? state.redlineRPM, cfg.redlineRpm);
+	const idleBase = numberOr(state.idleRpm ?? state.idleRPM, cfg.idleRpm);
+	const idle = Math.min(redline * 0.25, Math.max(600, idleBase));
+	state.finalDrive = fd;
+	state.tireRadiusM = tireR;
+	state.redlineRpm = redline;
+	state.idleRpm = idle;
+
+	const throttle = clamp01(inputs.throttle ?? state.throttle ?? 0);
+	const brake = clamp01(inputs.brake ?? state.brake ?? 0);
+	const speed = Math.max(0, numberOr(inputs.speedMps, numberOr(state.speedMps, 0)));
+	state.speedMps = speed;
+	state.throttle = throttle;
+	state.brake = brake;
+
+	state.cutRemainingMs = Math.max(0, numberOr(state.cutRemainingMs, 0) - dtSec * 1000);
+
+	const baseCtx = {
+		cfg,
+		now,
+		redline,
+		speed,
+		finalDrive: fd,
+		tireRadiusM: tireR
+	};
+
+	if (inputs.shiftUp || state.manualShiftUp) {
+		const ok = attemptShift(state, state.gear + 1, { ...baseCtx, manual: true });
+		state.manualShiftUp = ok ? false : true;
+	}
+	if (inputs.shiftDown || state.manualShiftDown) {
+		const ok = attemptShift(state, state.gear - 1, { ...baseCtx, manual: true });
+		state.manualShiftDown = ok ? false : true;
+	}
+
+	const ratio = resolveCurrentRatio(state);
+	state.currentRatio = ratio;
+	state.totalRatio = ratio * fd;
+
+	const rpmTarget = ratio ? rpmFromSpeed(speed, Math.abs(ratio), fd, tireR) : idle;
+	const gain = throttle > 0.05
+		? numberOr(state.rpmRiseGain, cfg.rpmRiseGain)
+		: numberOr(state.rpmFallGain, cfg.rpmFallGain);
+	const rpmCurrent = numberOr(state.rpm, idle);
+	const blend = clamp(dtSec * gain, 0, 1);
+	const rpmNext = clamp(rpmCurrent + (rpmTarget - rpmCurrent) * blend, idle, redline);
+	state.rpm = rpmNext;
+	state.smoothedRpm = rpmNext;
+	state.rpmTarget = rpmTarget;
+
+	const sinceLast = now - numberOr(state.lastShiftMs, -1e9);
+	const autoEnabled = inputs.auto ?? state.auto ?? true;
+	state.auto = !!autoEnabled;
+
+	const canAutoShift = state.auto && state.cutRemainingMs <= 0 && sinceLast >= numberOr(state.minShiftGapMs, cfg.minShiftGapMs);
+	if (canAutoShift && ratio !== 0) {
+		const upThresh = numberOr(state.upshiftFrac, cfg.upshiftFrac) * redline;
+		const downThresh = numberOr(state.downshiftFrac, cfg.downshiftFrac) * redline;
+		const eff = numberOr(state.drivelineEff, cfg.drivelineEff);
+		const powerMult = numberOr(state.powerMult, 1);
+		const torqueFn = state.torqueCurve || torqueCurve;
+		const currRatio = state.gear >= 1 ? ratio : 0;
+		const Fcurr = currRatio
+			? wheelForceAt(speed, currRatio, fd, tireR, rpmNext, throttle, eff, powerMult, torqueFn)
+			: 0;
+
+		if (state.gear >= 1 && state.gear < state.gearRatios.length) {
+			const nextRatio = state.gearRatios[state.gear] || 0;
+			if (nextRatio) {
+				const rpmNextGear = rpmFromSpeed(speed, nextRatio, fd, tireR);
+				const Fnext = wheelForceAt(speed, nextRatio, fd, tireR, rpmNextGear, throttle, eff, powerMult, torqueFn);
+				const margin = Math.max(0, numberOr(state.effortMargin, cfg.effortMargin));
+				const lowDemand = throttle < 0.15;
+				const rpmNearRedline = rpmNext > redline * (lowDemand ? 0.965 : 0.985);
+				const torqueReady = !currRatio || Fnext >= Fcurr * (1 - margin * 0.5);
+				if ((rpmNext > upThresh && torqueReady) || rpmNearRedline) {
+					attemptShift(state, state.gear + 1, baseCtx);
+				}
+			}
+		}
+
+		if (state.gear > 1) {
+			const prevRatio = state.gearRatios[state.gear - 2] || 0;
+			if (prevRatio) {
+				const rpmPrev = rpmFromSpeed(speed, prevRatio, fd, tireR);
+				if (rpmNext < downThresh && rpmPrev < redline * 0.99) {
+					attemptShift(state, state.gear - 1, baseCtx);
+				}
+			}
+		}
+	}
+
+	const resolved = resolveCurrentRatio(state);
+	state.currentRatio = resolved;
+	state.totalRatio = resolved * fd;
+	state.isNeutral = resolved === 0;
+	state.isReverse = resolved < 0;
+	state.lastUpdateMs = now;
+}
+
+export function getDriveForce(state, speedMps, throttle) {
+	if (!state) return 0;
+	const cfg = GEARBOX_CONFIG;
+	const ratio = resolveCurrentRatio(state);
+	state.currentRatio = ratio;
+	state.totalRatio = ratio * numberOr(state.finalDrive, cfg.finalDrive);
+	const cutActive = numberOr(state.cutRemainingMs, 0) > 0;
+	if (!ratio || cutActive) {
+		state.lastWheelTorque = 0;
+		state.lastEngineTorque = 0;
+		state.lastDriveForce = 0;
+		state.isNeutral = true;
+		state.isReverse = ratio < 0;
+		return 0;
+	}
+	const fd = numberOr(state.finalDrive, cfg.finalDrive);
+	const tireR = Math.max(1e-6, numberOr(state.tireRadiusM ?? state.wheelRadius, cfg.tireRadiusM));
+	const eff = numberOr(state.drivelineEff, cfg.drivelineEff);
+	const throttleCmd = clamp01(throttle ?? state.throttle ?? 0);
+	const wheelRpm = rpmFromSpeed(speedMps, Math.abs(ratio), fd, tireR);
+	const redline = numberOr(state.redlineRpm ?? state.redlineRPM, cfg.redlineRpm);
+	const over = Math.max(0, wheelRpm - redline);
+	const limiterBand = Math.max(1, redline * 0.07);
+	const limiter = clamp(1 - over / limiterBand, 0, 1);
+	const throttleEff = throttleCmd * limiter;
+	const rpmEff = numberOr(state.rpm, wheelRpm);
+	const torqueFn = state.torqueCurve || torqueCurve;
+	const baseTorque = torqueFn(Math.max(0, rpmEff), throttleEff);
+	const engineTorque = baseTorque * numberOr(state.powerMult, 1);
+	const wheelTorque = engineTorque * ratio * fd * eff;
+	const driveForce = wheelTorque / tireR;
+	state.lastEngineTorque = engineTorque;
+	state.lastWheelTorque = wheelTorque;
+	state.lastDriveForce = driveForce;
+	state.isNeutral = false;
+	state.isReverse = ratio < 0;
+	state.revLimiterActive = limiter < 0.999 && throttleCmd > 0.05;
+	return driveForce;
+}
+
+export function suggestGearRatios(params = {}) {
+	const {
+		redlineRpm = GEARBOX_CONFIG.redlineRpm,
+		finalDrive = GEARBOX_CONFIG.finalDrive,
+		tireRadiusM = GEARBOX_CONFIG.tireRadiusM,
+		targetTopSpeedMps = 54,
+		gears = 6,
+		spacing = 1.28
+	} = params;
+
+	const spacingSafe = Math.max(1.01, spacing);
+	const radius = Math.max(1e-6, tireRadiusM);
+	const totalTop = (redlineRpm / 60) / (targetTopSpeedMps / (2 * Math.PI * radius));
+	const topGearRatio = totalTop / Math.max(1e-6, finalDrive);
+	const ratios = [];
+	for (let i = gears; i >= 1; i--) {
+		const r = topGearRatio * Math.pow(spacingSafe, i - 1);
+		ratios.unshift(Number.isFinite(r) ? r : topGearRatio);
+	}
+	return ratios;
+}
+
+export const gearboxDefaults = {
+	ratios:       [3.54, 2.77, 2.16, 1.69, 1.32, 1.03],
+	reverseRatio: 3.40,
+	finalDrive:   3.90,
+	redlineRPM:   7200,
+	idleRPM:      900,
+	upshiftRPM:   Math.round(GEARBOX_CONFIG.redlineRpm * GEARBOX_CONFIG.upshiftFrac),
+	downshiftRPM: Math.round(GEARBOX_CONFIG.redlineRpm * GEARBOX_CONFIG.downshiftFrac),
+	upshiftFrac:  GEARBOX_CONFIG.upshiftFrac,
+	downshiftFrac: GEARBOX_CONFIG.downshiftFrac,
+	shiftCutMs:   GEARBOX_CONFIG.shiftCutMs,
+	minShiftGapMs: GEARBOX_CONFIG.minShiftGapMs,
+	effortMargin: GEARBOX_CONFIG.effortMargin,
+	wheelRadius:  GEARBOX_CONFIG.tireRadiusM,
+	tireRadiusM:  GEARBOX_CONFIG.tireRadiusM,
+	drivelineEff: GEARBOX_CONFIG.drivelineEff,
+	rpmRiseGain:  GEARBOX_CONFIG.rpmRiseGain,
+	rpmFallGain:  GEARBOX_CONFIG.rpmFallGain,
+	torqueCurve:  null,
+	torquePeak:   260,
+	powerMult:    1.00,
+	throttleDead: 0.05,
+	auto: true,
+	enableReverse: true,
+	allowNeutral: true,
+	engineBrakePeak: 0.0,
+	engineInertia: 0.6,
+	clutchEngageRate: 12.0,
+	clutchSlipBoost: 0.0
+};
+
+function createStateFromConfig(cfg = {}) {
+	const ratios = sanitizeRatios(cfg.ratios);
+	const redline = numberOr(cfg.redlineRPM ?? cfg.redlineRpm, GEARBOX_CONFIG.redlineRpm);
+	const idle = numberOr(cfg.idleRPM ?? cfg.idleRpm, GEARBOX_CONFIG.idleRpm);
+	const upFrac = resolveShiftFrac(cfg.upshiftFrac, rpmToFrac(cfg.upshiftRPM, redline), GEARBOX_CONFIG.upshiftFrac);
+	const downFrac = resolveShiftFrac(cfg.downshiftFrac, rpmToFrac(cfg.downshiftRPM, redline), GEARBOX_CONFIG.downshiftFrac);
+	const state = {
+		gearRatios: ratios,
+		maxGear: ratios.length,
+		gear: ratios.length ? 1 : 0,
+		rpm: idle,
+		smoothedRpm: idle,
+		redlineRpm: redline,
+		idleRpm: idle,
+		finalDrive: numberOr(cfg.finalDrive, GEARBOX_CONFIG.finalDrive),
+		tireRadiusM: numberOr(cfg.tireRadiusM ?? cfg.wheelRadius, GEARBOX_CONFIG.tireRadiusM),
+		drivelineEff: numberOr(cfg.drivelineEff, GEARBOX_CONFIG.drivelineEff),
+		upshiftFrac: upFrac,
+		downshiftFrac: downFrac,
+		shiftCutMs: numberOr(cfg.shiftCutMs, GEARBOX_CONFIG.shiftCutMs),
+		minShiftGapMs: numberOr(cfg.minShiftGapMs, GEARBOX_CONFIG.minShiftGapMs),
+		effortMargin: numberOr(cfg.effortMargin, GEARBOX_CONFIG.effortMargin),
+		rpmRiseGain: numberOr(cfg.rpmRiseGain, GEARBOX_CONFIG.rpmRiseGain),
+		rpmFallGain: numberOr(cfg.rpmFallGain, GEARBOX_CONFIG.rpmFallGain),
+		throttleDead: numberOr(cfg.throttleDead, 0.05),
+		powerMult: numberOr(cfg.powerMult, 1),
+		torqueCurve: typeof cfg.torqueCurve === 'function' ? cfg.torqueCurve : null,
+		auto: cfg.auto !== false,
+		allowNeutral: cfg.allowNeutral !== false,
+		enableReverse: cfg.enableReverse !== false,
+		reverseRatio: numberOr(cfg.reverseRatio, ratios[0] || 0),
+		speedMps: 0,
+		throttle: 0,
+		brake: 0,
+		lastShiftMs: -1e9,
+		cutRemainingMs: 0,
+		manualShiftUp: false,
+		manualShiftDown: false
+	};
+	state.currentRatio = resolveCurrentRatio(state);
+	state.totalRatio = state.currentRatio * state.finalDrive;
+	state.isNeutral = state.currentRatio === 0;
+	state.isReverse = state.currentRatio < 0;
+	return state;
+}
+
 export class Gearbox {
-  constructor(cfg = {}) {
-    this.c = { ...gearboxDefaults, ...cfg };
-    this._gearIndex = 1; // -1:R, 0:N, 1..N forward
-    this._gearMax = this.c.ratios.length;
-    this._justShifted = false;
-    this.rpm = this.c.idleRPM;
-    this.shiftCut = 0;
-    this.clutchLock = 1;
-    this.lastRequestedForce = 0;
-    this._updateGearLabel();
-  }
+	constructor(cfg = {}) {
+		this.c = { ...gearboxDefaults, ...cfg };
+		this.state = createStateFromConfig(this.c);
+		this.lastRequestedForce = 0;
+		this._gearIndex = this.state.gear;
+		this.gear = this._formatGearLabel(this.state.gear);
+		this.rpm = this.state.rpm;
+	}
 
-  _updateGearLabel() {
-    if (this._gearIndex === -1) this.gear = "R";
-    else if (this._gearIndex === 0) this.gear = "N";
-    else this.gear = this._gearIndex;
-  }
+	_formatGearLabel(gear) {
+		if (gear === -1) return 'R';
+		if (gear === 0) return 'N';
+		return gear;
+	}
 
-  get gearIndex() {
-    return this._gearIndex;
-  }
+	_syncConfigToState() {
+		const c = this.c;
+		const s = this.state;
+		const ratios = sanitizeRatios(c.ratios);
+		if (!arraysEqual(ratios, s.gearRatios)) {
+			s.gearRatios = ratios;
+			s.maxGear = ratios.length;
+			s.gear = clampGear(s.gear, s, ratios.length);
+		}
+		s.finalDrive = numberOr(c.finalDrive, s.finalDrive ?? GEARBOX_CONFIG.finalDrive);
+		s.tireRadiusM = numberOr(c.tireRadiusM ?? c.wheelRadius, s.tireRadiusM ?? GEARBOX_CONFIG.tireRadiusM);
+		s.redlineRpm = numberOr(c.redlineRPM ?? c.redlineRpm, s.redlineRpm ?? GEARBOX_CONFIG.redlineRpm);
+		s.idleRpm = numberOr(c.idleRPM ?? c.idleRpm, s.idleRpm ?? GEARBOX_CONFIG.idleRpm);
+		const upFracFromRpm = rpmToFrac(c.upshiftRPM, s.redlineRpm);
+		const downFracFromRpm = rpmToFrac(c.downshiftRPM, s.redlineRpm);
+		s.upshiftFrac = resolveShiftFrac(c.upshiftFrac, upFracFromRpm, s.upshiftFrac ?? GEARBOX_CONFIG.upshiftFrac);
+		s.downshiftFrac = resolveShiftFrac(c.downshiftFrac, downFracFromRpm, s.downshiftFrac ?? GEARBOX_CONFIG.downshiftFrac);
+		s.shiftCutMs = numberOr(c.shiftCutMs, s.shiftCutMs ?? GEARBOX_CONFIG.shiftCutMs);
+		s.minShiftGapMs = numberOr(c.minShiftGapMs, s.minShiftGapMs ?? GEARBOX_CONFIG.minShiftGapMs);
+		s.effortMargin = numberOr(c.effortMargin, s.effortMargin ?? GEARBOX_CONFIG.effortMargin);
+		s.rpmRiseGain = numberOr(c.rpmRiseGain, s.rpmRiseGain ?? GEARBOX_CONFIG.rpmRiseGain);
+		s.rpmFallGain = numberOr(c.rpmFallGain, s.rpmFallGain ?? GEARBOX_CONFIG.rpmFallGain);
+		s.drivelineEff = numberOr(c.drivelineEff, s.drivelineEff ?? GEARBOX_CONFIG.drivelineEff);
+		s.powerMult = numberOr(c.powerMult, s.powerMult ?? 1);
+		s.torqueCurve = typeof c.torqueCurve === 'function' ? c.torqueCurve : null;
+		s.throttleDead = numberOr(c.throttleDead, s.throttleDead ?? 0.05);
+		s.auto = c.auto !== false;
+		s.allowNeutral = c.allowNeutral !== false;
+		s.enableReverse = c.enableReverse !== false;
+		s.reverseRatio = numberOr(c.reverseRatio, s.reverseRatio ?? (s.gearRatios[0] || 0));
+	}
 
-  get isReverse() {
-    return this._gearIndex === -1;
-  }
+	_syncOutputs() {
+		this._gearIndex = this.state.gear;
+		this.gear = this._formatGearLabel(this.state.gear);
+		this.rpm = numberOr(this.state.smoothedRpm, this.state.rpm);
+	}
 
-  get isNeutral() {
-    return this._gearIndex === 0;
-  }
+	refreshFromConfig() {
+		this._syncConfigToState();
+		this._syncOutputs();
+	}
 
-  setManual(on) {
-    this.c.auto = !on;
-  }
+	applyState() {
+		this._syncOutputs();
+	}
 
-  shiftUp() {
-    if (this._gearIndex >= this._gearMax) return;
-    this._gearIndex += 1;
-    if (this._gearIndex === 0 && this.c.auto) this._gearIndex = 1; // autos skip N upward
-    this._kickShiftCut();
-  }
+	get gearIndex() {
+		return this._gearIndex;
+	}
 
-  shiftDown() {
-    const minGear = this.c.enableReverse === false ? 0 : -1;
-    if (this._gearIndex <= minGear) return;
-    this._gearIndex -= 1;
-    this._kickShiftCut();
-  }
+	get isReverse() {
+		return this.state.gear === -1;
+	}
 
-  _kickShiftCut() {
-    this.shiftCut = this.c.shiftCutMs;
-    this._justShifted = true;
-    if (this.isNeutral) {
-      this.clutchLock = 0;
-    } else {
-      this.clutchLock = Math.min(this.clutchLock, 0.25);
-    }
-    this._updateGearLabel();
-  }
+	get isNeutral() {
+		return !this.state.currentRatio;
+	}
 
-  _torqueAt(rpm, throttle) {
-    if (this.c.torqueCurve) return this.c.torqueCurve(rpm, throttle);
-    const x = Math.max(0, Math.min(1, rpm / this.c.redlineRPM));
-    const peakX = 0.65;
-    const shape = Math.max(0.18, 1 - Math.abs(x - peakX) * 2.0);
-    return throttle * this.c.torquePeak * shape;
-  }
+	setManual(on) {
+		this.c.auto = !on;
+		this.state.auto = !on;
+	}
 
-  _engineBrakeAt(rpm) {
-    const c = this.c;
-    const span = Math.max(1, c.redlineRPM - c.idleRPM);
-    const x = Math.max(0, Math.min(1, (rpm - c.idleRPM) / span));
-    const shape = Math.min(1, x / 0.7);
-    return c.engineBrakePeak * shape;
-  }
+	_attemptImmediateShift(target) {
+		const ok = attemptShift(this.state, target, {
+			cfg: GEARBOX_CONFIG,
+			manual: true,
+			speed: this.state.speedMps,
+			finalDrive: this.state.finalDrive,
+			tireRadiusM: this.state.tireRadiusM,
+			redline: this.state.redlineRpm
+		});
+		if (!ok) return false;
+		this._syncOutputs();
+		return true;
+	}
 
-  _currentRatio() {
-    if (this._gearIndex === -1 && this.c.enableReverse !== false) {
-      return -Math.abs(this.c.reverseRatio || this.c.ratios[0] || 3);
-    }
-    if (this._gearIndex >= 1 && this._gearIndex <= this.c.ratios.length) {
-      return this.c.ratios[this._gearIndex - 1];
-    }
-    return 0;
-  }
+	shiftUp() {
+		this._syncConfigToState();
+		const target = this.state.gear + 1;
+		if (!this._attemptImmediateShift(target)) {
+			this.state.manualShiftUp = true;
+		}
+		this._syncOutputs();
+	}
 
-  step(dt, vForward, throttle, slipInfo) {
-    const c = this.c;
-    if (this._gearMax !== this.c.ratios.length) {
-      this._gearMax = this.c.ratios.length;
-      if (this._gearIndex > this._gearMax) {
-        this._gearIndex = this._gearMax;
-        this._updateGearLabel();
-      }
-    }
-  const ratio = this._currentRatio();
-  const engaged = ratio !== 0;
-  const finalRatio = ratio * c.finalDrive;
-    const wheelOmega = vForward / Math.max(1e-6, c.wheelRadius);
-    const wheelRPM = wheelOmega * 60 / (2 * Math.PI);
-    const lockedRPM = engaged ? Math.max(c.idleRPM, Math.abs(wheelRPM * finalRatio)) : c.idleRPM;
+	shiftDown() {
+		this._syncConfigToState();
+		const target = this.state.gear - 1;
+		if (!this._attemptImmediateShift(target)) {
+			this.state.manualShiftDown = true;
+		}
+		this._syncOutputs();
+	}
 
-    const targetLock = engaged ? (this._justShifted ? 0.25 : 1.0) : 0;
-    this.clutchLock += (targetLock - this.clutchLock) * Math.min(1, c.clutchEngageRate * dt);
-    if (!engaged || Math.abs(throttle) < 0.15) {
-      this.clutchLock = Math.min(this.clutchLock + 2.0 * dt, 1);
-    }
+	update(dt, opts = {}) {
+		this._syncConfigToState();
+		const speedMps = Math.max(0, numberOr(opts.speedMps, numberOr(this.state.speedMps, 0)));
+		this.state.speedMps = speedMps;
+		const throttle = clamp01(opts.throttle ?? this.state.throttle ?? 0);
+		const inputs = {
+			throttle,
+			brake: clamp01(opts.brake ?? this.state.brake ?? 0),
+			speedMps,
+			auto: this.c.auto !== false,
+			shiftUp: this.state.manualShiftUp,
+			shiftDown: this.state.manualShiftDown
+		};
+		updateGearbox(this.state, dt, inputs);
+		this._syncOutputs();
+		const force = getDriveForce(this.state, speedMps, throttle);
+		this.lastRequestedForce = force;
+		return force;
+	}
 
-    const freeTarget = Math.max(c.idleRPM, this.rpm + (throttle * 2200 * dt));
-    let targetRPM = engaged
-      ? lockedRPM * this.clutchLock + freeTarget * (1 - this.clutchLock)
-      : freeTarget;
+	step(dt, vForward, throttle/*, slipInfo*/) {
+		const speed = Math.max(0, Math.abs(numberOr(vForward, 0)));
+		const force = this.update(dt, { speedMps: speed, throttle });
+		const s = this.state;
+		const tireR = Math.max(1e-6, numberOr(s.tireRadiusM ?? s.wheelRadius, GEARBOX_CONFIG.tireRadiusM));
+		const fd = numberOr(s.finalDrive, GEARBOX_CONFIG.finalDrive);
+		const totalRatio = s.currentRatio * fd;
+		const eff = numberOr(s.drivelineEff, GEARBOX_CONFIG.drivelineEff);
+		const wheelTorque = numberOr(s.lastWheelTorque, force * tireR);
+		const engineTorque = totalRatio ? wheelTorque / (totalRatio * eff || 1) : 0;
 
-    const redline = c.redlineRPM;
-    const onThrottle = throttle > c.throttleDead;
-    const limiterSoft = redline * 0.97;
-    const limiterActive = engaged && onThrottle && lockedRPM >= limiterSoft;
+		const torqueFn = s.torqueCurve || torqueCurve;
+		const tqMax = torqueFn(s.redlineRpm, 1) * numberOr(s.powerMult, 1);
+		const maxWheelTorque = tqMax * totalRatio * eff;
+		const maxForce = tireR > 0 ? maxWheelTorque / tireR : Math.abs(force) || 1;
+		const forceNorm = maxForce > 1e-6 ? Math.min(1, Math.abs(force) / Math.max(1e-3, Math.abs(maxForce))) : 0;
 
-    if (engaged && !limiterActive && ((slipInfo?.driveSlip || 0) > 0.15 || Math.abs(vForward) < 0.4)) {
-      targetRPM += c.clutchSlipBoost * (redline - targetRPM) * Math.min(1, throttle);
-    }
-
-    const inertia = Math.max(0.02, Math.min(1.0, c.engineInertia));
-    let rpmNext;
-    if (engaged) {
-      rpmNext = inertia * targetRPM + (1 - inertia) * this.rpm;
-    } else {
-      const revGain = 0.7;
-      const idleTarget = throttle > 0.02
-        ? c.idleRPM + revGain * throttle * (redline - c.idleRPM)
-        : c.idleRPM;
-      rpmNext = inertia * idleTarget + (1 - inertia) * this.rpm;
-    }
-    this.rpm = Math.min(redline, Math.max(c.idleRPM, rpmNext));
-
-    let driveCut = 1.0;
-    if (this.shiftCut > 0) {
-      this.shiftCut -= dt * 1000;
-      driveCut = 0.35;
-      if (this.shiftCut <= 0) this._justShifted = false;
-    }
-
-    if (limiterActive) {
-      const span = Math.max(1, redline - limiterSoft);
-      const limiterScale = lockedRPM >= redline
-        ? 0
-        : 1 - (lockedRPM - limiterSoft) / span;
-      driveCut *= clamp01(limiterScale);
-      this.clutchLock = 1;
-    }
-
-  const powerMult = (c.powerMult != null ? c.powerMult : 1);
-  const Te_drive = onThrottle ? this._torqueAt(this.rpm, throttle) * powerMult * driveCut : 0;
-    const Te_brake = (!onThrottle && engaged) ? -this._engineBrakeAt(this.rpm) : 0;
-    const Te_total = Te_drive + Te_brake;
-    const Tw = Te_total * finalRatio * c.drivelineEff;
-    const denom = Math.max(1e-4, c.wheelRadius);
-    let requestedForce = Tw / denom;
-  let forceNorm = (c.torquePeak * Math.abs(finalRatio) * c.drivelineEff * powerMult) / denom;
-
-    if (engaged) {
-      this._lastForceNorm = forceNorm;
-      this.lastRequestedForce = requestedForce;
-    } else {
-      requestedForce = 0;
-      forceNorm = 1;
-      this.lastRequestedForce = 0;
-    }
-
-    this._updateGearLabel();
-
-    return {
-      rpm: this.rpm | 0,
-      gear: this.gear,
-      requestedForce,
-      clutchLock: this.clutchLock,
-      forceNorm,
-      gearRatio: finalRatio,
-      isReverse: ratio < 0,
-      isNeutral: !engaged,
-      T_engine: Te_total,
-      T_wheel: Tw,
-      wheelRadius: c.wheelRadius
-    };
-  }
+		return {
+			rpm: Math.round(this.rpm),
+			gear: this.gear,
+			requestedForce: force,
+			clutchLock: 1,
+			forceNorm,
+			gearRatio: totalRatio,
+			isReverse: this.isReverse,
+			isNeutral: this.isNeutral,
+			T_engine: engineTorque,
+			T_wheel: wheelTorque,
+			wheelRadius: tireR
+		};
+	}
 }
 
 

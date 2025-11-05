@@ -1,6 +1,6 @@
 import { createWorld, stepWorld, meters, pixels, PPM_DEFAULT } from './physics/planckWorld.js';
 import { buildTrackBodies } from './trackCollision.js';
-import { Gearbox, gearboxDefaults } from './gearbox.js';
+import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG } from './gearbox.js';
 
 (function(){
   "use strict";
@@ -38,11 +38,11 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
   const VEHICLE_DEFAULTS = {
     F1: {
       ...PLANCK_DEFAULTS,
-  mass: 2.20,
+  mass: 1.35,
       wheelbase: 42,
       cgToFront: 20,
       cgToRear: 22,
-  enginePowerMult: 1.00,
+  enginePowerMult: 2.00,
       brakeForce: 680,
       maxSteer: 0.55,
       steerSpeed: 6.0,
@@ -77,11 +77,11 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     },
     GT: {
       ...PLANCK_DEFAULTS,
-  mass: 2.20,
+  mass: 1.35,
       wheelbase: 36,
       cgToFront: 17,
       cgToRear: 19,
-  enginePowerMult: 1.00,
+  enginePowerMult: 2.00,
       brakeForce: 640,
       maxSteer: 0.50,
       steerSpeed: 5.0,
@@ -709,6 +709,9 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       if (input && input.shiftUp) car.gearbox.shiftUp();
       if (input && input.shiftDown) car.gearbox.shiftDown();
       if (input && typeof input.manual === 'boolean') car.gearbox.setManual(input.manual);
+      if (typeof car.gearbox.refreshFromConfig === 'function') {
+        car.gearbox.refreshFromConfig();
+      }
     }
     let usePlanck = !!(P && P.usePlanck);
     let ppm = P.pixelsPerMeter || planckState.ppm || PPM_DEFAULT;
@@ -806,12 +809,18 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     if (steeringMode === 'touch') {
       car.physics.steer = clamp(car.physics.steer, -steerMax, steerMax);
     }
-    let steerEff = car.physics.steer;
-    if (reversing) steerEff *= REVERSE_CFG.steerScale;
-    const delta = steerEff;
-    const deltaEff = delta; // body-frame wheel angle; reverse handled in slipF
-    car.steerVis = (car.steerVis==null?0:car.steerVis) + (steerNormTarget - (car.steerVis||0))*Math.min(1, dt*10);
-    car.steerVis = clamp(car.steerVis, -1, 1);
+  let steerEff = car.physics.steer;
+  if (reversing) steerEff *= REVERSE_CFG.steerScale;
+  const delta = steerEff;
+  const deltaEff = delta; // body-frame wheel angle; reverse handled in slipF
+  car.physics.visualSteerTarget = deltaEff;
+  car.physics.visualSteerLimit = Math.max(1e-3, (steerMax || 0) * (reversing ? REVERSE_CFG.steerScale : 1));
+  const visualTarget = deltaEff;
+  const prevVisual = (car.steerVis == null || !Number.isFinite(car.steerVis)) ? visualTarget : car.steerVis;
+  const blend = Math.min(1, dt * 12);
+  const blendedVisual = prevVisual + (visualTarget - prevVisual) * blend;
+  const visLimit = car.physics.visualSteerLimit;
+  car.steerVis = clamp(blendedVisual, -visLimit, visLimit);
 
   // Normal loads per axle (static baseline)
   const loadsStatic = axleNormalLoads(mass, a, b);
@@ -872,7 +881,6 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
   const throttlePressedGlobal = throttle > 0.05;
   const brakePressedGlobal = brake > 0.05;
   const vForward = vx / Math.max(1e-3, ppm); // m/s forward velocity (body X projected)
-  let gbState = null;
   if (gb) {
     if (gb.c.auto) {
       const throttlePressed = throttlePressedGlobal;
@@ -887,7 +895,13 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
         }
       } else if (throttlePressed) {
         if (gb.gearIndex <= 0 && Math.abs(forwardSpeed) < 35 && speedMag < 45) {
-          while (gb.gearIndex < 1) gb.shiftUp();
+          if (gb.gearIndex < 1) {
+            const before = gb.gearIndex;
+            gb.shiftUp();
+            if (gb.gearIndex === before && gb.state) {
+              gb.state.manualShiftUp = true;
+            }
+          }
         }
       }
 
@@ -913,31 +927,6 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
         }
       }
 
-      const gearIndex = gb.gearIndex;
-      const ratios = Array.isArray(gb.c?.ratios) ? gb.c.ratios : null;
-      const maxForwardGear = ratios ? ratios.length : 0;
-      const rpm = gb.rpm || 0;
-      const upshiftRPM = (gb.c.upshiftRPM != null ? gb.c.upshiftRPM : (gb.c.redlineRPM * 0.94));
-      const downshiftRPM = (gb.c.downshiftRPM != null ? gb.c.downshiftRPM : (gb.c.redlineRPM * 0.52));
-      const slipMag = Math.abs(slipInfo.driveSlip || car.physics.prevDriveSlip || 0);
-      const canShiftNow = gearIndex >= 1 && maxForwardGear > 0 && gb.shiftCut <= 0 && !gb._justShifted;
-      let shiftedAuto = false;
-      if (canShiftNow && gearIndex < maxForwardGear) {
-        const allowUpshift = rpm >= upshiftRPM && vForward > 0.2 && !brakePressed && !reversing;
-        if (allowUpshift) {
-          gb.shiftUp();
-          shiftedAuto = true;
-        }
-      }
-      if (canShiftNow && !shiftedAuto && gearIndex > 1) {
-        const slowForward = Math.abs(vForward) < 1.4;
-        const wantAccelDown = throttlePressed && rpm <= downshiftRPM;
-        const wantBrakeDown = brakePressed && rpm <= downshiftRPM * 1.1 && vForward > -0.5;
-        const wantCreepDown = !throttlePressed && !brakePressed && slowForward && rpm <= downshiftRPM * 1.2;
-        if (wantAccelDown || wantBrakeDown || wantCreepDown) {
-          gb.shiftDown();
-        }
-      }
     }
 
     // --- universal anti-reverse assist (runs for auto & manual) ---
@@ -954,17 +943,44 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       throttle = 0;
     }
     // --------------------------------------------------------------
-    gbState = gb.step(dt, vForward, throttle, slipInfo);
   }
-  if (gbState) {
-    reversing = reversing || gbState.isReverse;
-  }
+  const gbState = gb ? gb.state : null;
   let Fx_drive = 0;
-  if (gbState && !gbState.isNeutral) {
-    const wheelR = (gb && gb.c && gb.c.wheelRadius) || 0.30;
-    const Tw = typeof gbState.T_wheel === 'number' ? gbState.T_wheel : 0;
-    Fx_drive = Tw / Math.max(1e-4, wheelR);
+  if (gbState && gb) {
+    const speedForGearbox = Math.max(0, Math.abs(vForward));
+    const gbInputs = {
+      throttle,
+      brake,
+      speedMps: speedForGearbox,
+      auto: gb.c.auto !== false
+    };
+    if (gbState.manualShiftUp) gbInputs.shiftUp = true;
+    if (gbState.manualShiftDown) gbInputs.shiftDown = true;
+    updateGearbox(gbState, dt, gbInputs);
+    if (typeof gb.applyState === 'function') {
+      gb.applyState();
+    }
+    Fx_drive = getDriveForce(gbState, speedForGearbox, throttle);
+    gb.lastRequestedForce = Fx_drive;
+    const wheelRadius = gbState.tireRadiusM ?? gbState.wheelRadius ?? GEARBOX_CONFIG.tireRadiusM;
+    car.physics.lastGb = {
+      gear: gb.gear,
+      gearIndex: gbState.gear,
+      rpm: gb.rpm,
+      smoothedRpm: gbState.smoothedRpm ?? gb.rpm,
+      requestedForce: Fx_drive,
+      requestedForceRaw: gbState.lastDriveForce ?? Fx_drive,
+      cutRemainingMs: gbState.cutRemainingMs ?? 0,
+      ratio: gbState.currentRatio ?? 0,
+      totalRatio: gbState.totalRatio ?? 0,
+      engineTorque: gbState.lastEngineTorque ?? 0,
+      wheelTorque: gbState.lastWheelTorque ?? Fx_drive * wheelRadius,
+      isReverse: gbState.isReverse,
+      isNeutral: gbState.isNeutral
+    };
+    reversing = reversing || !!gbState.isReverse;
   } else {
+    car.physics.lastGb = null;
     Fx_drive = 0;
   }
     const brakeForceCmd = brake * P.brakeForce;
@@ -983,14 +999,29 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
 
     // Compute command-only acceleration estimate for load transfer
     const Fx_cmd = Fx_drive - Fx_brake;
-    const ax_est = (Fx_cmd - F_drag - F_roll) / mass;
+    const ax_cmd = (Fx_cmd - F_drag - F_roll) / mass;
+    const prevAx = Number.isFinite(car.physics.axLongFiltered) ? car.physics.axLongFiltered : 0;
+    const dtClamp = clamp(dt, 1/400, 0.25);
+    const tauAx = 0.10;
+    const alphaAx = clamp(1 - Math.exp(-dtClamp / tauAx), 0, 1);
+    const ax_est = prevAx + (ax_cmd - prevAx) * alphaAx;
+    car.physics.axLongFiltered = ax_est;
+    car.physics.axLongRaw = ax_cmd;
 
     // Longitudinal load transfer update
     const cgH = (P.cgHeight!=null?P.cgHeight:8);
     if (cgH > 0) {
-      const dF = mass * cgH * ax_est / L; // shift proportional to accel
-      Fzf = clamp(loadsStatic.Fzf - dF, 0, mass*g);
-      Fzr = clamp(loadsStatic.Fzr + dF, 0, mass*g);
+      const dF = mass * cgH * ax_est / L; // shift proportional to accel (filtered)
+      const totalLoad = Math.max(1e-3, loadsStatic.Fzf + loadsStatic.Fzr);
+      const maxTransfer = totalLoad * 0.30; // limit realistic forward/backward weight shift
+      const limited = clamp(dF, -maxTransfer, maxTransfer);
+      const minShare = 0.28;
+      const maxShare = 0.72;
+      let frontLoad = clamp(loadsStatic.Fzf - limited, totalLoad * minShare, totalLoad * maxShare);
+      Fzf = frontLoad;
+      Fzr = totalLoad - frontLoad;
+      car.physics.lastLoadFront = Fzf;
+      car.physics.lastLoadRear = Fzr;
       // Recompute load-sensitive mu and cornering stiffness with updated loads
       muLatF = muLat * (1 - loadSenseK * (Fzf / Math.max(1e-6, Fzf_ref) - 1));
       muLatR = muLat * (1 - loadSenseK * (Fzr / Math.max(1e-6, Fzr_ref) - 1));
@@ -1061,17 +1092,6 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     const falloff= (P.longSlipFalloff != null ? P.longSlipFalloff : 0.80);
     const tractionRatio = slipRatioResponse(s_req, sPeak, falloff);
     let Fx_trac = Fr_max * tractionRatio;
-    if (gb) {
-      const gbOut = gbState ? { ...gbState } : null;
-      if (gbOut) {
-        gbOut.requestedForceRaw = gbState.requestedForce;
-        gbOut.requestedForce = Fx_drive;
-      }
-      car.physics.lastGb = gbOut;
-      gb.lastRequestedForce = Fx_drive;
-    } else {
-      car.physics.lastGb = null;
-    }
     car.physics.lastSlipReq = s_req;
     car.physics.prevDriveSlip = Math.max(0, Math.abs(s_req) - sPeak);
     let Fx_long = Fx_trac - F_drag - F_roll;
@@ -1429,7 +1449,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
         <div class="rv-row"><label for="rv-steers"><span class="rv-name"${tipAttr('steerSpeed')}>Steer speed</span></label><input id="rv-steers" type="range" min="2" max="10" step="0.1"><div class="val" id="rv-steers-v"></div></div>
         <div class="rv-section">
           <h4>Steering</h4>
-          <div class="rv-row"><label for="rv-steerMode"><span class="rv-name"${tipAttr('steerMode')}>Player mode</span></label>
+          <div class="rv-row"><label for="rv-steerMode"><span class="rv-name"${tipAttr('steerMode')}>Steering mode</span></label>
             <select id="rv-steerMode">
               <option value="manual">Manual</option>
               <option value="touch">Touch</option>
@@ -1575,13 +1595,13 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
     const getStoredSteeringMode = () => {
       try {
         const stored = (typeof localStorage !== 'undefined') ? localStorage.getItem('steeringMode') : null;
-        return STEERING_MODES.has(stored) ? stored : 'manual';
+        return STEERING_MODES.has(stored) ? stored : 'touch';
       } catch(_) {
-        return 'manual';
+        return 'touch';
       }
     };
     const applySteeringModeSelection = (mode, carSet) => {
-      const chosen = STEERING_MODES.has(mode) ? mode : 'manual';
+      const chosen = STEERING_MODES.has(mode) ? mode : 'touch';
       try {
         if (typeof localStorage !== 'undefined') localStorage.setItem('steeringMode', chosen);
       } catch(_){/* ignore */}
@@ -1744,7 +1764,7 @@ import { Gearbox, gearboxDefaults } from './gearbox.js';
       ['rv-brk', { kind: 'vehicle', valueEl: els.brkV, format: fmtInt, getDefault: vehicleDefault('brakeForce') }],
       ['rv-steer', { kind: 'vehicle', valueEl: els.steerV, format: fmtTwo, getDefault: vehicleDefault('maxSteer') }],
       ['rv-steers', { kind: 'vehicle', valueEl: els.steersV, format: fmtOne, getDefault: vehicleDefault('steerSpeed') }],
-      ['rv-steerMode', { kind: 'global', type: 'select', getDefault: () => 'manual', format: (value) => value === 'touch' ? 'Touch' : 'Manual', afterSet: (value) => applySteeringModeSelection(value) }],
+  ['rv-steerMode', { kind: 'global', type: 'select', getDefault: () => 'touch', format: (value) => value === 'manual' ? 'Manual' : 'Touch', afterSet: (value) => applySteeringModeSelection(value) }],
       ['rv-touchMaxLow', { kind: 'vehicle', valueEl: els.touchMaxLowV, format: fmtTwo, getDefault: vehicleTouchDefault('maxSteerLowSpeed', (defaults) => (defaults.maxSteer != null ? defaults.maxSteer : 0.60)) }],
       ['rv-touchMaxHigh', { kind: 'vehicle', valueEl: els.touchMaxHighV, format: fmtTwo, getDefault: vehicleTouchDefault('maxSteerHighSpeed', (defaults) => {
         const base = defaults.maxSteer != null ? defaults.maxSteer : 0.50;

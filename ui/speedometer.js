@@ -236,11 +236,12 @@
         }
       } catch(_){}
 
-      function update({ gear, rpm, redline, idle, mph }){
+      function update({ gear, rpm, smoothedRpm, redline, idle, mph }){
         // number
         if (gearText.textContent !== String(gear||1)) gearText.textContent = String(gear||1);
         // smoothing
-        const rpmPct = (redline>idle) ? clamp((rpm - idle)/(redline - idle), 0, 1) : 0;
+        const rpmValue = Number.isFinite(smoothedRpm) ? smoothedRpm : rpm;
+        const rpmPct = (redline>idle) ? clamp((rpmValue - idle)/(redline - idle), 0, 1) : 0;
         state.rpmPctSmoothed = state.rpmPctSmoothed + (rpmPct - state.rpmPctSmoothed)*state.smoothing;
         state.mphSmoothed    = state.mphSmoothed + (Math.max(0, mph) - state.mphSmoothed)*state.smoothing;
         updateVisuals(state.rpmPctSmoothed, state.mphSmoothed, state.mphMax);

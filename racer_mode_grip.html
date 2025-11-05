@@ -81,8 +81,11 @@ function requestFullscreen(el){
 // Compute viewport usable size ignoring mobile URL bar (using visualViewport if available)
 function getViewportSize(){
   const vv = window.visualViewport;
-  if (vv) return { w: vv.width, h: vv.height };
-  return { w: window.innerWidth, h: window.innerHeight };
+  if (vv && vv.width && vv.height) return { w: vv.width, h: vv.height };
+  const doc = document.documentElement;
+  const vw = (doc && doc.clientWidth) || window.innerWidth || 0;
+  const vh = (doc && doc.clientHeight) || window.innerHeight || 0;
+  return { w: vw, h: vh };
 }
 
 // ===== Skid marks =====
@@ -279,11 +282,11 @@ const { useEffect, useRef, useState } = React;
       const SCALE_MAX = 3.0;
       const SCALE_STEP = 0.05;
       const SCALE_DEFAULT = 2.5;
-      const CAM_BASE_ZOOM = 2.5;
-      const CAMERA_MIN = 0.6;
-      const CAMERA_MAX = 1.6;
+  const CAM_BASE_ZOOM = 1.1;
+  const CAMERA_MIN = 0.6;
+  const CAMERA_MAX = 1.6;
       const CAMERA_STEP = 0.05;
-      const CAMERA_DEFAULT = 1.0;
+  const CAMERA_DEFAULT = 0.85;
       function clampScale(value) {
         return Math.min(SCALE_MAX, Math.max(SCALE_MIN, value));
       }
@@ -357,6 +360,7 @@ const { useEffect, useRef, useState } = React;
           }
         });
 
+        const trackSurfaceRef = useRef({ canvas: null });
         const decorParamsRef = useRef({
           treeDensity,
           buildingDensity,
@@ -447,6 +451,8 @@ const { useEffect, useRef, useState } = React;
             kerbWidthScale: kerbWidthScaleParam,
             shadowStrength: shadowStrengthParam,
           };
+          const dpr = (typeof window !== "undefined" && window.devicePixelRatio) ? window.devicePixelRatio : 1;
+          const worldScale = source.worldScale || 1;
           const seed = computeDecorSeed(source.trackKey, source.baseWorldWidth, source.baseWorldHeight);
           const signature = JSON.stringify({
             key: source.trackKey,
@@ -455,6 +461,9 @@ const { useEffect, useRef, useState } = React;
             width: source.width,
             height: source.height,
             roadWidth: source.roadWidth,
+            devicePixelRatio: dpr,
+            worldScale,
+              bounds: source.bounds ? [source.bounds.minX, source.bounds.minY, source.bounds.maxX, source.bounds.maxY] : null,
           });
           if (!force && decorSignatureRef.current === signature && decorLayerRef.current.decorCanvas) {
             return;
@@ -474,6 +483,9 @@ const { useEffect, useRef, useState } = React;
               seed,
               existing,
               force: force || !existing,
+              worldScale,
+              devicePixelRatio: dpr,
+                bounds: source.bounds,
             });
             decorLayerRef.current = {
               decorCanvas: result.decorCanvas,
@@ -546,39 +558,33 @@ const { useEffect, useRef, useState } = React;
           const BASE_WORLD_W = 1000;
           const BASE_WORLD_H = 700;
           let W = BASE_WORLD_W, H = BASE_WORLD_H; // logical simulation size (was missing after refactor)
-          canvas.width = W; canvas.height = H;
           // Offscreen track mask canvas (needed for onRoad() sampling) – was accidentally removed causing tctx reference errors
           const trackMap = document.createElement('canvas');
           trackMap.width = W; trackMap.height = H;
           trackMapRef.current = trackMap;
           const tctx = trackMap.getContext('2d');
 
-          function adjustCanvasSize(){
-            const { w, h } = getViewportSize();
-            // Keep base aspect but scale to fit height (landscape) or width (portrait)
-            const baseW = W, baseH = H;
-            let targetW = baseW, targetH = baseH;
-            const aspect = baseW / baseH;
-            const vpAspect = w / Math.max(h, 1);
-            if (vpAspect > aspect){
-              // wider than game: fit height
-              targetH = Math.min(h, baseH);
-              const scale = targetH / baseH;
-              targetW = baseW * scale;
-            } else {
-              // taller/narrower: fit width
-              targetW = Math.min(w, baseW);
-              const scale = targetW / baseW;
-              targetH = baseH * scale;
-            }
-            canvas.style.width = targetW + 'px';
-            canvas.style.height = targetH + 'px';
+          function sizeBackbufferToViewport() {
+            const { w: vpW, h: vpH } = getViewportSize();
+            const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+            const scaledW = Math.max(320, Math.round(vpW));
+            const scaledH = Math.max(240, Math.round(vpH));
+            const MAXW = 1920;
+            const MAXH = 1080;
+            canvas.width = Math.min(Math.round(scaledW * dpr), MAXW);
+            canvas.height = Math.min(Math.round(scaledH * dpr), MAXH);
+            canvas.style.width = scaledW + 'px';
+            canvas.style.height = scaledH + 'px';
             canvas.style.position = 'fixed';
             canvas.style.left = '50%';
             canvas.style.top = '50%';
             canvas.style.transform = 'translate(-50%, -50%)';
-            const scaleApplied = baseW > 0 ? (targetW / baseW) : 1;
-            displayScaleRef.current = scaleApplied > 0 ? scaleApplied : 1;
+            const pixelPerWorld = W > 0 ? (canvas.width / W) : 1;
+            displayScaleRef.current = pixelPerWorld > 0 ? pixelPerWorld : 1;
+          }
+
+          function adjustCanvasSize(){
+            sizeBackbufferToViewport();
           }
 
           function applyWorldSize(width, height){
@@ -587,8 +593,6 @@ const { useEffect, useRef, useState } = React;
             const newW = Math.max(minW, Math.round(width || 1000));
             const newH = Math.max(minH, Math.round(height || 700));
             W = newW; H = newH;
-            canvas.width = W;
-            canvas.height = H;
             trackMap.width = W;
             trackMap.height = H;
             adjustCanvasSize();
@@ -1094,6 +1098,48 @@ const { useEffect, useRef, useState } = React;
             return {minX, minY, maxX, maxY, w:maxX-minX, h:maxY-minY};
           }
 
+          function drawLayerImage(ctx, image, mapping, regionX, regionY, regionW, regionH) {
+            if (!image) return;
+            ctx.imageSmoothingEnabled = false;
+            const hasMapping = mapping && typeof mapping.worldToTex === "number" && mapping.worldToTex > 0;
+            if (!hasMapping) {
+              const imgW = image.width || 0;
+              const imgH = image.height || 0;
+              const srcX0 = Math.max(0, regionX);
+              const srcY0 = Math.max(0, regionY);
+              const srcX1 = Math.min(imgW, regionX + regionW);
+              const srcY1 = Math.min(imgH, regionY + regionH);
+              const srcW = srcX1 - srcX0;
+              const srcH = srcY1 - srcY0;
+              if (srcW <= 0 || srcH <= 0) return;
+              ctx.drawImage(image, srcX0, srcY0, srcW, srcH, srcX0, srcY0, srcW, srcH);
+              return;
+            }
+
+            const worldMinX = mapping.worldMinX || 0;
+            const worldMinY = mapping.worldMinY || 0;
+            const worldWidth = mapping.worldWidth || (image.width * (mapping.texToWorld || 1));
+            const worldHeight = mapping.worldHeight || (image.height * (mapping.texToWorld || 1));
+            const worldMaxX = worldMinX + worldWidth;
+            const worldMaxY = worldMinY + worldHeight;
+            const clipX0 = Math.max(regionX, worldMinX);
+            const clipY0 = Math.max(regionY, worldMinY);
+            const clipX1 = Math.min(regionX + regionW, worldMaxX);
+            const clipY1 = Math.min(regionY + regionH, worldMaxY);
+            const clipW = clipX1 - clipX0;
+            const clipH = clipY1 - clipY0;
+            if (clipW <= 0 || clipH <= 0) return;
+
+            const worldToTex = mapping.worldToTex || 1;
+            const srcX = Math.max(0, Math.floor((clipX0 - worldMinX) * worldToTex));
+            const srcY = Math.max(0, Math.floor((clipY0 - worldMinY) * worldToTex));
+            const srcW = Math.min(image.width - srcX, Math.ceil(clipW * worldToTex));
+            const srcH = Math.min(image.height - srcY, Math.ceil(clipH * worldToTex));
+            if (srcW <= 0 || srcH <= 0) return;
+
+            ctx.drawImage(image, srcX, srcY, srcW, srcH, clipX0, clipY0, clipW, clipH);
+          }
+
           function clamp(value, min, max){
             return Math.min(max, Math.max(min, value));
           }
@@ -1200,6 +1246,106 @@ const { useEffect, useRef, useState } = React;
             tctx.restore();
 
             trackData = tctx.getImageData(0, 0, W, H).data;
+          }
+
+          function buildTrackSurfaceCanvas() {
+            const LIMIT = 4096;
+            const TARGET_PPM = 4;
+            const pad = Math.max(ROAD_WIDTH * 0.75, 80);
+            const baseBounds = trackBounds ? {
+              minX: trackBounds.minX,
+              minY: trackBounds.minY,
+              maxX: trackBounds.maxX,
+              maxY: trackBounds.maxY,
+            } : { minX: 0, minY: 0, maxX: W, maxY: H };
+            const bounds = {
+              minX: Math.max(0, baseBounds.minX - pad),
+              minY: Math.max(0, baseBounds.minY - pad),
+              maxX: Math.min(W, baseBounds.maxX + pad),
+              maxY: Math.min(H, baseBounds.maxY + pad),
+            };
+            const spanW = Math.max(1, bounds.maxX - bounds.minX);
+            const spanH = Math.max(1, bounds.maxY - bounds.minY);
+            let ppm = TARGET_PPM;
+            let texW = Math.ceil(spanW * ppm);
+            let texH = Math.ceil(spanH * ppm);
+            const over = Math.max(texW / LIMIT, texH / LIMIT, 1);
+            if (over > 1) {
+              ppm = Math.max(1.5, ppm / over);
+              texW = Math.max(1, Math.ceil(spanW * ppm));
+              texH = Math.max(1, Math.ceil(spanH * ppm));
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = texW;
+            canvas.height = texH;
+            const sctx = canvas.getContext('2d');
+            if (!sctx) {
+              trackSurfaceRef.current = { canvas: null, mapping: null };
+              return;
+            }
+            sctx.imageSmoothingEnabled = false;
+            sctx.setTransform(1, 0, 0, 1, 0, 0);
+            sctx.clearRect(0, 0, texW, texH);
+            sctx.save();
+            sctx.setTransform(ppm, 0, 0, ppm, -bounds.minX * ppm, -bounds.minY * ppm);
+            if (activeTrack && typeof activeTrack.drawScenery === 'function') {
+              try {
+                activeTrack.drawScenery(sctx, { W, H, ROAD_WIDTH, centerline, labels });
+              } catch (err) {
+                console.warn('Track scenery render failed', err);
+              }
+            }
+            if (centerline && centerline.length > 1) {
+              let path = null;
+              if (typeof Path2D === 'function') {
+                path = new Path2D();
+                for (let i = 0; i < centerline.length; i++) {
+                  const p = centerline[i];
+                  if (i === 0) path.moveTo(p.x, p.y);
+                  else path.lineTo(p.x, p.y);
+                }
+              }
+              sctx.lineJoin = 'round';
+              sctx.lineCap = 'round';
+              sctx.strokeStyle = '#5f6368';
+              sctx.lineWidth = ROAD_WIDTH;
+              if (path) sctx.stroke(path);
+              else {
+                sctx.beginPath();
+                for (let i = 0; i < centerline.length; i++) {
+                  const p = centerline[i];
+                  if (i === 0) sctx.moveTo(p.x, p.y);
+                  else sctx.lineTo(p.x, p.y);
+                }
+                sctx.stroke();
+              }
+              sctx.strokeStyle = '#cfd8dc';
+              sctx.lineWidth = 2;
+              if (path) sctx.stroke(path);
+              else {
+                sctx.beginPath();
+                for (let i = 0; i < centerline.length; i++) {
+                  const p = centerline[i];
+                  if (i === 0) sctx.moveTo(p.x, p.y);
+                  else sctx.lineTo(p.x, p.y);
+                }
+                sctx.stroke();
+              }
+            }
+            sctx.restore();
+
+            trackSurfaceRef.current = {
+              canvas,
+              mapping: {
+                worldMinX: bounds.minX,
+                worldMinY: bounds.minY,
+                worldWidth: spanW,
+                worldHeight: spanH,
+                worldToTex: ppm,
+                texToWorld: 1 / ppm,
+              },
+            };
           }
 
           function onRoad(x, y) {
@@ -1347,7 +1493,8 @@ const { useEffect, useRef, useState } = React;
             };
 
             const sourcePoints = Array.isArray(T.points) && T.points.length ? T.points : centerline;
-            centerline = interpolate(sourcePoints.map(transformPoint), 6);
+            const interpStep = Math.max(4, Math.round(6 * GEO_SCALE)); // keep physics segment count stable as tracks scale up
+            centerline = interpolate(sourcePoints.map(transformPoint), interpStep);
             const startSrc = (T.startLine && T.startLine.a && T.startLine.b) ? T.startLine : { a: sourcePoints[0], b: sourcePoints[1] || sourcePoints[0] };
             startLine = { a: transformPoint(startSrc.a), b: transformPoint(startSrc.b) };
             ROAD_WIDTH = (T.roadWidth || 80) * WIDTH_SCALE;
@@ -1365,6 +1512,7 @@ const { useEffect, useRef, useState } = React;
             const aiSpawn = transformPose(rawAi, playerSpawn.angle);
 
             drawTrackMask();
+            buildTrackSurfaceCanvas();
             const zones = Array.isArray(T.speedZones) && T.speedZones.length ? T.speedZones : [[0, Math.max(1, Math.floor(centerline.length / 24)), 220]];
             waypoints = buildWaypoints(centerline, zones);
             trackBounds = bbox(centerline);
@@ -1385,12 +1533,14 @@ const { useEffect, useRef, useState } = React;
               height: H,
               baseWorldWidth,
               baseWorldHeight,
+              worldScale: GEO_SCALE,
               roadWidth: ROAD_WIDTH,
               centerline: centerline.map((p) => ({ x: p.x, y: p.y })),
               maskCanvas: trackMap,
               trackKey: name,
               track: activeTrack,
               isCustom: isCustomTrack,
+              bounds: trackBounds ? { minX: trackBounds.minX, minY: trackBounds.minY, maxX: trackBounds.maxX, maxY: trackBounds.maxY } : null,
             };
             scheduleDecorGeneration(false);
 
@@ -1658,7 +1808,11 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
           function drawBackground() {
             // Clear screen-space
             ctx.setTransform(1,0,0,1,0,0);
-            ctx.fillStyle = "#184f1a"; ctx.fillRect(0, 0, W, H);
+            const canvasEl = canvasRef.current;
+            const cw = canvasEl && canvasEl.width ? canvasEl.width : W;
+            const ch = canvasEl && canvasEl.height ? canvasEl.height : H;
+            ctx.fillStyle = "#184f1a";
+            ctx.fillRect(0, 0, cw, ch);
 
             // World-space transform centered on player every frame
             const cam = camRef.current; const s = cam && cam.scale ? cam.scale : 1.0;
@@ -1669,59 +1823,38 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
             }
             
             ctx.save();
-            const cw = canvasRef.current ? canvasRef.current.width : W;
-            const ch = canvasRef.current ? canvasRef.current.height : H;
             ctx.translate(cw/2, ch/2);
             ctx.scale(s, s);
             const focusX = cam && typeof cam.x === "number" ? cam.x : player.x;
             const focusY = cam && typeof cam.y === "number" ? cam.y : player.y;
             ctx.translate(-focusX, -focusY);
+            ctx.imageSmoothingEnabled = false;
 
             const viewHalfW = (cw / (s || 1)) * 0.5;
             const viewHalfH = (ch / (s || 1)) * 0.5;
-            const pad = Math.max(viewHalfW, viewHalfH) + 64;
+            const viewW = viewHalfW * 2;
+            const viewH = viewHalfH * 2;
+            const regionPad = 256;
+            const regionX = focusX - viewHalfW - regionPad;
+            const regionY = focusY - viewHalfH - regionPad;
+            const regionW = viewW + regionPad * 2;
+            const regionH = viewH + regionPad * 2;
             const worldWidth = activeTrack && activeTrack.world ? activeTrack.world.width : W;
             const worldHeight = activeTrack && activeTrack.world ? activeTrack.world.height : H;
             ctx.save();
             ctx.fillStyle = "#123b1a";
-            if (worldWidth && worldHeight) {
-              ctx.fillRect(-pad, -pad, worldWidth + pad * 2, worldHeight + pad * 2);
-            } else {
-              ctx.fillRect((player ? player.x : 0) - pad, (player ? player.y : 0) - pad, pad * 2, pad * 2);
-            }
+            ctx.fillRect(regionX, regionY, regionW, regionH);
             ctx.restore();
 
-            // Optional track-specific scenery (before road)
-            if (activeTrack && activeTrack.drawScenery){ activeTrack.drawScenery(ctx, {W,H,ROAD_WIDTH,centerline,labels}); }
-
-            // Kerbs overlay (Kart Park only) using dashed outer stroke trick
-            if (activeTrack && activeTrack.kerbs){
-              ctx.save();
-              ctx.lineJoin = "round"; ctx.lineCap = "butt";
-              ctx.setLineDash([14,14]);
-              ctx.lineWidth = ROAD_WIDTH + 14;
-              ctx.strokeStyle = activeTrack.kerbColors ? activeTrack.kerbColors[0] : "#d32f2f";
-              ctx.beginPath(); for (let i=0;i<centerline.length;i++){ const p=centerline[i]; if(i===0)ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y);} ctx.stroke();
-              ctx.strokeStyle = activeTrack.kerbColors ? activeTrack.kerbColors[1] : "#fafafa";
-              ctx.lineDashOffset = 14;
-              ctx.beginPath(); for (let i=0;i<centerline.length;i++){ const p=centerline[i]; if(i===0)ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y);} ctx.stroke();
-              ctx.restore();
+            const trackSurfaceEntry = trackSurfaceRef.current;
+            if (trackSurfaceEntry && trackSurfaceEntry.canvas) {
+              drawLayerImage(ctx, trackSurfaceEntry.canvas, trackSurfaceEntry.mapping, regionX, regionY, regionW, regionH);
             }
-
-            // Track ribbon
-            ctx.lineJoin = "round"; ctx.lineCap = "round";
-            ctx.strokeStyle = "#5f6368"; ctx.lineWidth = ROAD_WIDTH;
-            ctx.beginPath();
-            for (let i = 0; i < centerline.length; i++) {
-              const pt = centerline[i]; if (i === 0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y);
-            }
-            ctx.stroke();
-            // Edge highlight
-            ctx.strokeStyle = "#cfd8dc"; ctx.lineWidth = 2; ctx.stroke();
 
             const decorLayer = decorLayerRef.current;
+            const decorMapping = decorLayer && decorLayer.metadata ? decorLayer.metadata.mapping : null;
             if (decorLayer && decorLayer.decorCanvas) {
-              ctx.drawImage(decorLayer.decorCanvas, 0, 0);
+              drawLayerImage(ctx, decorLayer.decorCanvas, decorMapping, regionX, regionY, regionW, regionH);
             }
 
             // Start line (ensure visible over decor)
@@ -1740,7 +1873,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                 ? meta.params.shadowStrength
                 : shadowStrengthParam;
               ctx.globalAlpha = shadowAlpha;
-              ctx.drawImage(decorLayer.shadowCanvas, 0, 0);
+              drawLayerImage(ctx, decorLayer.shadowCanvas, decorMapping, regionX, regionY, regionW, regionH);
               ctx.restore();
             }
 
@@ -2049,9 +2182,10 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               const gb = player?.gearbox;
               const gear = gb?.gear || 1;
               const rpm  = gb?.rpm  || 0;
-              const red  = (gb?.c && gb.c.redlineRPM) || 7600;
-              const idle = (gb?.c && gb.c.idleRPM)    || 1100;
-              speedoCtrl.update({ gear, rpm, redline: red, idle, mph });
+              const rpmSmooth = gb?.state?.smoothedRpm ?? rpm;
+              const red  = (gb?.state && gb.state.redlineRpm) || (gb?.c && gb.c.redlineRPM) || 7600;
+              const idle = (gb?.state && gb.state.idleRpm)    || (gb?.c && gb.c.idleRPM)    || 1100;
+              speedoCtrl.update({ gear, rpm: rpmSmooth, smoothedRpm: rpmSmooth, redline: red, idle, mph });
             }
             if (running) {
               const planckActive = physicsAPI && typeof physicsAPI.usesPlanckWorld === 'function' && physicsAPI.usesPlanckWorld();

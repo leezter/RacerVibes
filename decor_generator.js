@@ -5,7 +5,10 @@
     kerbWidthScale: 1.0,
     shadowStrength: 0.55,
   };
-  const MAX_CANVAS_SIZE = 4096;
+  const DECOR_TEXTURE_LIMITS = {
+    maxSize: 4096,
+    targetPxPerMeter: 6,
+  };
   const BUFFER_RADIUS = 28;
   const TREE_MIN_SPACING = 26;
   const TREE_MAX_SPACING = 40;
@@ -29,6 +32,109 @@
 
   let atlasPromise = null;
   let atlasImage = null;
+
+  function createCanvas2d(width, height, willRead = false) {
+    const canvas = (typeof OffscreenCanvas !== "undefined" && typeof document === "undefined")
+      ? new OffscreenCanvas(width, height)
+      : (() => {
+          const cnv = (typeof document !== "undefined") ? document.createElement("canvas") : new OffscreenCanvas(width, height);
+          cnv.width = width;
+          cnv.height = height;
+          return cnv;
+        })();
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
+    const ctx = canvas.getContext("2d", willRead ? { willReadFrequently: true } : undefined) || canvas.getContext("2d");
+    if (ctx) {
+      ctx.imageSmoothingEnabled = false;
+    }
+    return { canvas, ctx };
+  }
+
+  function copyCanvasRegion(srcCanvas, bounds) {
+    if (!srcCanvas) return null;
+    const sx = Math.max(0, Math.floor(bounds.minX));
+    const sy = Math.max(0, Math.floor(bounds.minY));
+    const sw = Math.max(1, Math.ceil(bounds.maxX - bounds.minX));
+    const sh = Math.max(1, Math.ceil(bounds.maxY - bounds.minY));
+    const tmp = (typeof OffscreenCanvas !== "undefined") ? new OffscreenCanvas(sw, sh) : document.createElement("canvas");
+    tmp.width = sw;
+    tmp.height = sh;
+    const tctx = tmp.getContext("2d", { willReadFrequently: true }) || tmp.getContext("2d");
+    if (!tctx) return null;
+    tctx.imageSmoothingEnabled = false;
+    tctx.drawImage(srcCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
+    return { canvas: tmp, offsetX: sx, offsetY: sy, width: sw, height: sh };
+  }
+
+  function computeBounds(points, fallbackWidth, fallbackHeight) {
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    if (Array.isArray(points) && points.length) {
+      for (const p of points) {
+        if (!p) continue;
+        const x = Number(p.x);
+        const y = Number(p.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+      return {
+        minX: 0,
+        minY: 0,
+        maxX: Math.max(1, Number(fallbackWidth) || 1000),
+        maxY: Math.max(1, Number(fallbackHeight) || 700),
+      };
+    }
+    return { minX, minY, maxX, maxY };
+  }
+
+  function expandBounds(bounds, pad, limitWidth, limitHeight) {
+    if (!bounds) return null;
+    const out = {
+      minX: bounds.minX - pad,
+      minY: bounds.minY - pad,
+      maxX: bounds.maxX + pad,
+      maxY: bounds.maxY + pad,
+    };
+    if (typeof limitWidth === "number") {
+      out.minX = Math.max(0, out.minX);
+      out.maxX = Math.min(limitWidth, out.maxX);
+    }
+    if (typeof limitHeight === "number") {
+      out.minY = Math.max(0, out.minY);
+      out.maxY = Math.min(limitHeight, out.maxY);
+    }
+    if (out.maxX <= out.minX) {
+      out.maxX = out.minX + 1;
+    }
+    if (out.maxY <= out.minY) {
+      out.maxY = out.minY + 1;
+    }
+    return out;
+  }
+
+  function pickDecorResolution(bounds, opts = {}) {
+    const limits = Object.assign({}, DECOR_TEXTURE_LIMITS, opts.textureLimits || {});
+    const dpr = Math.max(1, Number(opts.devicePixelRatio) || ((typeof window !== "undefined" && window.devicePixelRatio) || 1));
+    const targetPPM = Math.max(2, Math.round(((opts.pxPerMeter != null ? Number(opts.pxPerMeter) : limits.targetPxPerMeter) || limits.targetPxPerMeter) * dpr));
+    let ppm = targetPPM;
+    let texW = Math.max(1, Math.ceil((bounds.maxX - bounds.minX) * ppm));
+    let texH = Math.max(1, Math.ceil((bounds.maxY - bounds.minY) * ppm));
+    const over = Math.max(texW / limits.maxSize, texH / limits.maxSize, 1);
+    if (over > 1) {
+      ppm = Math.max(2, Math.floor(ppm / over));
+      texW = Math.max(1, Math.ceil((bounds.maxX - bounds.minX) * ppm));
+      texH = Math.max(1, Math.ceil((bounds.maxY - bounds.minY) * ppm));
+    }
+    return { ppm, texW, texH };
+  }
 
   function loadAtlas(url = SPRITE_ATLAS_URL) {
     if (atlasPromise) return atlasPromise;
@@ -102,9 +208,9 @@
   function blurMask(canvas, radius) {
     const width = canvas.width;
     const height = canvas.height;
-    const tmp = document.createElement("canvas");
-    tmp.width = width;
-    tmp.height = height;
+    const tmp = (typeof OffscreenCanvas !== "undefined") ? new OffscreenCanvas(width, height) : document.createElement("canvas");
+    if (tmp.width !== width) tmp.width = width;
+    if (tmp.height !== height) tmp.height = height;
     const tctx = tmp.getContext("2d", { willReadFrequently: true }) || tmp.getContext("2d");
     tctx.clearRect(0, 0, width, height);
     try {
@@ -123,9 +229,20 @@
     return mask;
   }
 
-  function createZones(maskCanvas, bufferRadius) {
-    const road = readMask(maskCanvas);
-    const bufferMask = blurMask(maskCanvas, bufferRadius);
+  function createZones(maskCanvas, bufferRadius, cropBounds) {
+    let sourceCanvas = maskCanvas;
+    let offsetX = 0;
+    let offsetY = 0;
+    if (cropBounds) {
+      const region = copyCanvasRegion(maskCanvas, cropBounds);
+      if (region && region.canvas) {
+        sourceCanvas = region.canvas;
+        offsetX = region.offsetX;
+        offsetY = region.offsetY;
+      }
+    }
+    const road = readMask(sourceCanvas);
+    const bufferMask = blurMask(sourceCanvas, bufferRadius);
     const greenMask = new Uint8Array(road.data.length);
     for (let i = 0; i < greenMask.length; i++) {
       greenMask[i] = bufferMask[i] ? 0 : 1;
@@ -136,6 +253,8 @@
       greenMask,
       width: road.width,
       height: road.height,
+      offsetX,
+      offsetY,
     };
   }
 
@@ -232,7 +351,13 @@
     return meta;
   }
 
-  function createBarriers(edges, curvature, params, rng, width, height) {
+  function createBarriers(edges, curvature, params, rng, zones) {
+    const width = zones.width;
+    const height = zones.height;
+    const offsetX = zones.offsetX || 0;
+    const offsetY = zones.offsetY || 0;
+    const worldMaxX = offsetX + width;
+    const worldMaxY = offsetY + height;
     const posts = [];
     const outer = edges.outer;
     let lastPlaced = -BARRIER_SPACING;
@@ -240,7 +365,7 @@
       const p = outer[i];
       const curv = Math.abs(curvature[i] || 0);
       const nearEdge =
-        p.x < 40 || p.x > width - 40 || p.y < 40 || p.y > height - 40;
+        p.x < offsetX + 40 || p.x > worldMaxX - 40 || p.y < offsetY + 40 || p.y > worldMaxY - 40;
       if (curv > BARRIER_CURVATURE_THRESHOLD || nearEdge) {
         const dist = Math.hypot(p.x - outer[Math.max(0, lastPlaced)].x, p.y - outer[Math.max(0, lastPlaced)].y);
         if (i - lastPlaced < 2 || dist < BARRIER_SPACING) continue;
@@ -262,9 +387,8 @@
   }
 
   function sampleTrees(zones, rng, params) {
-    const { width, height, greenMask } = zones;
-    const minSpacing = TREE_MIN_SPACING;
-    const spacingRange = TREE_MAX_SPACING - TREE_MIN_SPACING;
+    const { width, height, greenMask, offsetX = 0, offsetY = 0 } = zones;
+  const minSpacing = TREE_MIN_SPACING;
     const target = Math.min(
       Math.floor((width * height) / 2800 * params.treeDensity),
       900
@@ -281,7 +405,9 @@
         attempts++;
         continue;
       }
-      const n = noise2D(x * 0.035, y * 0.035, zones.seed || 1);
+      const worldX = x + offsetX;
+      const worldY = y + offsetY;
+      const n = noise2D(worldX * 0.035, worldY * 0.035, zones.seed || 1);
       if (n < 0.22) {
         attempts++;
         continue;
@@ -289,8 +415,8 @@
       let tooClose = false;
       for (let j = 0; j < accepted.length; j++) {
         const t = accepted[j];
-        const dx = t.x - x;
-        const dy = t.y - y;
+        const dx = t.x - worldX;
+        const dy = t.y - worldY;
         if (dx * dx + dy * dy < minSpacingSq) {
           tooClose = true;
           break;
@@ -301,8 +427,8 @@
         continue;
       }
       accepted.push({
-        x,
-        y,
+        x: worldX,
+        y: worldY,
         radius: rng.range(16, 28),
         variant: rng.int(4),
       });
@@ -311,15 +437,17 @@
     return accepted;
   }
 
-  function pointInsideMask(mask, width, height, x, y) {
-    const ix = Math.round(x);
-    const iy = Math.round(y);
+  function pointInsideMask(mask, width, height, x, y, offsetX = 0, offsetY = 0) {
+    const ix = Math.round(x - offsetX);
+    const iy = Math.round(y - offsetY);
     if (ix < 0 || iy < 0 || ix >= width || iy >= height) return false;
     return mask[iy * width + ix] === 1;
   }
 
   function createBuildings(edges, zones, rng, params) {
-    const { width, height, bufferMask, greenMask } = zones;
+    const { width, height, bufferMask, greenMask, offsetX = 0, offsetY = 0 } = zones;
+    const worldMaxX = offsetX + width;
+    const worldMaxY = offsetY + height;
     const outer = edges.outer;
     const points = [];
     const spacing = Math.max(80, BUILDING_SPACING * (1.2 - params.buildingDensity * 0.6));
@@ -349,8 +477,8 @@
       let rejected = false;
       for (let k = 0; k < footprint.length; k++) {
         const pt = footprint[k];
-        const ix = Math.round(pt.x);
-        const iy = Math.round(pt.y);
+        const ix = Math.round(pt.x - offsetX);
+        const iy = Math.round(pt.y - offsetY);
         if (ix < 0 || iy < 0 || ix >= width || iy >= height) {
           rejected = true;
           break;
@@ -534,11 +662,27 @@
     ctx.restore();
   }
 
-  function drawShadows(shadowCtx, metadata, maskCanvas) {
+  function drawShadows(shadowCtx, metadata, maskCanvas, mapping) {
     const params = metadata.params || DEFAULT_PARAMS;
     const shadowAlpha = params.shadowStrength != null ? params.shadowStrength : DEFAULT_PARAMS.shadowStrength;
+    const worldMinX = mapping ? (mapping.worldMinX || 0) : 0;
+    const worldMinY = mapping ? (mapping.worldMinY || 0) : 0;
+    const worldWidth = mapping ? (mapping.worldWidth || (maskCanvas ? maskCanvas.width : shadowCtx.canvas.width)) : (maskCanvas ? maskCanvas.width : shadowCtx.canvas.width);
+    const worldHeight = mapping ? (mapping.worldHeight || (maskCanvas ? maskCanvas.height : shadowCtx.canvas.height)) : (maskCanvas ? maskCanvas.height : shadowCtx.canvas.height);
+    const worldToTex = mapping && mapping.worldToTex ? mapping.worldToTex : 1;
+
     shadowCtx.save();
+    shadowCtx.setTransform(1, 0, 0, 1, 0, 0);
     shadowCtx.clearRect(0, 0, shadowCtx.canvas.width, shadowCtx.canvas.height);
+    shadowCtx.restore();
+
+    shadowCtx.save();
+    if (mapping && mapping.worldToTex) {
+      shadowCtx.setTransform(worldToTex, 0, 0, worldToTex, -worldMinX * worldToTex, -worldMinY * worldToTex);
+    } else {
+      shadowCtx.setTransform(1, 0, 0, 1, 0, 0);
+    }
+    shadowCtx.imageSmoothingEnabled = false;
     shadowCtx.globalCompositeOperation = "source-over";
     shadowCtx.fillStyle = "rgba(8, 8, 8, 0.28)";
     shadowCtx.globalAlpha = 0.5 * shadowAlpha;
@@ -567,13 +711,19 @@
       shadowCtx.save();
       shadowCtx.globalAlpha = 0.45 * shadowAlpha;
       shadowCtx.globalCompositeOperation = "multiply";
+      const maskWidth = maskCanvas.width || 0;
+      const maskHeight = maskCanvas.height || 0;
+      const srcX = Math.max(0, Math.floor(worldMinX));
+      const srcY = Math.max(0, Math.floor(worldMinY));
+      const srcW = Math.max(1, Math.min(maskWidth - srcX, Math.ceil(worldWidth)));
+      const srcH = Math.max(1, Math.min(maskHeight - srcY, Math.ceil(worldHeight)));
       try {
         shadowCtx.filter = `blur(${EDGE_SHADOW_BLUR}px)`;
-        shadowCtx.drawImage(maskCanvas, 0, 0);
+        shadowCtx.drawImage(maskCanvas, srcX, srcY, srcW, srcH, worldMinX, worldMinY, worldWidth, worldHeight);
         shadowCtx.filter = "none";
       } catch (err) {
         shadowCtx.globalAlpha *= 0.3;
-        shadowCtx.drawImage(maskCanvas, 0, 0);
+        shadowCtx.drawImage(maskCanvas, srcX, srcY, srcW, srcH, worldMinX, worldMinY, worldWidth, worldHeight);
       }
       shadowCtx.restore();
     }
@@ -582,7 +732,8 @@
 
   function buildMetadata(options) {
     const { maskCanvas, roadWidth, centerline, params, seed } = options;
-    const zones = createZones(maskCanvas, BUFFER_RADIUS);
+    const bounds = options.bounds;
+    const zones = createZones(maskCanvas, BUFFER_RADIUS, bounds);
     zones.seed = seed;
     const effectiveParams = {
       treeDensity: Math.max(0, Math.min(1.2, params.treeDensity ?? DEFAULT_PARAMS.treeDensity)),
@@ -595,11 +746,11 @@
     const edges = buildEdges(centerline, roadWidth);
     const curvature = computeCurvature(centerline);
     const kerbs = createKerbs(edges, curvature, effectiveParams);
-    const barriers = createBarriers(edges, curvature, effectiveParams, rng, zones.width, zones.height);
+  const barriers = createBarriers(edges, curvature, effectiveParams, rng, zones);
     const trees = sampleTrees(zones, rng, effectiveParams);
     const buildings = createBuildings(edges, zones, rng, effectiveParams);
     return {
-      version: 1,
+      version: 2,
       seed,
       params: {
         treeDensity: effectiveParams.treeDensity,
@@ -613,6 +764,10 @@
         trees,
         buildings,
       },
+      zones: {
+        offsetX: zones.offsetX || 0,
+        offsetY: zones.offsetY || 0,
+      },
     };
   }
 
@@ -621,9 +776,24 @@
     const shadowCtx = options.shadowCtx;
     const atlas = options.atlas;
     const maskCanvas = options.maskCanvas;
+    const mapping = options.mapping;
+    const worldMinX = mapping ? (mapping.worldMinX || 0) : 0;
+    const worldMinY = mapping ? (mapping.worldMinY || 0) : 0;
+    const worldToTex = mapping && mapping.worldToTex ? mapping.worldToTex : 1;
+
+    // Clear in texture space before drawing
+    decorCtx.save();
+    decorCtx.setTransform(1, 0, 0, 1, 0, 0);
+    decorCtx.clearRect(0, 0, decorCtx.canvas.width, decorCtx.canvas.height);
+    decorCtx.restore();
 
     decorCtx.save();
-    decorCtx.clearRect(0, 0, decorCtx.canvas.width, decorCtx.canvas.height);
+    if (mapping && mapping.worldToTex) {
+      decorCtx.setTransform(worldToTex, 0, 0, worldToTex, -worldMinX * worldToTex, -worldMinY * worldToTex);
+    } else {
+      decorCtx.setTransform(1, 0, 0, 1, 0, 0);
+    }
+    decorCtx.imageSmoothingEnabled = false;
     decorCtx.globalCompositeOperation = "source-over";
     drawKerbs(decorCtx, metadata.items.kerbs, atlas);
     drawBarriers(decorCtx, metadata.items.barriers, atlas);
@@ -631,40 +801,111 @@
     drawTrees(decorCtx, metadata.items.trees, atlas);
     decorCtx.restore();
 
-    drawShadows(shadowCtx, metadata, maskCanvas);
+    drawShadows(shadowCtx, metadata, maskCanvas, mapping);
   }
 
   function generate(options) {
-    const width = Math.min(options.width, MAX_CANVAS_SIZE);
-    const height = Math.min(options.height, MAX_CANVAS_SIZE);
-    const decorCanvas = document.createElement("canvas");
-    decorCanvas.width = width;
-    decorCanvas.height = height;
-    const shadowCanvas = document.createElement("canvas");
-    shadowCanvas.width = width;
-    shadowCanvas.height = height;
-    const decorCtx = decorCanvas.getContext("2d");
-    const shadowCtx = shadowCanvas.getContext("2d");
+    if (!options) throw new Error("Decor.generate requires options");
+    const limits = Object.assign({}, DECOR_TEXTURE_LIMITS, options.textureLimits || {});
+    const devicePixelRatio = Math.max(1, Number(options.devicePixelRatio) || ((typeof window !== "undefined" && window.devicePixelRatio) || 1));
+    const baseWorldWidth = Math.max(1, Number(options.baseWorldWidth) || Number(options.width) || 1000);
+    const baseWorldHeight = Math.max(1, Number(options.baseWorldHeight) || Number(options.height) || 700);
+    const worldWidth = Math.max(1, Number(options.width) || Math.round(baseWorldWidth));
+    const worldHeight = Math.max(1, Number(options.height) || Math.round(baseWorldHeight));
+    const worldScale = Math.max(0.0001, (worldWidth / baseWorldWidth));
+    const roadWidth = Math.max(12, Number(options.roadWidth) || 80);
+
+    const rawBounds = options.bounds && typeof options.bounds === "object"
+      ? {
+          minX: Number(options.bounds.minX) ?? 0,
+          minY: Number(options.bounds.minY) ?? 0,
+          maxX: Number(options.bounds.maxX) ?? worldWidth,
+          maxY: Number(options.bounds.maxY) ?? worldHeight,
+        }
+      : computeBounds(options.centerline, worldWidth, worldHeight);
+    const pad = (options.boundsPadding != null ? Number(options.boundsPadding) : (roadWidth * 1.25 + BUFFER_RADIUS));
+    const bounds = expandBounds(rawBounds, pad, worldWidth, worldHeight);
+    const { ppm, texW, texH } = pickDecorResolution(bounds, {
+      textureLimits: limits,
+      devicePixelRatio,
+      pxPerMeter: options.pxPerMeter,
+    });
+
+    const decorPair = createCanvas2d(texW, texH, false);
+    const shadowPair = createCanvas2d(texW, texH, false);
+    if (!decorPair.ctx || !shadowPair.ctx) {
+      throw new Error("Decor canvas contexts unavailable");
+    }
+
+    const decorCanvas = decorPair.canvas;
+    const shadowCanvas = shadowPair.canvas;
+    const decorCtx = decorPair.ctx;
+    const shadowCtx = shadowPair.ctx;
+
+    decorCtx.setTransform(1, 0, 0, 1, 0, 0);
+    decorCtx.clearRect(0, 0, texW, texH);
+    shadowCtx.setTransform(1, 0, 0, 1, 0, 0);
+    shadowCtx.clearRect(0, 0, texW, texH);
+
+    const texToWorld = 1 / ppm;
+    const mapping = {
+      textureWidth: texW,
+      textureHeight: texH,
+      worldMinX: bounds.minX,
+      worldMinY: bounds.minY,
+      worldWidth: bounds.maxX - bounds.minX,
+      worldHeight: bounds.maxY - bounds.minY,
+      baseWorldWidth,
+      baseWorldHeight,
+      worldScale,
+      ppm,
+      worldToTex: ppm,
+      texToWorld,
+    };
 
     let metadata = null;
-    const useExisting =
-      options.existing &&
-      options.existing.version === 1 &&
-      options.existing.seed === options.seed &&
-      !options.force;
-    if (useExisting) {
-      metadata = cloneMetadata(options.existing);
-      // Ensure params include latest overrides
+    const existing = options.existing;
+    const canReuse = existing && existing.version >= 2 && !options.force;
+    const mappingMatches = canReuse && existing.mapping &&
+      Math.abs((existing.mapping.worldMinX || 0) - mapping.worldMinX) < 0.5 &&
+      Math.abs((existing.mapping.worldMinY || 0) - mapping.worldMinY) < 0.5 &&
+      Math.abs((existing.mapping.worldWidth || 0) - mapping.worldWidth) < 1 &&
+      Math.abs((existing.mapping.worldHeight || 0) - mapping.worldHeight) < 1 &&
+      Math.abs((existing.mapping.ppm || existing.mapping.worldToTex || 0) - mapping.ppm) < 0.01;
+
+    if (canReuse && mappingMatches && existing.seed === options.seed) {
+      metadata = cloneMetadata(existing);
       metadata.params = Object.assign({}, metadata.params, options.params || {});
+      metadata.bounds = {
+        minX: bounds.minX,
+        minY: bounds.minY,
+        maxX: bounds.maxX,
+        maxY: bounds.maxY,
+      };
     } else {
-      metadata = buildMetadata(options);
+      const metaOptions = Object.assign({}, options, {
+        bounds,
+        params: options.params || {},
+      });
+      metadata = buildMetadata(metaOptions);
+      metadata.bounds = {
+        minX: bounds.minX,
+        minY: bounds.minY,
+        maxX: bounds.maxX,
+        maxY: bounds.maxY,
+      };
     }
+
+    metadata.mapping = mapping;
+
     replay(metadata, {
       decorCtx,
       shadowCtx,
       atlas: options.atlas || getAtlas(),
       maskCanvas: options.maskCanvas,
+      mapping,
     });
+
     return {
       decorCanvas,
       shadowCanvas,
@@ -678,5 +919,6 @@
     getAtlas,
     generate,
     hash: hashString,
+    textureLimits: DECOR_TEXTURE_LIMITS,
   };
 })(typeof window !== "undefined" ? window : this);
