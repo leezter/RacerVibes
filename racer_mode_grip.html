@@ -2489,13 +2489,13 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
       </div>
       <div class="gbx-row" title="RPM target for automatic upshifts.">
         <label for="gbxUp">Upshift RPM</label>
-  <input id="gbxUp" type="range" min="2500" max="9000" step="50" data-default="7800">
-  <span class="gbx-value" id="gbxUpVal">7800</span>
+        <input id="gbxUp" type="range" min="2500" max="9000" step="1" data-default="6696">
+        <span class="gbx-value" id="gbxUpVal">6696</span>
       </div>
       <div class="gbx-row" title="RPM threshold to downshift when in automatic mode.">
         <label for="gbxDown">Downshift RPM</label>
-  <input id="gbxDown" type="range" min="1500" max="5000" step="50" data-default="4400">
-  <span class="gbx-value" id="gbxDownVal">4400</span>
+        <input id="gbxDown" type="range" min="1500" max="5000" step="1" data-default="5040">
+        <span class="gbx-value" id="gbxDownVal">5040</span>
       </div>
       <div class="gbx-row" title="Overall driveline efficiency from engine to wheels.">
   <label for="gbxEff">Driveline eff.</label>
@@ -2504,8 +2504,8 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
       </div>
       <div class="gbx-row" title="Peak engine torque available at full throttle (before gearing).">
         <label for="gbxTq">Torque peak</label>
-        <input id="gbxTq" type="range" min="5" max="40" step="0.5" data-default="40">
-        <span class="gbx-value" id="gbxTqVal">40.0</span>
+        <input id="gbxTq" type="range" min="5" max="400" step="0.5" data-default="260">
+        <span class="gbx-value" id="gbxTqVal">260.0</span>
       </div>
       <div class="gbx-row" title="Maximum engine braking torque applied when off throttle.">
         <label for="gbxBrakePeak">Engine brake</label>
@@ -2639,33 +2639,72 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
         } catch (e) {}
       }
 
-      function resolveDefault(def){
+      function clampToInputRange(input, value){
+        if (value == null) return null;
+        let num = Number(value);
+        if (!Number.isFinite(num)) return null;
+        if (input) {
+          const minAttr = input.min;
+          const maxAttr = input.max;
+          const min = minAttr !== undefined && minAttr !== '' ? parseFloat(minAttr) : NaN;
+          const max = maxAttr !== undefined && maxAttr !== '' ? parseFloat(maxAttr) : NaN;
+          if (!Number.isNaN(min)) num = Math.max(num, min);
+          if (!Number.isNaN(max)) num = Math.min(num, max);
+        }
+        return num;
+      }
+
+      function resolveDefault(def, inputEl){
         const defaults = getDefaultConfig() || {};
+        const input = inputEl || QS(def.id);
         if (def.type === 'checkbox') {
           if (def.prop && defaults[def.prop] != null) return !!defaults[def.prop];
-          const input = QS(def.id);
           if (input) return !!input.defaultChecked;
           return true;
         }
         if (def.prop === 'ratios') {
           const arr = defaults.ratios;
-          if (Array.isArray(arr) && arr[def.index] != null) return arr[def.index];
+          if (Array.isArray(arr) && arr[def.index] != null) {
+            const clamped = clampToInputRange(input, arr[def.index]);
+            if (clamped != null) return clamped;
+          }
         } else if (def.prop && defaults[def.prop] != null) {
-          return defaults[def.prop];
+          const clampedProp = clampToInputRange(input, defaults[def.prop]);
+          if (clampedProp != null) return clampedProp;
         }
-        const input = QS(def.id);
         if (input) {
           const dataDefault = input.dataset.default;
           if (dataDefault != null) {
-            const num = parseFloat(dataDefault);
-            if (!Number.isNaN(num)) return num;
+            const clampedData = clampToInputRange(input, dataDefault);
+            if (clampedData != null) return clampedData;
           }
-          const base = parseFloat(input.defaultValue);
-          if (!Number.isNaN(base)) return base;
-          const min = parseFloat(input.min);
-          if (!Number.isNaN(min)) return min;
+          const base = clampToInputRange(input, input.defaultValue);
+          if (base != null) return base;
+          const min = clampToInputRange(input, input.min);
+          if (min != null) return min;
         }
-        return 0;
+        const fallback = clampToInputRange(input, 0);
+        return fallback != null ? fallback : 0;
+      }
+
+      function normalizeGearboxConfig(cfg){
+        if (!cfg) return cfg;
+        const ensureNumber = (value) => {
+          const num = Number(value);
+          return Number.isFinite(num) ? num : undefined;
+        };
+        const redline = ensureNumber(cfg.redlineRPM ?? cfg.redlineRpm);
+        if (redline && redline > 0) {
+          const upRpm = ensureNumber(cfg.upshiftRPM);
+          if (upRpm !== undefined) cfg.upshiftFrac = Math.max(0, Math.min(1, upRpm / redline));
+          const downRpm = ensureNumber(cfg.downshiftRPM);
+          if (downRpm !== undefined) cfg.downshiftFrac = Math.max(0, Math.min(1, downRpm / redline));
+        }
+        const wheel = ensureNumber(cfg.wheelRadius);
+        const tire = ensureNumber(cfg.tireRadiusM);
+        if (wheel !== undefined) cfg.tireRadiusM = wheel;
+        else if (tire !== undefined) cfg.wheelRadius = tire;
+        return cfg;
       }
 
       function updateSliderLabel(def, value){
@@ -2679,9 +2718,9 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
       function setSlider(def, value){
         const input = QS(def.id);
         if (!input) return null;
-        let assigned = Number(value);
-        if (Number.isNaN(assigned)) assigned = Number(resolveDefault(def));
-        if (Number.isNaN(assigned)) assigned = 0;
+        let assigned = clampToInputRange(input, value);
+        if (assigned == null) assigned = clampToInputRange(input, resolveDefault(def, input));
+        if (assigned == null) assigned = clampToInputRange(input, 0) ?? 0;
         input.value = String(assigned);
         updateSliderLabel(def, assigned);
         return assigned;
@@ -2746,9 +2785,11 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
 
       function persistConfig(cfg){
         const payload = cloneConfig(cfg);
+        normalizeGearboxConfig(payload);
         applyCfgToCar(payload);
         const stored = readCfgFromCar();
         if (stored) {
+          normalizeGearboxConfig(stored);
           saveStore(stored);
           return stored;
         }
@@ -2756,14 +2797,40 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
         return stored || payload;
       }
 
+      function getWorkingConfig(){
+        const fromForm = readForm();
+        if (fromForm) return cloneConfig(fromForm);
+        const fallback = readCfgFromCar() || loadStore() || cloneConfig(getDefaultConfig());
+        return cloneConfig(fallback) || { auto: true, ratios: [] };
+      }
+
       function handleControlAction(def, action){
         if (!def) return;
+        const cfg = getWorkingConfig();
+        if (!Array.isArray(cfg.ratios)) cfg.ratios = [];
         if (action === 'default') {
-          const value = resolveDefault(def);
-          setControl(def, value);
+          const defaultValue = resolveDefault(def);
+          const assigned = setControl(def, defaultValue);
+          if (def.type === 'checkbox') {
+            if (def.prop) cfg[def.prop] = !!assigned;
+          } else if (def.prop === 'ratios') {
+            const numeric = Number(assigned);
+            cfg.ratios[def.index] = Number.isFinite(numeric) ? numeric : Number(resolveDefault(def));
+          } else if (def.prop) {
+            const numeric = Number(assigned);
+            cfg[def.prop] = Number.isFinite(numeric) ? numeric : Number(resolveDefault(def));
+          }
+          normalizeGearboxConfig(cfg);
+          const storedDefault = persistConfig(cfg);
+          fillForm(storedDefault || cfg);
+          return;
         }
-        const stored = persistConfig(readForm());
-        fillForm(stored || {});
+        if (action === 'save') {
+          normalizeGearboxConfig(cfg);
+          const storedSave = persistConfig(cfg);
+          fillForm(storedSave || cfg);
+          return;
+        }
       }
 
       function ensureControlButtons(def){

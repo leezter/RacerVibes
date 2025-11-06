@@ -9,6 +9,32 @@ const resolveShiftFrac = (fraction, derived, fallback) => {
 	return clamp(source, 0, 1);
 };
 
+const firstNumber = (...values) => {
+	for (const value of values) {
+		const num = Number(value);
+		if (Number.isFinite(num)) return num;
+	}
+	return undefined;
+};
+
+const deriveTorqueIdle = (peak) => {
+	if (!Number.isFinite(peak) || peak <= 0) return 120;
+	const lower = Math.max(40, peak * 0.35);
+	const upper = Math.max(lower, peak * 0.55);
+	const candidate = peak - 40;
+	return Math.max(lower, Math.min(candidate, upper));
+};
+
+const ensureTorqueParams = (state) => {
+	const peak = Math.max(0, firstNumber(state?.torquePeak, state?.torqueCurveParams?.torquePeak, 260) ?? 0);
+	const idleCandidate = firstNumber(state?.torqueIdle, state?.torqueCurveParams?.torqueIdle);
+	const idle = Math.max(0, Math.min(peak, idleCandidate != null ? idleCandidate : deriveTorqueIdle(peak)));
+	const peakRpm = Math.max(1000, firstNumber(state?.torquePeakRpm, state?.torqueCurveParams?.peakRpm, 5000) ?? 5000);
+	const redline = Math.max(1000, firstNumber(state?.redlineRpm, state?.torqueCurveParams?.redlineRpm, GEARBOX_CONFIG.redlineRpm) ?? GEARBOX_CONFIG.redlineRpm);
+	const engineBrake = Math.max(0, firstNumber(state?.engineBrakePeak, state?.torqueCurveParams?.engineBrakePeak, 0) ?? 0);
+	return { torquePeak: peak, torqueIdle: idle, peakRpm, redlineRpm: redline, engineBrakePeak: engineBrake };
+};
+
 export const GEARBOX_CONFIG = {
 	redlineRpm: 7200,
 	upshiftFrac: 0.93,
@@ -32,29 +58,47 @@ export function rpmFromSpeed(speedMps, gearRatio, finalDrive, tireRadiusM) {
 	return Math.abs(wheelRps * totalRatio * 60);
 }
 
-export function torqueCurve(rpm, throttle) {
-	const cfg = GEARBOX_CONFIG;
-	const rl = cfg.redlineRpm;
-	const peak = 5000;
-	const base = 120;
-	const maxTq = 260;
+export function torqueCurve(rpm, throttle, params = {}) {
+	const rl = Math.max(1000, firstNumber(params.redlineRpm, GEARBOX_CONFIG.redlineRpm) ?? GEARBOX_CONFIG.redlineRpm);
+	const peakRpm = Math.max(1000, firstNumber(params.peakRpm, params.torquePeakRpm, 5000) ?? 5000);
+	const torquePeak = Math.max(0, firstNumber(params.torquePeak, 260) ?? 0);
+	const idleCandidate = firstNumber(params.torqueIdle, params.torqueBase);
+	const idleTorque = Math.max(0, Math.min(torquePeak, idleCandidate != null ? idleCandidate : deriveTorqueIdle(torquePeak)));
+	const throttleCmd = clamp01(throttle ?? 0);
 	const r = clamp(rpm ?? 0, 0, rl);
 	let tq;
-	if (r < 1000) tq = base + (r / 1000) * 60;
-	else if (r < peak) tq = base + (maxTq - base) * ((r - 1000) / (peak - 1000));
-	else tq = maxTq - (maxTq - 180) * ((r - peak) / Math.max(1, rl - peak));
-	tq = clamp(tq, 0, maxTq);
-	return tq * clamp01(throttle ?? 0);
+	if (torquePeak <= 0) {
+		tq = 0;
+	} else if (r < 1000) {
+		const riseTarget = Math.max(idleTorque, torquePeak * 0.6);
+		tq = idleTorque + (riseTarget - idleTorque) * (r / 1000);
+	} else if (r < peakRpm) {
+		const span = Math.max(1, peakRpm - 1000);
+		tq = idleTorque + (torquePeak - idleTorque) * ((r - 1000) / span);
+	} else {
+		const falloffTarget = Math.max(idleTorque, torquePeak * 0.65);
+		const span = Math.max(1, rl - peakRpm);
+		tq = torquePeak - (torquePeak - falloffTarget) * ((r - peakRpm) / span);
+	}
+	tq = clamp(tq, 0, torquePeak);
+	tq *= throttleCmd;
+	const brakePeak = Math.max(0, firstNumber(params.engineBrakePeak, 0) ?? 0);
+	if (brakePeak > 0) {
+		const brakeTorque = brakePeak * (1 - throttleCmd);
+		tq = Math.max(-brakePeak, tq - brakeTorque);
+	}
+	return tq;
 }
 
-export function wheelForceAt(speedMps, gearRatio, finalDrive, tireRadiusM, rpm, throttle, drivelineEff, powerMult = 1, torqueFn = torqueCurve) {
+export function wheelForceAt(speedMps, gearRatio, finalDrive, tireRadiusM, rpm, throttle, drivelineEff, powerMult = 1, torqueFn = torqueCurve, torqueParams) {
 	const radius = Math.max(1e-6, numberOr(tireRadiusM, GEARBOX_CONFIG.tireRadiusM));
 	const fd = numberOr(finalDrive, GEARBOX_CONFIG.finalDrive);
 	const ratio = numberOr(gearRatio, 0);
 	if (!isFiniteNumber(ratio) || Math.abs(ratio) < 1e-6) return 0;
 	const rpmEff = numberOr(rpm, rpmFromSpeed(speedMps, Math.abs(ratio), fd, radius));
 	const eff = numberOr(drivelineEff, GEARBOX_CONFIG.drivelineEff);
-	const tq = torqueFn(Math.max(0, rpmEff), clamp01(throttle ?? 0)) * numberOr(powerMult, 1);
+	const tqRaw = torqueFn(Math.max(0, rpmEff), clamp01(throttle ?? 0), torqueParams);
+	const tq = tqRaw * numberOr(powerMult, 1);
 	const wheelTorque = tq * ratio * fd * eff;
 	return wheelTorque / radius;
 }
@@ -239,23 +283,25 @@ export function updateGearbox(state, dt, inputs = {}) {
 	const autoEnabled = inputs.auto ?? state.auto ?? true;
 	state.auto = !!autoEnabled;
 
+	const torqueFn = state.torqueCurve || torqueCurve;
+	const torqueParams = ensureTorqueParams(state);
+	state.torqueCurveParams = torqueParams;
 	const canAutoShift = state.auto && state.cutRemainingMs <= 0 && sinceLast >= numberOr(state.minShiftGapMs, cfg.minShiftGapMs);
 	if (canAutoShift && ratio !== 0) {
 		const upThresh = numberOr(state.upshiftFrac, cfg.upshiftFrac) * redline;
 		const downThresh = numberOr(state.downshiftFrac, cfg.downshiftFrac) * redline;
 		const eff = numberOr(state.drivelineEff, cfg.drivelineEff);
 		const powerMult = numberOr(state.powerMult, 1);
-		const torqueFn = state.torqueCurve || torqueCurve;
 		const currRatio = state.gear >= 1 ? ratio : 0;
 		const Fcurr = currRatio
-			? wheelForceAt(speed, currRatio, fd, tireR, rpmNext, throttle, eff, powerMult, torqueFn)
+			? wheelForceAt(speed, currRatio, fd, tireR, rpmNext, throttle, eff, powerMult, torqueFn, torqueParams)
 			: 0;
 
 		if (state.gear >= 1 && state.gear < state.gearRatios.length) {
 			const nextRatio = state.gearRatios[state.gear] || 0;
 			if (nextRatio) {
 				const rpmNextGear = rpmFromSpeed(speed, nextRatio, fd, tireR);
-				const Fnext = wheelForceAt(speed, nextRatio, fd, tireR, rpmNextGear, throttle, eff, powerMult, torqueFn);
+				const Fnext = wheelForceAt(speed, nextRatio, fd, tireR, rpmNextGear, throttle, eff, powerMult, torqueFn, torqueParams);
 				const margin = Math.max(0, numberOr(state.effortMargin, cfg.effortMargin));
 				const lowDemand = throttle < 0.15;
 				const rpmNearRedline = rpmNext > redline * (lowDemand ? 0.965 : 0.985);
@@ -312,7 +358,9 @@ export function getDriveForce(state, speedMps, throttle) {
 	const throttleEff = throttleCmd * limiter;
 	const rpmEff = numberOr(state.rpm, wheelRpm);
 	const torqueFn = state.torqueCurve || torqueCurve;
-	const baseTorque = torqueFn(Math.max(0, rpmEff), throttleEff);
+	const torqueParams = ensureTorqueParams(state);
+	state.torqueCurveParams = torqueParams;
+	const baseTorque = torqueFn(Math.max(0, rpmEff), throttleEff, torqueParams);
 	const engineTorque = baseTorque * numberOr(state.powerMult, 1);
 	const wheelTorque = engineTorque * ratio * fd * eff;
 	const driveForce = wheelTorque / tireR;
@@ -384,6 +432,11 @@ function createStateFromConfig(cfg = {}) {
 	const idle = numberOr(cfg.idleRPM ?? cfg.idleRpm, GEARBOX_CONFIG.idleRpm);
 	const upFrac = resolveShiftFrac(cfg.upshiftFrac, rpmToFrac(cfg.upshiftRPM, redline), GEARBOX_CONFIG.upshiftFrac);
 	const downFrac = resolveShiftFrac(cfg.downshiftFrac, rpmToFrac(cfg.downshiftRPM, redline), GEARBOX_CONFIG.downshiftFrac);
+	const torquePeak = Math.max(0, firstNumber(cfg.torquePeak, 260) ?? 260);
+	const torqueIdleRaw = firstNumber(cfg.torqueIdle, cfg.torqueBase);
+	const torqueIdle = Math.max(0, Math.min(torquePeak, torqueIdleRaw != null ? torqueIdleRaw : deriveTorqueIdle(torquePeak)));
+	const torquePeakRpm = Math.max(1000, firstNumber(cfg.torquePeakRPM, cfg.torquePeakRpm, 5000) ?? 5000);
+	const engineBrakePeak = Math.max(0, firstNumber(cfg.engineBrakePeak, 0) ?? 0);
 	const state = {
 		gearRatios: ratios,
 		maxGear: ratios.length,
@@ -405,6 +458,11 @@ function createStateFromConfig(cfg = {}) {
 		throttleDead: numberOr(cfg.throttleDead, 0.05),
 		powerMult: numberOr(cfg.powerMult, 1),
 		torqueCurve: typeof cfg.torqueCurve === 'function' ? cfg.torqueCurve : null,
+		torquePeak,
+		torqueIdle,
+		torquePeakRpm,
+		engineBrakePeak,
+		torqueCurveParams: null,
 		auto: cfg.auto !== false,
 		allowNeutral: cfg.allowNeutral !== false,
 		enableReverse: cfg.enableReverse !== false,
@@ -421,6 +479,7 @@ function createStateFromConfig(cfg = {}) {
 	state.totalRatio = state.currentRatio * state.finalDrive;
 	state.isNeutral = state.currentRatio === 0;
 	state.isReverse = state.currentRatio < 0;
+	state.torqueCurveParams = ensureTorqueParams(state);
 	return state;
 }
 
@@ -465,6 +524,13 @@ export class Gearbox {
 		s.drivelineEff = numberOr(c.drivelineEff, s.drivelineEff ?? GEARBOX_CONFIG.drivelineEff);
 		s.powerMult = numberOr(c.powerMult, s.powerMult ?? 1);
 		s.torqueCurve = typeof c.torqueCurve === 'function' ? c.torqueCurve : null;
+		const torquePeak = Math.max(0, firstNumber(c.torquePeak, s.torquePeak, 260) ?? 260);
+		const torqueIdleCandidate = firstNumber(c.torqueIdle, c.torqueBase, s.torqueIdle);
+		s.torquePeak = torquePeak;
+		s.torqueIdle = Math.max(0, Math.min(torquePeak, torqueIdleCandidate != null ? torqueIdleCandidate : deriveTorqueIdle(torquePeak)));
+		s.torquePeakRpm = Math.max(1000, firstNumber(c.torquePeakRPM, c.torquePeakRpm, s.torquePeakRpm, 5000) ?? 5000);
+		s.engineBrakePeak = Math.max(0, firstNumber(c.engineBrakePeak, s.engineBrakePeak, 0) ?? 0);
+		s.torqueCurveParams = ensureTorqueParams(s);
 		s.throttleDead = numberOr(c.throttleDead, s.throttleDead ?? 0.05);
 		s.auto = c.auto !== false;
 		s.allowNeutral = c.allowNeutral !== false;
