@@ -1,9 +1,14 @@
-// RacerVibes offline shell: precache core bundle and fall back to cache-first for same-origin GETs.
-const CACHE_VERSION = 'rv-static-v20251024';
+// Drift mode fully removed in this release.
+// 'racer.html' is the single entry point; Grip is default.
+// Cache version bumped to evict the old drift page.
+const CACHE_VERSION = 'rv-static-v20251024-no-drift';
 const CORE_ASSETS = [
   'racer_start_menu.html',
+  'racer.html',
   'racer_mode_grip.html',
-  'racer_mode_drift.html',
+  'modes/registry.js',
+  'modes/grip.js',
+  'utils/mode-utils.js',
   'manifest.webmanifest',
   'physics.js',
   'physics/planckWorld.js',

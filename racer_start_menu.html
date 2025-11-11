@@ -77,8 +77,8 @@
 <body>
   <div class="wrap">
     <div class="panel">
-      <h1>Top‑Down Racer</h1>
-      <p class="sub">Pick a mode, vehicle, and track — then hit Start.</p>
+  <h1>Top‑Down Racer</h1>
+  <p class="sub">Pick a vehicle and track — then hit Start.</p>
 
       <fieldset>
         <legend>Mode</legend>
@@ -86,10 +86,6 @@
           <label class="card choice">
             <input type="radio" name="mode" value="grip" checked />
             <div><strong>Grip</strong><br><span class="muted">Tight grip, classic feel</span></div>
-          </label>
-          <label class="card choice">
-            <input type="radio" name="mode" value="drift" />
-            <div><strong>Drift</strong><br><span class="muted">Grass‑aware drifting physics</span></div>
           </label>
         </div>
       </fieldset>
@@ -139,6 +135,22 @@
         const vehicleSel = $("vehicleSel");
         const createTrackBtn = $("createTrackBtn");
 
+        const START_PAYLOAD_KEY = "RacingVibesStartPayload";
+        const START_PAYLOAD_NAME_PREFIX = "RacingVibesStart:";
+        function saveStartPayload(payload){
+          if (!payload) return;
+          let json;
+          try {
+            json = JSON.stringify(payload);
+          } catch(_){ return; }
+          try {
+            sessionStorage.setItem(START_PAYLOAD_KEY, json);
+          } catch(_){ }
+          try {
+            window.name = START_PAYLOAD_NAME_PREFIX + json;
+          } catch(_){ }
+        }
+
         let customGroup = null;
         if (trackSel) {
           customGroup = document.createElement("optgroup");
@@ -181,13 +193,13 @@
                 trackSel.value = "custom:" + entry.id;
               }
             },
-            onTestDrive: (mode, entry) => {
+            onTestDrive: (_mode, entry) => {
               if (!entry || !entry.id) return;
               const value = "custom:" + entry.id;
               if (trackSel) trackSel.value = value;
-              const file = mode === "drift" ? "racer_mode_drift.html" : "racer_mode_grip.html";
-              const car = vehicleSel ? encodeURIComponent(vehicleSel.value) : "GT";
-              window.location.href = file + "?track=" + encodeURIComponent(value) + "&car=" + car;
+              const carValue = vehicleSel ? vehicleSel.value : "GT";
+              saveStartPayload({ track: value, car: carValue });
+              window.location.href = "racer.html";
             }
           });
           createTrackBtn.addEventListener("click", function(){
@@ -215,13 +227,10 @@
 
         if (startBtn) {
           startBtn.addEventListener("click", function(){
-            const mode = (document.querySelector('input[name=mode]:checked')||{}).value || "grip";
             const trackValue = trackSel ? trackSel.value : "Le Mans";
-            const track = encodeURIComponent(trackValue);
             const carValue = vehicleSel ? vehicleSel.value : "GT";
-            const car = encodeURIComponent(carValue);
-            const file = mode === "drift" ? "racer_mode_drift.html" : "racer_mode_grip.html";
-            window.location.href = file + "?track=" + track + "&car=" + car;
+            saveStartPayload({ track: trackValue, car: carValue });
+            window.location.href = "racer.html";
           });
         }
 

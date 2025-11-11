@@ -369,7 +369,6 @@
               <div>Test-drive freshly baked track:</div>
               <div class="te-test-buttons">
                 <button type="button" class="te-btn te-secondary" data-action="test-grip">Grip Mode</button>
-                <button type="button" class="te-btn te-secondary" data-action="test-drift">Drift Mode</button>
               </div>
             </div>
           </div>
@@ -402,8 +401,7 @@
     overlay.querySelector('[data-action="clear"]').addEventListener("click", () => this.clear());
     overlay.querySelector('[data-action="bake"]').addEventListener("click", () => this.bake());
     overlay.querySelector('[data-action="export"]').addEventListener("click", () => this.exportBundle());
-    overlay.querySelector('[data-action="test-grip"]').addEventListener("click", () => this.testDrive("grip"));
-    overlay.querySelector('[data-action="test-drift"]').addEventListener("click", () => this.testDrive("drift"));
+  overlay.querySelector('[data-action="test-grip"]').addEventListener("click", () => this.testDrive("grip"));
 
     const toolButtons = overlay.querySelectorAll(".te-tool");
     toolButtons.forEach((btn) => {
