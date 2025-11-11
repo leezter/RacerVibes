@@ -1,3 +1,4 @@
+// RacerVibes offline shell: precache core bundle and fall back to cache-first for same-origin GETs.
 const CACHE_VERSION = 'rv-static-v20251024';
 const CORE_ASSETS = [
   'racer_start_menu.html',

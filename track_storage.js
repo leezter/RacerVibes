@@ -3,13 +3,14 @@
   const DB_VERSION = 1;
   const STORE_NAME = "tracks";
   let dbPromise = null;
+  const logZipInfoOnce = window.RacerUtils && typeof window.RacerUtils.once === "function"
+    ? window.RacerUtils.once(() => console.info("JSZip not found - falling back to multi-file export."))
+    : () => {};
 
   function hasIndexedDB(){
-    try {
-      return typeof indexedDB !== "undefined";
-    } catch (_) {
-      return false;
-    }
+    return window.RacerStorageUtils && typeof window.RacerStorageUtils.hasIndexedDB === "function"
+      ? window.RacerStorageUtils.hasIndexedDB()
+      : false;
   }
 
   function openDB(){
@@ -120,7 +121,10 @@
 
   function downloadBundle(entry){
     if (!entry) return;
-    const name = (entry.name || "track").replace(/[^a-z0-9_\-]+/gi, "_");
+    const utils = window.RacerUtils;
+    const name = utils && typeof utils.sanitizeFilename === "function"
+      ? utils.sanitizeFilename(entry.name || "track")
+      : (entry.name || "track").replace(/[^a-z0-9_\-]+/gi, "_");
     const dataBlob = new Blob([JSON.stringify(entry.data, null, 2)], { type: "application/json" });
     const maskBlob = entry.mask && entry.mask.pngData ? dataURLToBlob(entry.mask.pngData) : null;
     const files = [
@@ -135,6 +139,7 @@
       return;
     }
     if (typeof JSZip === "undefined") {
+      logZipInfoOnce();
       files.forEach((file) => triggerDownload(file.blob, file.filename));
       return;
     }

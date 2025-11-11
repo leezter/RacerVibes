@@ -1,0 +1,11 @@
+dist
+build
+node_modules
+**/.min.js
+/vendor/
+**/.png
+**/.jpg
+**/.webp
+**/.mp3
+**/.ogg
+**/*.zip

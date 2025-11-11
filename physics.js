@@ -18,9 +18,12 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
   */
   // Gravity in pixel-units. Scale up so tire traction (mu*Fz) matches engineForce magnitudes
   // This fixes cars feeling like "slow motion" due to tiny normal loads.
-  const GRAVITY_MIN = 100;
-  const GRAVITY_MAX = 1500;
-  const GRAVITY_DEFAULT = 750;
+  const PHYS_CONST = {
+    GRAVITY_MIN: 100,
+    GRAVITY_MAX: 1500,
+    GRAVITY_DEFAULT: 750
+  };
+  const { GRAVITY_MIN, GRAVITY_MAX, GRAVITY_DEFAULT } = PHYS_CONST;
   let g = GRAVITY_DEFAULT; // px/s^2 (tuned so GT tops ~330-350 px/s on road)
 
   // Default per-vehicle physical parameters (pixel-space, tuned empirically)
@@ -194,8 +197,14 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     }
   };
 
-  function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
-  function sign(x){ return x<0?-1:x>0?1:0; }
+  const fallbackClamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const clamp = window.RacerUtils && typeof window.RacerUtils.clamp === 'function'
+    ? window.RacerUtils.clamp
+    : fallbackClamp;
+  const fallbackSign = (x) => (x < 0 ? -1 : x > 0 ? 1 : 0);
+  const sign = window.RacerUtils && typeof window.RacerUtils.sign === 'function'
+    ? window.RacerUtils.sign
+    : fallbackSign;
 
   function inferIzz(mass, length, width){
     // Rectangular body moment around vertical (top-down)

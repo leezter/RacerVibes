@@ -1,3 +1,4 @@
+// RacerVibes gearbox core: shared pure-JS drivetrain model matching DevTools keys (redlineRpm, tireRadiusM, etc.).
 const clamp = (value, lower, upper) => Math.max(lower, Math.min(upper, value));
 const clamp01 = (value) => clamp(value, 0, 1);
 const isFiniteNumber = (value) => typeof value === 'number' && Number.isFinite(value);

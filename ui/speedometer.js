@@ -1,7 +1,19 @@
 (function(){
+  // Prefer shared RacerVibes helpers when they are already on the page.
+  const Utils = window.RacerUtils || {};
+  const clamp = Utils.clamp ? (v, a, b) => Utils.clamp(v, a, b) : (v, a, b) => Math.max(a, Math.min(b, v));
+  const toRad = Utils.toRad ? (deg) => Utils.toRad(deg) : (deg) => (deg * Math.PI) / 180;
+  const makeOnce = Utils.once
+    ? (fn) => Utils.once(fn)
+    : (fn) => {
+        let called = false;
+        return (...args) => {
+          if (called) return;
+          called = true;
+          return fn(...args);
+        };
+      };
   const NS = 'http://www.w3.org/2000/svg';
-  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
-  function toRad(d){ return d*Math.PI/180; }
   function polar(cx,cy,r,a){ a=toRad(a); return [cx+r*Math.cos(a), cy+r*Math.sin(a)]; }
   function arcPath(cx,cy,r,a0,a1){
     const [sx,sy]=polar(cx,cy,r,a0), [ex,ey]=polar(cx,cy,r,a1);
@@ -176,34 +188,52 @@
         </div>
       </div>
     `;
+    const mphInput = panel.querySelector('#spd-mphmax');
+    const smoothInput = panel.querySelector('#spd-smooth');
+    const saveBtn = panel.querySelector('#spd-save');
+    const resetBtn = panel.querySelector('#spd-reset');
+
     function setInputs(cfg){
-      panel.querySelector('#spd-mphmax').value = cfg.mphMax;
-      panel.querySelector('#spd-smooth').value = cfg.smoothing;
+      mphInput.value = cfg.mphMax;
+      smoothInput.value = cfg.smoothing;
     }
     function readInputs(){
       return {
-        mphMax: parseFloat(panel.querySelector('#spd-mphmax').value||'180'),
-        smoothing: parseFloat(panel.querySelector('#spd-smooth').value||'0.18'),
+        mphMax: parseFloat(mphInput.value||'180'),
+        smoothing: parseFloat(smoothInput.value||'0.18'),
       };
     }
 
-    btn.addEventListener('click', ()=>{ panel.style.display = (panel.style.display==='none' || !panel.style.display) ? 'block' : 'none'; });
-
-    window.addEventListener('keydown', (e)=>{ if (e.code==='F8'){ btn.click(); }});
-
-    panel.querySelector('#spd-save').addEventListener('click', ()=>{
+    const togglePanel = () => {
+      panel.style.display = (panel.style.display==='none' || !panel.style.display) ? 'block' : 'none';
+    };
+    const handleKey = (e) => { if (e.code==='F8'){ togglePanel(); }};
+    const handleSave = () => {
       const cfg = readInputs(); setState(cfg);
-      try { localStorage.setItem('speedometerCfg', JSON.stringify(getState())); } catch(_){}
-    });
-    panel.querySelector('#spd-reset').addEventListener('click', ()=>{
+      try { localStorage.setItem('speedometerCfg', JSON.stringify(getState())); } catch(_){ }
+    };
+    const handleReset = () => {
       const d = getState().__defaults; setState({ mphMax:d.mphMax, smoothing:d.smoothing });
-      try { localStorage.setItem('speedometerCfg', JSON.stringify(getState())); } catch(_){}
+      try { localStorage.setItem('speedometerCfg', JSON.stringify(getState())); } catch(_){ }
       setInputs(getState());
-    });
+    };
+
+    btn.addEventListener('click', togglePanel);
+    window.addEventListener('keydown', handleKey);
+    saveBtn.addEventListener('click', handleSave);
+    resetBtn.addEventListener('click', handleReset);
 
     root.appendChild(btn); root.appendChild(panel);
     setInputs(getState());
-    return ()=>{ btn.remove(); panel.remove(); };
+
+    return makeOnce(()=>{
+      btn.removeEventListener('click', togglePanel);
+      window.removeEventListener('keydown', handleKey);
+      saveBtn.removeEventListener('click', handleSave);
+      resetBtn.removeEventListener('click', handleReset);
+      try { btn.remove(); } catch(_){ }
+      try { panel.remove(); } catch(_){ }
+    });
   }
 
   const Speedometer = {
