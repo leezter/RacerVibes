@@ -6,14 +6,15 @@
   const DEFAULT_LINE_CFG = {
     sampleStep: 6,
     smoothingPasses: 2,
-    apexAggression: 0.6,
-    maxOffset: 0.48,
+    apexAggression: 0.0,
+    maxOffset: 0.65,
     minRadius: 12,
     roadFriction: 1.1,
     gravity: 750,        // px/s^2 to roughly match RacerPhysics defaults
-    straightSpeed: 420,  // px/s cap
+    straightSpeed: 520,  // px/s cap before scaling
     cornerSpeedFloor: 140
   };
+  const MAX_TARGET_SPEED = 2600; // ~190 mph with ppm ≈ 30
 
   const SKILL_PRESETS = {
     easy: {
@@ -45,13 +46,13 @@
       minTargetSpeed: 110
     },
     hard: {
-      maxThrottle: 1.0,
-      brakeAggro: 1.15,
-      steerP: 2.4,
+      maxThrottle: 1.2,
+      brakeAggro: 0.62,
+      steerP: 3.2,
       steerD: 0.16,
-      lookaheadBase: 68,
-      lookaheadSpeed: 0.4,
-      cornerMargin: 12,
+      lookaheadBase: 140,
+      lookaheadSpeed: 0.7,
+      cornerMargin: 0,
       steerCutThrottle: 0.18,
       searchWindow: 64,
       speedHysteresis: 7,
@@ -59,6 +60,12 @@
       minTargetSpeed: 120
     }
   };
+
+  function mapThrottleToSpeedScale(value) {
+    const raw = Number.isFinite(value) ? value : 1;
+    const normalized = clamp((raw - 0.6) / 0.6, 0, 1);
+    return 1 + normalized * 5; // 1x at 0.6, 6x at 1.2
+  }
 
   function resample(points, step) {
     const out = [];
@@ -240,15 +247,19 @@
         const steer = clamp(error * skill.steerP + ((error - prevError) / Math.max(1e-3, dt)) * skill.steerD, -1, 1);
         prevError = error;
 
-        const currentNode = line[idx] || line[0];
-        const currentSpeed = (currentNode && Number.isFinite(currentNode.targetSpeed)) ? currentNode.targetSpeed : skill.minTargetSpeed;
-        const futureSpeed = Number.isFinite(sample.targetSpeed) ? sample.targetSpeed : currentSpeed;
-        const targetSpeed = Math.max(skill.minTargetSpeed, Math.min(currentSpeed, futureSpeed) - skill.cornerMargin);
-        const speedError = targetSpeed - speed;
-        let throttle = speedError > 0 ? clamp(speedError / Math.max(targetSpeed, 60), 0, 1) * skill.maxThrottle : 0;
-        let brake = speedError < 0 ? clamp(-speedError / Math.max(targetSpeed, 60), 0, 1) * skill.brakeAggro : 0;
+          const currentNode = line[idx] || line[0];
+          const rawCurrent = (currentNode && Number.isFinite(currentNode.targetSpeed)) ? currentNode.targetSpeed : skill.minTargetSpeed;
+          const rawFuture = Number.isFinite(sample.targetSpeed) ? sample.targetSpeed : rawCurrent;
+          const speedScale = mapThrottleToSpeedScale(skill.maxThrottle);
+          const scaledCurrent = Math.min(MAX_TARGET_SPEED, rawCurrent * speedScale);
+          const scaledFuture = Math.min(MAX_TARGET_SPEED, rawFuture * speedScale);
+          const targetSpeed = Math.max(skill.minTargetSpeed, Math.min(scaledCurrent, scaledFuture) - skill.cornerMargin);
+          const speedError = targetSpeed - speed;
+          const throttleGain = clamp(skill.maxThrottle ?? 1, 0.1, 2);
+          let throttle = speedError > 0 ? clamp(speedError / Math.max(targetSpeed, 60), 0, 1) * throttleGain : 0;
+          let brake = speedError < 0 ? clamp(-speedError / Math.max(targetSpeed, 60), 0, 1) * skill.brakeAggro : 0;
 
-        const futureDrop = currentSpeed - futureSpeed;
+        const futureDrop = scaledCurrent - scaledFuture;
         if (futureDrop > 0) {
           const anticipation = clamp(futureDrop / 160, 0, 1);
           brake = Math.max(brake, anticipation * skill.cornerEntryFactor);
