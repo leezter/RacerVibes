@@ -667,11 +667,15 @@
     const meta = computeTrackMeta(scaled, roadWidth);
     const mask = makeMask(scaled, roadWidth, worldWidth, worldHeight);
     const thumbnail = makeThumbnail(scaled, worldWidth, worldHeight);
+    const racingLine = (window.RacerAI && typeof window.RacerAI.buildRacingLine === "function")
+      ? window.RacerAI.buildRacingLine(scaled, roadWidth)
+      : [];
     const data = {
       name,
       world: { width: worldWidth, height: worldHeight, scale: this.state.scale },
       points: scaled,
       roadWidth,
+      racingLine,
       startLine: meta.startLine,
       spawn: meta.spawn,
       checkpoints: meta.checkpoints,

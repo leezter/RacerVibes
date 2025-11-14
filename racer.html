@@ -11,6 +11,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://unpkg.com/planck-js@0.3.0/dist/planck.min.js"></script>
   <script src="utils/utils.js"></script>
+  <script src="ai/racer_ai.js"></script>
   <script src="utils/storage-utils.js"></script>
   <script type="module" src="physics.js"></script>
     <script src="decor_generator.js"></script>
@@ -46,7 +47,10 @@
       .dev-panel .field { display:grid; grid-template-columns:1fr 64px; align-items:center; gap:8px; }
       .dev-panel label { display:flex; flex-direction:column; gap:6px; font-size:12px; color:#94a3b8; }
       .dev-panel input[type="range"] { width:100%; accent-color:#38bdf8; }
-      .dev-panel input[type="number"] { width:100%; padding:4px 6px; border-radius:6px; border:1px solid rgba(148,163,184,0.5); background:#0f172a; color:#e2e8f0; font-size:12px; }
+      .dev-panel input[type="number"],
+      .dev-panel select { width:100%; padding:4px 6px; border-radius:6px; border:1px solid rgba(148,163,184,0.5); background:#0f172a; color:#e2e8f0; font-size:12px; }
+      .dev-toggle.ai-toggle { top:56px; }
+      .dev-panel.ai-panel { top:120px; width:260px; }
       .hud-tip { position:fixed; top:16px; left:50%; transform:translateX(-50%); padding:6px 14px; border-radius:999px; background:rgba(15,23,42,0.92); color:#e2e8f0; font-size:12px; z-index:28; box-shadow:0 8px 20px rgba(15,23,42,0.45); pointer-events:none; }
     </style>
   </head>
@@ -393,6 +397,80 @@ const { useEffect, useRef, useState } = React;
 
 
       function TopDownRacer() {
+        const AI_DIFFICULTY_KEY = "racingvibes_ai_difficulty";
+        const AVAILABLE_AI_DIFFICULTIES = (() => {
+          const skillMap = (window.RacerAI && window.RacerAI.AISkill) || null;
+          const keys = skillMap ? Object.keys(skillMap) : ["easy", "medium", "hard"];
+          return keys.length ? keys : ["medium"];
+        })();
+        const AI_SKILL_FALLBACK = {
+          maxThrottle: 0.95,
+          brakeAggro: 0.9,
+          steerP: 2.1,
+          steerD: 0.1,
+          lookaheadBase: 55,
+          lookaheadSpeed: 0.32,
+          cornerMargin: 22,
+          steerCutThrottle: 0.3,
+          searchWindow: 56,
+          speedHysteresis: 10,
+          cornerEntryFactor: 0.6,
+          minTargetSpeed: 110
+        };
+        const AI_CONTROL_LIMITS = {
+          apexAggression: { min: 0, max: 1 },
+          maxOffset: { min: 0.2, max: 0.65 },
+          lookaheadBase: { min: 20, max: 140 },
+          lookaheadSpeed: { min: 0.05, max: 0.7 },
+          steerP: { min: 0.8, max: 3.2 },
+          maxThrottle: { min: 0.6, max: 1.2 },
+          brakeAggro: { min: 0.4, max: 1.6 },
+          cornerMargin: { min: 0, max: 60 }
+        };
+        const AI_CONTROL_DESCRIPTIONS = {
+          difficulty: "Loads a skill preset; changing it updates the base controller tuning.",
+          apexAggression: "Higher values hug the curb harder by biasing the racing line toward the apex.",
+          maxOffset: "Caps how far the generated racing line can drift away from the centerline.",
+          lookaheadBase: "Baseline distance ahead (in px) the AI samples along the racing line when slow.",
+          lookaheadSpeed: "Adds extra lookahead based on speed, helping fast cars anticipate corners.",
+          steerP: "Primary steering gain; higher values react faster but can oscillate.",
+          maxThrottle: "Scales the maximum throttle command so AI can be calmer or more aggressive on exits.",
+          brakeAggro: "Scales brake commands; crank it up if AI dives too deep into corners.",
+          cornerMargin: "Extra speed cushion the AI removes before corners to stay stable."
+        };
+        const getAiControlDescription = (key) => AI_CONTROL_DESCRIPTIONS[key] || "";
+        const gripModeConfig = (window.RacerModes && typeof window.RacerModes.get === "function") ? window.RacerModes.get("grip") : null;
+        function sanitizeDifficulty(value){
+          if (!value || typeof value !== "string") return null;
+          const lower = value.toLowerCase();
+          return AVAILABLE_AI_DIFFICULTIES.includes(lower) ? lower : null;
+        }
+        function loadStoredDifficulty(){
+          try {
+            const stored = localStorage.getItem(AI_DIFFICULTY_KEY);
+            return sanitizeDifficulty(stored);
+          } catch(_){
+            return null;
+          }
+        }
+        function getAISkillDefaults(level){
+          const api = window.RacerAI;
+          const skillMap = api && api.AISkill;
+          if (skillMap) {
+            if (level && skillMap[level]) return skillMap[level];
+            if (skillMap.medium) return skillMap.medium;
+            const firstKey = Object.keys(skillMap)[0];
+            if (firstKey) return skillMap[firstKey];
+          }
+          return AI_SKILL_FALLBACK;
+        }
+        function getLineDefaults(){
+          const api = window.RacerAI;
+          if (api && api.DEFAULT_LINE_CFG) return { ...api.DEFAULT_LINE_CFG };
+          return { apexAggression: 0.6, maxOffset: 0.48 };
+        }
+        const modeDefault = gripModeConfig && gripModeConfig.ai && gripModeConfig.ai.defaultDifficulty ? gripModeConfig.ai.defaultDifficulty : null;
+        const initialAIDifficulty = loadStoredDifficulty() || sanitizeDifficulty(modeDefault) || sanitizeDifficulty("medium") || AVAILABLE_AI_DIFFICULTIES[0];
         const canvasRef = useRef(null);
         const trackMapRef = useRef(null);
         const [running, setRunning] = useState(true);
@@ -428,6 +506,55 @@ const { useEffect, useRef, useState } = React;
             return 0;
           }
         });
+        const [aiPanelOpen, setAiPanelOpen] = useState(false);
+        const [aiControls, setAIControls] = useState(() => {
+          const lineDefaults = getLineDefaults();
+          const skillDefaults = getAISkillDefaults(initialAIDifficulty);
+          return {
+            difficulty: initialAIDifficulty,
+            apexAggression: lineDefaults.apexAggression ?? 0.6,
+            maxOffset: lineDefaults.maxOffset ?? 0.48,
+            lookaheadBase: skillDefaults.lookaheadBase ?? 55,
+            lookaheadSpeed: skillDefaults.lookaheadSpeed ?? 0.32,
+            steerP: skillDefaults.steerP ?? 2.1,
+            maxThrottle: skillDefaults.maxThrottle ?? 0.95,
+            brakeAggro: skillDefaults.brakeAggro ?? 0.9,
+            cornerMargin: skillDefaults.cornerMargin ?? 22
+          };
+        });
+        const aiControlsRef = useRef(aiControls);
+        useEffect(() => {
+          aiControlsRef.current = aiControls;
+        }, [aiControls]);
+        const applyAiLineOverridesRef = useRef(() => {});
+        const rebuildAIControllersRef = useRef(() => {});
+        const setAIDifficultyRef = useRef(() => false);
+        const updateAiControlValueRef = useRef(() => {});
+        function runApplyAiLineOverrides(options) {
+          const fn = applyAiLineOverridesRef.current;
+          if (typeof fn === "function") {
+            fn(options || {});
+          }
+        }
+        function runRebuildAiControllers() {
+          const fn = rebuildAIControllersRef.current;
+          if (typeof fn === "function") {
+            fn();
+          }
+        }
+        function handleSetAIDifficulty(level, persist = true, options) {
+          const fn = setAIDifficultyRef.current;
+          if (typeof fn === "function") {
+            return fn(level, persist, options);
+          }
+          return false;
+        }
+        function handleAiControlChange(key, value) {
+          const fn = updateAiControlValueRef.current;
+          if (typeof fn === "function") {
+            fn(key, value);
+          }
+        }
 
         const trackSurfaceRef = useRef({ canvas: null });
         const decorParamsRef = useRef({
@@ -453,6 +580,12 @@ const { useEffect, useRef, useState } = React;
           const timer = setTimeout(() => setHudTip(""), 2600);
           return () => clearTimeout(timer);
         }, [hudTip]);
+        useEffect(() => {
+          runApplyAiLineOverrides();
+        }, [aiControls.apexAggression, aiControls.maxOffset]);
+        useEffect(() => {
+          runRebuildAiControllers();
+        }, [aiControls.difficulty, aiControls.lookaheadBase, aiControls.lookaheadSpeed, aiControls.steerP, aiControls.maxThrottle, aiControls.brakeAggro, aiControls.cornerMargin]);
         function reloadTrack() {
           const loader = loadTrackRef.current;
           if (typeof loader === "function") {
@@ -1051,7 +1184,8 @@ const { useEffect, useRef, useState } = React;
             const car = { x, y, angle, speed: 0, width, length, color, kind, stats,
                           lap: 0, lastCross: 0, bestLap: null, lapStart: performance.now(),
                           vx: 0, vy: 0, targetIndex: 0, speedBias: 0,
-                          steerVis: 0, skidLPrev: null, skidRPrev: null, steeringMode: mode };
+                          steerVis: 0, skidLPrev: null, skidRPrev: null, steeringMode: mode,
+                          aiController: null };
             try { if (window.RacerPhysics) window.RacerPhysics.initCar(car, kind); } catch(_){}
             return car;
           }
@@ -1118,6 +1252,103 @@ const { useEffect, useRef, useState } = React;
             try { if (window.RacerPhysics) window.RacerPhysics.initCar(player, player.kind); } catch(_){}
           }).catch(err => console.warn('Gearbox init failed', err));
           let aiCars = []; // array of AI cars
+          let racingLine = [];
+          let baseRacingLine = [];
+          let aiDifficulty = initialAIDifficulty;
+          function buildControllerPreset(){
+            const overrides = aiControlsRef.current;
+            if (!overrides) return aiDifficulty;
+            const base = getAISkillDefaults(overrides.difficulty || aiDifficulty);
+            return {
+              ...base,
+              maxThrottle: overrides.maxThrottle,
+              brakeAggro: overrides.brakeAggro,
+              steerP: overrides.steerP,
+              lookaheadBase: overrides.lookaheadBase,
+              lookaheadSpeed: overrides.lookaheadSpeed,
+              cornerMargin: overrides.cornerMargin,
+              id: (overrides.difficulty || base.id || aiDifficulty)
+            };
+          }
+          function rebuildAIControllers(){
+            const ready = racingLine.length && window.RacerAI && typeof window.RacerAI.createController === "function";
+            if (!ready) {
+              for (const car of aiCars) car.aiController = null;
+              return;
+            }
+            const preset = buildControllerPreset();
+            for (const car of aiCars){
+              car.aiController = window.RacerAI.createController(racingLine, preset);
+            }
+          }
+          function setAIDifficulty(level, persist = true, options = {}){
+            const next = sanitizeDifficulty(level);
+            if (!next) return false;
+            aiDifficulty = next;
+            if (persist){
+              try { localStorage.setItem(AI_DIFFICULTY_KEY, aiDifficulty); } catch(_){ }
+            }
+            if (options.syncControls !== false){
+              const defaults = getAISkillDefaults(next);
+              setAIControls((prev) => ({
+                ...prev,
+                difficulty: next,
+                lookaheadBase: defaults.lookaheadBase ?? prev.lookaheadBase,
+                lookaheadSpeed: defaults.lookaheadSpeed ?? prev.lookaheadSpeed,
+                steerP: defaults.steerP ?? prev.steerP,
+                maxThrottle: defaults.maxThrottle ?? prev.maxThrottle,
+                brakeAggro: defaults.brakeAggro ?? prev.brakeAggro,
+                cornerMargin: defaults.cornerMargin ?? prev.cornerMargin
+              }));
+            }
+            rebuildAIControllers();
+            return true;
+          }
+          function applyAiLineOverrides({ forceCustom = false } = {}){
+            if (!centerline.length) return;
+            if (!window.RacerAI || typeof window.RacerAI.buildRacingLine !== "function") {
+              racingLine = baseRacingLine.length ? baseRacingLine.map((node) => ({ ...node })) : racingLine;
+              return;
+            }
+            const defaults = getLineDefaults();
+            const overrides = aiControlsRef.current;
+            const apex = overrides ? overrides.apexAggression : defaults.apexAggression;
+            const maxOffset = overrides ? overrides.maxOffset : defaults.maxOffset;
+            const usingBase = baseRacingLine && baseRacingLine.length && !forceCustom &&
+              approxEqual(apex, defaults.apexAggression ?? apex) &&
+              approxEqual(maxOffset, defaults.maxOffset ?? maxOffset);
+            if (usingBase) {
+              racingLine = baseRacingLine.map((node) => ({ ...node }));
+            } else {
+              const opts = { straightSpeed: 440 };
+              if (typeof apex === "number") opts.apexAggression = apex;
+              if (typeof maxOffset === "number") opts.maxOffset = maxOffset;
+              racingLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, opts) || [];
+            }
+            if (activeTrack) {
+              activeTrack.racingLine = racingLine;
+            }
+            rebuildAIControllers();
+          }
+          function updateAiControlValue(key, value){
+            if (!Number.isFinite(value)) return;
+            const limits = AI_CONTROL_LIMITS[key];
+            const bounded = limits ? clamp(value, limits.min, limits.max) : value;
+            setAIControls((prev) => {
+              if (prev[key] === bounded) return prev;
+              return { ...prev, [key]: bounded };
+            });
+          }
+          applyAiLineOverridesRef.current = applyAiLineOverrides;
+          rebuildAIControllersRef.current = rebuildAIControllers;
+          setAIDifficultyRef.current = setAIDifficulty;
+          updateAiControlValueRef.current = updateAiControlValue;
+          (function exposeAISettings(){
+            const api = window.RacerAISettings || (window.RacerAISettings = {});
+            api.getDifficulty = () => aiDifficulty;
+            api.setDifficulty = (value) => setAIDifficulty(value, true);
+            api.listDifficulties = () => AVAILABLE_AI_DIFFICULTIES.slice();
+          })();
 
           const keys = { w: false, s: false, a: false, d: false };
           const gamepadShiftPrev = { up: false, down: false };
@@ -1211,6 +1442,9 @@ const { useEffect, useRef, useState } = React;
 
           function clamp(value, min, max){
             return Math.min(max, Math.max(min, value));
+          }
+          function approxEqual(a, b, eps = 1e-3){
+            return Math.abs((a || 0) - (b || 0)) <= eps;
           }
 
           function convertCustomEntry(entry){
@@ -1584,6 +1818,21 @@ const { useEffect, useRef, useState } = React;
             buildTrackSurfaceCanvas();
             const zones = Array.isArray(T.speedZones) && T.speedZones.length ? T.speedZones : [[0, Math.max(1, Math.floor(centerline.length / 24)), 220]];
             waypoints = buildWaypoints(centerline, zones);
+            const storedLine = Array.isArray(T.racingLine) ? T.racingLine : null;
+            if (storedLine && storedLine.length) {
+              baseRacingLine = storedLine.map((node) => ({ ...node }));
+              racingLine = baseRacingLine.map((node) => ({ ...node }));
+            } else if (window.RacerAI && typeof window.RacerAI.buildRacingLine === "function") {
+              racingLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, { straightSpeed: 440 }) || [];
+              baseRacingLine = racingLine.map((node) => ({ ...node }));
+            } else {
+              racingLine = [];
+              baseRacingLine = [];
+            }
+            if (activeTrack) {
+              activeTrack.racingLine = racingLine;
+            }
+            applyAiLineOverrides();
             trackBounds = bbox(centerline);
             checkpoints = [];
             const K = 12;
@@ -1620,6 +1869,7 @@ const { useEffect, useRef, useState } = React;
             const base = aiSpawn || pSpawn;
             const baseAngle = typeof rawAi.angle === "number" ? rawAi.angle : base.angle;
             aiCars = buildAICars(9, base, baseAngle);
+            rebuildAIControllers();
             syncPlanckWorld();
 
             const prettyName = activeTrack && activeTrack.name ? activeTrack.name : name;
@@ -2031,7 +2281,15 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
           let last = performance.now();
 
           function updateCar(car, dt, control) {
-            const rawSteer = control ? ((control.right?1:0) - (control.left?1:0)) : 0;
+            const steerInput = (control && typeof control.steer === "number")
+              ? clamp(control.steer, -1, 1)
+              : ((control && control.right ? 1 : 0) - (control && control.left ? 1 : 0));
+            const throttleInput = (control && typeof control.throttle === "number")
+              ? clamp(control.throttle, 0, 1)
+              : (control && control.throttle ? 1 : 0);
+            const brakeInput = (control && typeof control.brake === "number")
+              ? clamp(control.brake, 0, 1)
+              : (control && control.brake ? 1 : 0);
             // Determine surface (sample corners + center)
             const corners = carCorners(car);
             const samples = [corners[0], corners[1], corners[2], corners[3], { x: car.x, y: car.y }];
@@ -2043,7 +2301,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
 
             const res = (window.RacerPhysics||{}).updateCar ? window.RacerPhysics.updateCar(
               car,
-              { throttle: !!(control && control.throttle), brake: !!(control && control.brake), steer: rawSteer },
+              { throttle: throttleInput, brake: brakeInput, steer: steerInput },
               { onRoad: onroad },
               dt
             ) : null;
@@ -2074,16 +2332,32 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
           loadTrackRef.current = loadTrack;
 
           function updateAI(dt) {
+            const controllersReady = racingLine.length && window.RacerAI;
             for (const car of aiCars) {
-              const target = waypoints[car.targetIndex]; if (!target) continue;
-              const dx = target.x - car.x, dy = target.y - car.y;
+              const controller = controllersReady ? car.aiController : null;
+              if (controller) {
+                const control = controller.update(car, dt);
+                updateCar(car, dt, control);
+                continue;
+              }
+              const target = waypoints[car.targetIndex];
+              if (!target) continue;
+              const dx = target.x - car.x;
+              const dy = target.y - car.y;
               const targetAngle = Math.atan2(dy, dx);
-              let da = normalizeAngle(targetAngle - car.angle);
-              const steer = Math.max(-1, Math.min(1, da));
-              const control = { throttle: car.speed < (target.speed + car.speedBias), brake: car.speed > (target.speed + car.speedBias + 20),
-                                left: steer < -0.03, right: steer > 0.03 };
+              const steer = clamp(normalizeAngle(targetAngle - car.angle), -1, 1);
+              const currentSpeed = Math.hypot((car.physics && car.physics.vx) || car.vx || 0, (car.physics && car.physics.vy) || car.vy || 0);
+              const desiredSpeed = (target.speed || 0) + (car.speedBias || 0);
+              const control = {
+                throttle: currentSpeed < desiredSpeed ? 1 : 0,
+                brake: currentSpeed > desiredSpeed + 25 ? 1 : 0,
+                steer
+              };
               updateCar(car, dt, control);
-              const dist = Math.hypot(dx, dy); if (dist < 40) car.targetIndex = loopIndex(car.targetIndex + 1, waypoints.length);
+              const dist = Math.hypot(dx, dy);
+              if (dist < 40) {
+                car.targetIndex = loopIndex(car.targetIndex + 1, waypoints.length);
+              }
             }
           }
 
@@ -2312,6 +2586,14 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
             >
               {devPanelOpen ? "Hide scales" : "Scales"}
             </button>
+            <button
+              type="button"
+              className="dev-toggle ai-toggle"
+              onClick={() => setAiPanelOpen(open => !open)}
+              aria-pressed={aiPanelOpen}
+            >
+              {aiPanelOpen ? "Hide AI Controls" : "AI Controls"}
+            </button>
             <div className={`dev-panel ${devPanelOpen ? "open" : ""}`}>
               <h3>Track scale</h3>
               <label>
@@ -2469,6 +2751,185 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               >
                 Regenerate decor
               </button>
+            </div>
+            <div className={`dev-panel ai-panel ${aiPanelOpen ? "open" : ""}`}>
+              <h3>AI Controls</h3>
+              <label title={getAiControlDescription("difficulty")}>
+                <span>Difficulty</span>
+                <select value={aiControls.difficulty} onChange={(e) => handleSetAIDifficulty(e.target.value, true)}>
+                  {AVAILABLE_AI_DIFFICULTIES.map((key) => (
+                    <option key={key} value={key}>{key.charAt(0).toUpperCase() + key.slice(1)}</option>
+                  ))}
+                </select>
+              </label>
+              <label title={getAiControlDescription("apexAggression")}>
+                <span>Apex aggression</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.02}
+                    value={aiControls.apexAggression}
+                    onChange={(e) => handleAiControlChange("apexAggression", parseFloat(e.target.value))}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.02}
+                    value={aiControls.apexAggression.toFixed(2)}
+                    onChange={(e) => handleAiControlChange("apexAggression", parseFloat(e.target.value))}
+                  />
+                </div>
+              </label>
+              <label title={getAiControlDescription("maxOffset")}>
+                <span>Max offset</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={0.2}
+                    max={0.65}
+                    step={0.01}
+                    value={aiControls.maxOffset}
+                    onChange={(e) => handleAiControlChange("maxOffset", parseFloat(e.target.value))}
+                  />
+                  <input
+                    type="number"
+                    min={0.2}
+                    max={0.65}
+                    step={0.01}
+                    value={aiControls.maxOffset.toFixed(2)}
+                    onChange={(e) => handleAiControlChange("maxOffset", parseFloat(e.target.value))}
+                  />
+                </div>
+              </label>
+              <label title={getAiControlDescription("lookaheadBase")}>
+                <span>Lookahead base</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={20}
+                    max={140}
+                    step={1}
+                    value={aiControls.lookaheadBase}
+                    onChange={(e) => handleAiControlChange("lookaheadBase", parseFloat(e.target.value))}
+                  />
+                  <input
+                    type="number"
+                    min={20}
+                    max={140}
+                    step={1}
+                    value={Math.round(aiControls.lookaheadBase)}
+                    onChange={(e) => handleAiControlChange("lookaheadBase", parseFloat(e.target.value))}
+                  />
+                </div>
+              </label>
+              <label title={getAiControlDescription("lookaheadSpeed")}>
+                <span>Lookahead / speed</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={0.05}
+                    max={0.7}
+                    step={0.01}
+                    value={aiControls.lookaheadSpeed}
+                    onChange={(e) => handleAiControlChange("lookaheadSpeed", parseFloat(e.target.value))}
+                  />
+                  <input
+                    type="number"
+                    min={0.05}
+                    max={0.7}
+                    step={0.01}
+                    value={aiControls.lookaheadSpeed.toFixed(2)}
+                    onChange={(e) => handleAiControlChange("lookaheadSpeed", parseFloat(e.target.value))}
+                  />
+                </div>
+              </label>
+              <label title={getAiControlDescription("steerP")}>
+                <span>Steer gain (P)</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={0.8}
+                    max={3.2}
+                    step={0.05}
+                    value={aiControls.steerP}
+                    onChange={(e) => handleAiControlChange("steerP", parseFloat(e.target.value))}
+                  />
+                  <input
+                    type="number"
+                    min={0.8}
+                    max={3.2}
+                    step={0.05}
+                    value={aiControls.steerP.toFixed(2)}
+                    onChange={(e) => handleAiControlChange("steerP", parseFloat(e.target.value))}
+                  />
+                </div>
+              </label>
+              <label title={getAiControlDescription("maxThrottle")}>
+                <span>Max throttle</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={0.6}
+                    max={1.2}
+                    step={0.01}
+                    value={aiControls.maxThrottle}
+                    onChange={(e) => handleAiControlChange("maxThrottle", parseFloat(e.target.value))}
+                  />
+                  <input
+                    type="number"
+                    min={0.6}
+                    max={1.2}
+                    step={0.01}
+                    value={aiControls.maxThrottle.toFixed(2)}
+                    onChange={(e) => handleAiControlChange("maxThrottle", parseFloat(e.target.value))}
+                  />
+                </div>
+              </label>
+              <label title={getAiControlDescription("brakeAggro")}>
+                <span>Brake aggression</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={0.4}
+                    max={1.6}
+                    step={0.02}
+                    value={aiControls.brakeAggro}
+                    onChange={(e) => handleAiControlChange("brakeAggro", parseFloat(e.target.value))}
+                  />
+                  <input
+                    type="number"
+                    min={0.4}
+                    max={1.6}
+                    step={0.02}
+                    value={aiControls.brakeAggro.toFixed(2)}
+                    onChange={(e) => handleAiControlChange("brakeAggro", parseFloat(e.target.value))}
+                  />
+                </div>
+              </label>
+              <label title={getAiControlDescription("cornerMargin")}>
+                <span>Corner margin</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={0}
+                    max={60}
+                    step={1}
+                    value={aiControls.cornerMargin}
+                    onChange={(e) => handleAiControlChange("cornerMargin", parseFloat(e.target.value))}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    max={60}
+                    step={1}
+                    value={Math.round(aiControls.cornerMargin)}
+                    onChange={(e) => handleAiControlChange("cornerMargin", parseFloat(e.target.value))}
+                  />
+                </div>
+              </label>
             </div>
             <canvas ref={canvasRef} width="1000" height="700"></canvas>
           </div>

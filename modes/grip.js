@@ -2,6 +2,10 @@
   const gripMode = {
     id: 'grip',
     label: 'Grip',
+    ai: {
+      defaultDifficulty: 'medium',
+      difficulties: ['easy', 'medium', 'hard']
+    }
     // Keep config optional for now to avoid any behavior drift.
     // Future modes can add physicsPreset, gearboxConfig, hooks, uiTweaks, etc.
   };
