@@ -448,16 +448,21 @@ const { useEffect, useRef, useState } = React;
         // Recovery settings for AI cars that get stuck or face the wrong way.
         const AI_RECOVERY_CFG = {
           stuckSpeed: 32,
-          exitSpeed: 80,
+          exitSpeed: 70,
+          exitSpeedSoft: 34,
           wrongHeadingDot: 0.45,
           backwardsDot: -0.05,
-          exitDot: 0.75,
-          stuckTime: 0.7,
-          offTrackTime: 0.45,
-          reverseSwitch: 1.2,
+          exitDot: 0.78,
+          forwardExitDot: 0.86,
+          stuckTime: 0.6,
+          offTrackTime: 0.4,
+          reverseSwitch: 1.0,
+          reverseDuration: 1.0,
           maxDuration: 5,
-          cooldown: 0.8,
-          searchWindow: 180
+          cooldown: 0.7,
+          searchWindow: 200,
+          lineAimDistance: 140,
+          lineCloseDistance: 60
         };
         const gripModeConfig = (window.RacerModes && typeof window.RacerModes.get === "function") ? window.RacerModes.get("grip") : null;
         function sanitizeDifficulty(value){
@@ -503,7 +508,10 @@ const { useEffect, useRef, useState } = React;
               stuckTimer: 0,
               cooldown: 0,
               mode: null,
-              lineIdx: 0
+              lineIdx: 0,
+              phase: null,
+              reverseTimer: 0,
+              phaseTimer: 0
             };
           }
           return car.aiRecovery;
@@ -566,21 +574,41 @@ const { useEffect, useRef, useState } = React;
           const diff = safeNormalizeAngle(desiredHeading - car.angle);
           const fwd = { x: Math.cos(car.angle), y: Math.sin(car.angle) };
           const dot = safeClamp(fwd.x * tx + fwd.y * ty, -1, 1);
-          return { desiredHeading, diff, dot };
+          const vecX = node.x - car.x;
+          const vecY = node.y - car.y;
+          const dist = Math.hypot(vecX, vecY) || 1;
+          const toNodeX = vecX / dist;
+          const toNodeY = vecY / dist;
+          const toNodeHeading = Math.atan2(vecY, vecX);
+          const vecDot = safeClamp(fwd.x * toNodeX + fwd.y * toNodeY, -1, 1);
+          const vecDiff = safeNormalizeAngle(toNodeHeading - car.angle);
+          return { desiredHeading, diff, dot, toNodeHeading, toNodeDiff: vecDiff, toNodeDot: vecDot, distance: dist };
         }
         function beginAiRecovery(state, mode) {
           if (!state) return;
           state.active = true;
           state.mode = mode || "turn";
           state.timer = 0;
+          state.phase = mode === "reverse" ? "reverseOut" : "turn";
+          state.reverseTimer = 0;
+          state.phaseTimer = 0;
         }
-        function endAiRecovery(state) {
+        function endAiRecovery(state, car) {
           if (!state) return;
           state.active = false;
           state.mode = null;
           state.timer = 0;
           state.cooldown = AI_RECOVERY_CFG.cooldown;
           state.stuckTimer = 0;
+          state.phase = null;
+          state.reverseTimer = 0;
+          state.phaseTimer = 0;
+          if (car && car.physics) {
+            car.physics.dir = 1;
+          }
+          if (car && car.gearbox && typeof car.gearbox.shiftUp === "function") {
+            try { car.gearbox.shiftUp(); car.gearbox.shiftUp(); } catch(_){ }
+          }
         }
         // Override AI inputs when a car is stuck so it can perform a turn or reverse maneuver.
         function applyAiRecoveryControl(car, baseControl, dt, line) {
@@ -603,12 +631,16 @@ const { useEffect, useRef, useState } = React;
           const wrongHeading = headingInfo ? headingInfo.dot < AI_RECOVERY_CFG.wrongHeadingDot : false;
           const backwards = headingInfo ? headingInfo.dot < AI_RECOVERY_CFG.backwardsDot : false;
           const offTrack = !safeOnRoad(car.x, car.y);
+          const farFromLine = headingInfo ? headingInfo.distance > AI_RECOVERY_CFG.lineAimDistance : false;
+          const driftingAway = headingInfo ? headingInfo.toNodeDot < 0.1 : false;
           const stuck = speed < AI_RECOVERY_CFG.stuckSpeed;
           if (!state.active && state.cooldown <= 0) {
-            const wrongWayTrigger = stuck && wrongHeading && state.stuckTimer > AI_RECOVERY_CFG.stuckTime;
+            const wrongWayTrigger = stuck && headingInfo && headingInfo.dot < AI_RECOVERY_CFG.wrongHeadingDot && state.stuckTimer > AI_RECOVERY_CFG.stuckTime;
             const offTrackTrigger = stuck && offTrack && state.stuckTimer > AI_RECOVERY_CFG.offTrackTime;
-            if (wrongWayTrigger || offTrackTrigger) {
-              beginAiRecovery(state, backwards ? "reverse" : "turn");
+            const driftTrigger = stuck && headingInfo && headingInfo.distance > 80 && headingInfo.toNodeDot < 0.3 && state.stuckTimer > 0.5;
+            if (wrongWayTrigger || offTrackTrigger || driftTrigger) {
+              const preferReverse = backwards || driftingAway;
+              beginAiRecovery(state, preferReverse ? "reverse" : "turn");
             }
           }
           const control = {
@@ -620,25 +652,56 @@ const { useEffect, useRef, useState } = React;
             return control;
           }
           state.timer += dt;
+          state.phaseTimer = (state.phaseTimer || 0) + dt;
           const aligned = headingInfo ? headingInfo.dot > AI_RECOVERY_CFG.exitDot : false;
-          const moving = speed > AI_RECOVERY_CFG.exitSpeed;
-          if ((aligned && moving) || state.timer > AI_RECOVERY_CFG.maxDuration) {
-            endAiRecovery(state);
-            return control;
+          const facingLine = headingInfo ? headingInfo.toNodeDot > 0.65 : false;
+          const closeToLine = headingInfo ? headingInfo.distance < AI_RECOVERY_CFG.lineCloseDistance : false;
+          const movingFast = speed > AI_RECOVERY_CFG.exitSpeed;
+          const movingEnough = speed > AI_RECOVERY_CFG.exitSpeedSoft && safeOnRoad(car.x, car.y);
+          if (state.phase !== "reverseOut" && ((aligned && (movingFast || (facingLine && (closeToLine || movingEnough)))) || state.timer > AI_RECOVERY_CFG.maxDuration)) {
+            if (headingInfo && headingInfo.dot < AI_RECOVERY_CFG.forwardExitDot) {
+              state.phase = "turn";
+              state.timer = Math.max(0.1, state.timer * 0.5);
+            } else {
+              endAiRecovery(state, car);
+              return control;
+            }
           }
           if (state.mode === "turn" && backwards && state.timer > AI_RECOVERY_CFG.reverseSwitch) {
             state.mode = "reverse";
-            state.timer = 0;
+            state.phase = "reverseOut";
+            state.reverseTimer = 0;
+            state.phaseTimer = 0;
           }
-          const headingDiff = headingInfo ? headingInfo.diff : 0;
-          const steerTarget = safeClamp(headingDiff * 2.2, -1, 1);
+          if (state.phase === "reverseOut") {
+            const headingTarget = headingInfo ? headingInfo.toNodeHeading : (car.angle + Math.PI);
+            const headingDiff = safeNormalizeAngle(headingTarget - car.angle);
+            control.steer = safeClamp(headingDiff / (Math.PI * 0.25), -1, 1);
+            control.throttle = 0;
+            control.brake = Math.max(0.95, control.brake || 0);
+            state.reverseTimer = (state.reverseTimer || 0) + dt;
+            const reversedEnough = state.reverseTimer > AI_RECOVERY_CFG.reverseDuration || (headingInfo && headingInfo.distance > AI_RECOVERY_CFG.lineCloseDistance * 0.8 && speed > 14);
+            if (reversedEnough) {
+              state.phase = "turn";
+              state.phaseTimer = 0;
+            }
+            return control;
+          }
+          const aimUsingLineVector = headingInfo && (!safeOnRoad(car.x, car.y) || headingInfo.distance > AI_RECOVERY_CFG.lineCloseDistance);
+          const headingTarget = headingInfo
+            ? (aimUsingLineVector ? headingInfo.toNodeHeading : headingInfo.desiredHeading)
+            : car.angle;
+          const headingDiff = safeNormalizeAngle(headingTarget - car.angle);
+          const steerTarget = safeClamp(headingDiff / (Math.PI * 0.35), -1, 1);
           control.steer = steerTarget;
           if (state.mode === "reverse") {
             control.throttle = 0;
-            control.brake = Math.max(0.85, control.brake || 0);
+            control.brake = Math.max(0.88, control.brake || 0);
           } else {
-            control.throttle = Math.max(0.55, control.throttle || 0);
-            control.brake = Math.min(0.1, control.brake || 0);
+            const turningHard = Math.abs(headingDiff) > 1.1;
+            const throttleBase = turningHard ? 0.3 : 0.65;
+            control.throttle = Math.max(throttleBase, control.throttle || 0);
+            control.brake = turningHard ? Math.max(0.14, control.brake || 0) : Math.min(0.08, control.brake || 0);
           }
           return control;
         }
