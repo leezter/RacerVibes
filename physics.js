@@ -891,6 +891,42 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
   const brakePressedGlobal = brake > 0.05;
   const vForward = vx / Math.max(1e-3, ppm); // m/s forward velocity (body X projected)
   if (gb) {
+    if (car.physics.exitReverseHold == null) car.physics.exitReverseHold = false;
+    let exitReverseHold = !!car.physics.exitReverseHold;
+    const forwardSpeedBody = vx;
+    const reverseEntrySpeed = (P.reverseEntrySpeed != null ? P.reverseEntrySpeed : 40);
+    const reverseDeadband = Math.max(6, VX_HYST * 0.5);
+    const reverseShiftReady = Math.max(4, reverseDeadband * 0.6);
+    const reverseBrakeRamp = Math.max(30, reverseEntrySpeed);
+    if (throttlePressedGlobal && (forwardSpeedBody < -reverseShiftReady || exitReverseHold)) {
+      exitReverseHold = true;
+    } else if (!throttlePressedGlobal) {
+      exitReverseHold = false;
+    }
+
+    if (exitReverseHold) {
+      const backwardSpeed = Math.max(0, -forwardSpeedBody);
+      const brakeRamp = backwardSpeed > 0
+        ? Math.min(1, backwardSpeed / reverseBrakeRamp)
+        : 0.35;
+      const requestedBrake = Math.max(throttle, brakeRamp);
+      brake = Math.max(brake, requestedBrake);
+      throttle = 0;
+
+      if (backwardSpeed <= reverseShiftReady) {
+        if (gb.gearIndex < 1) {
+          const before = gb.gearIndex;
+          gb.shiftUp();
+          if (gb.gearIndex === before && gb.state) {
+            gb.state.manualShiftUp = true;
+          }
+        } else {
+          exitReverseHold = false;
+        }
+      }
+    }
+    car.physics.exitReverseHold = exitReverseHold;
+
     if (gb.c.auto) {
       const throttlePressed = throttlePressedGlobal;
       const brakePressed = brakePressedGlobal;
