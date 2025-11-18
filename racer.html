@@ -283,6 +283,30 @@ function updateSFX(player, dt){
     player.sfxImpact = 0;
   }
 }
+
+function playCountdownBeep(freq = 520, duration = 0.45, accent = 1){
+  if (!sfxEnabled) return;
+  const sfx = ensureAudio();
+  if (!sfx || !sfx.ctx) return;
+  try {
+    const ctx = sfx.ctx;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+    gain.gain.value = 0;
+    osc.connect(gain);
+    gain.connect(sfx.master);
+    const now = ctx.currentTime;
+    const peak = Math.min(0.45, 0.28 * accent);
+    gain.gain.linearRampToValueAtTime(peak, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    osc.start(now);
+    osc.stop(now + duration + 0.05);
+  } catch (err) {
+    console.warn('Countdown beep failed', err);
+  }
+}
 const { useEffect, useRef, useState } = React;
       const START_PAYLOAD_KEY = 'RacingVibesStartPayload';
       const START_PAYLOAD_NAME_PREFIX = 'RacingVibesStart:';
@@ -713,11 +737,17 @@ const { useEffect, useRef, useState } = React;
         const modeDefault = gripModeConfig && gripModeConfig.ai && gripModeConfig.ai.defaultDifficulty ? gripModeConfig.ai.defaultDifficulty : null;
         const initialAIDifficulty = loadStoredDifficulty() || sanitizeDifficulty(modeDefault) || sanitizeDifficulty("hard") || AVAILABLE_AI_DIFFICULTIES[0];
         const canvasRef = useRef(null);
-        const trackMapRef = useRef(null);
-        const [running, setRunning] = useState(true);
+            const trackMapRef = useRef(null);
+            const [running, setRunning] = useState(false);
+            const runningRef = useRef(running);
         const [status, setStatus] = useState("");
+        const statusRef = useRef(status);
         const [trackName, setTrackName] = useState(getInitialTrack()); // default to Le Mans
   const [hudTip, setHudTip] = useState("");
+          const [countdownOverlay, setCountdownOverlay] = useState(null);
+            const countdownOverlayRef = useRef(countdownOverlay);
+          const countdownTimersRef = useRef([]);
+          const countdownActiveRef = useRef(false);
         const [devPanelOpen, setDevPanelOpen] = useState(false);
         const [geoScaleInput, setGeoScaleInput] = useState(() => clampScale(GEO_SCALE));
         const [widthScaleInput, setWidthScaleInput] = useState(() => clampScale(WIDTH_SCALE));
@@ -777,6 +807,9 @@ const { useEffect, useRef, useState } = React;
         const rebuildAIControllersRef = useRef(() => {});
         const setAIDifficultyRef = useRef(() => false);
         const updateAiControlValueRef = useRef(() => {});
+        useEffect(() => { runningRef.current = running; }, [running]);
+        useEffect(() => { countdownOverlayRef.current = countdownOverlay; }, [countdownOverlay]);
+        useEffect(() => { statusRef.current = status; }, [status]);
         function runApplyAiLineOverrides(options) {
           const fn = applyAiLineOverridesRef.current;
           if (typeof fn === "function") {
@@ -802,6 +835,61 @@ const { useEffect, useRef, useState } = React;
             fn(key, value);
           }
         }
+
+        function clearCountdownTimers(){
+          const timers = countdownTimersRef.current || [];
+          for (const id of timers) clearTimeout(id);
+          countdownTimersRef.current = [];
+          countdownActiveRef.current = false;
+        }
+
+        function cancelCountdown(){
+          clearCountdownTimers();
+          countdownOverlayRef.current = null;
+          setCountdownOverlay(null);
+        }
+
+        function startRaceCountdown(){
+          cancelCountdown();
+          countdownActiveRef.current = true;
+          runningRef.current = false;
+          setRunning(false);
+          const baseDelay = 320;
+          const gap = 900;
+          const sequence = [
+            { label: "3", color: "#f87171", freq: 420, accent: 0.9 },
+            { label: "2", color: "#fb923c", freq: 520, accent: 1.0 },
+            { label: "1", color: "#fde047", freq: 640, accent: 1.1 },
+            { label: "GO", color: "#4ade80", freq: 780, accent: 1.4, final: true }
+          ];
+          sequence.forEach((step, idx) => {
+            const timer = setTimeout(() => {
+              const overlayState = {
+                label: step.label,
+                color: step.color,
+                startedAt: performance.now(),
+                duration: step.final ? 900 : gap - 40,
+                final: !!step.final
+              };
+              countdownOverlayRef.current = overlayState;
+              setCountdownOverlay(overlayState);
+              playCountdownBeep(step.freq, step.final ? 0.55 : 0.35, step.accent || 1);
+              if (step.final) {
+                countdownActiveRef.current = false;
+                runningRef.current = true;
+                setRunning(true);
+                const hideId = setTimeout(() => {
+                  countdownOverlayRef.current = null;
+                  setCountdownOverlay(null);
+                }, 750);
+                countdownTimersRef.current.push(hideId);
+              }
+            }, baseDelay + idx * gap);
+            countdownTimersRef.current.push(timer);
+          });
+        }
+
+        useEffect(() => () => { clearCountdownTimers(); }, []);
 
         const trackSurfaceRef = useRef({ canvas: null });
         const decorParamsRef = useRef({
@@ -1500,6 +1588,7 @@ const { useEffect, useRef, useState } = React;
             try { if (window.RacerPhysics) window.RacerPhysics.initCar(player, player.kind); } catch(_){}
           }).catch(err => console.warn('Gearbox init failed', err));
           const DEFAULT_AI_CAR_COUNT = 9;
+          const LAPS_TO_FINISH = 3;
           let aiCars = []; // array of AI cars
           let racingLine = [];
           let baseRacingLine = [];
@@ -2117,6 +2206,8 @@ const { useEffect, useRef, useState } = React;
 
           // ===== Track switcher =====
           function loadTrack(name) {
+            cancelCountdown();
+            setRunning(false);
             GEO_SCALE = clampScale(GEO_SCALE);
             WIDTH_SCALE = clampScale(WIDTH_SCALE);
             let T = Tracks[name];
@@ -2285,6 +2376,8 @@ const { useEffect, useRef, useState } = React;
                 cam.scale = cam.targetScale = zoom.targetZoom;
               }
             } catch(_){}
+
+            startRaceCountdown();
           }
 
           // Build n AI cars in a staggered grid behind base position, aligned to angle
@@ -2682,17 +2775,76 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
           }
 
           function drawHUD() {
-            const ctx = canvasRef.current.getContext("2d");
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            const ctx = canvas.getContext("2d");
+            const viewW = canvas.width || W;
+            const viewH = canvas.height || H;
             ctx.save();
-            // Minimal HUD: only show status if any
-            if (status) {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            const statusText = statusRef.current;
+            if (statusText) {
               ctx.font = "bold 36px ui-sans-serif, system-ui"; ctx.fillStyle = "rgba(0,0,0,0.7)";
-              ctx.fillRect(W / 2 - 260, H / 2 - 40, 520, 60); ctx.fillStyle = "#fff";
-              ctx.fillText(status, W / 2 - ctx.measureText(status).width / 2, H / 2);
+              ctx.fillRect(viewW / 2 - 260, viewH / 2 - 40, 520, 60); ctx.fillStyle = "#fff";
+              ctx.fillText(statusText, viewW / 2 - ctx.measureText(statusText).width / 2, viewH / 2);
+            }
+
+            const overlay = countdownOverlayRef.current;
+            if (overlay) {
+              const now = performance.now();
+              const elapsed = overlay.startedAt ? (now - overlay.startedAt) : 0;
+              const duration = overlay.duration || 1;
+              const progress = Math.min(1, Math.max(0, elapsed / duration));
+              const centerX = viewW / 2;
+              const centerY = viewH * 0.35;
+              const pulse = overlay.final ? 1.05 + progress * 0.15 : 1 + Math.sin(progress * Math.PI) * 0.12;
+              const radius = overlay.final ? 150 : 130;
+              ctx.save();
+              ctx.translate(centerX, centerY);
+              ctx.scale(pulse, pulse);
+              ctx.globalAlpha = overlay.final ? 0.98 : 0.9 - progress * 0.35;
+              ctx.fillStyle = overlay.color;
+              ctx.shadowColor = "rgba(0,0,0,0.55)";
+              ctx.shadowBlur = 32;
+              const fontSize = overlay.final ? 120 : 140;
+              ctx.font = `800 ${fontSize}px ui-sans-serif, system-ui, -apple-system`;
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText(overlay.label, 0, 0);
+              ctx.shadowBlur = 0;
+              ctx.globalAlpha = overlay.final ? 0.9 : 0.7;
+              ctx.lineWidth = overlay.final ? 14 : 10;
+              ctx.strokeStyle = overlay.final ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.55)";
+              ctx.beginPath();
+              ctx.arc(0, 0, radius, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+              ctx.stroke();
+              ctx.restore();
+            }
+
+            if (player) {
+              ctx.save();
+              const totalLaps = LAPS_TO_FINISH;
+              const completed = Math.max(0, player.lap | 0);
+              const currentLap = Math.min(completed + 1, totalLaps);
+              const finished = completed >= totalLaps;
+              const lapText = finished ? `Finished ${totalLaps} laps` : `Lap ${currentLap} / ${totalLaps}`;
+              ctx.font = "600 24px system-ui";
+              ctx.textBaseline = "middle";
+              const padX = 18;
+              const textWidth = ctx.measureText(lapText).width;
+              const boxWidth = textWidth + padX * 2;
+              const boxHeight = 48;
+              const boxX = 22;
+              const boxY = 20;
+              ctx.fillStyle = "rgba(10,16,24,0.78)";
+              ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+              ctx.fillStyle = "#f8fafc";
+              ctx.fillText(lapText, boxX + padX, boxY + boxHeight / 2);
+              ctx.restore();
             }
             // Minimap (top-right)
             if (centerline && centerline.length){
-              const mw = 180, mh = 120, pad=10; const x=W-mw-pad, y=pad;
+              const mw = 180, mh = 120, pad=10; const x=viewW-mw-pad, y=pad;
               ctx.fillStyle = "rgba(10,16,24,0.75)"; ctx.strokeStyle = "#223453"; ctx.lineWidth=1.5;
               ctx.fillRect(x,y,mw,mh); ctx.strokeRect(x,y,mw,mh);
               const bb = trackBounds || {minX:0,minY:0,w:W,h:H};
@@ -2720,7 +2872,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               const textWidth = ctx.measureText(hudText).width;
               const boxWidth = textWidth + padX * 2;
               const hudX = 16;
-              const hudY = H - (16 + boxHeight);
+              const hudY = viewH - (16 + boxHeight);
               ctx.fillStyle = "rgba(10,16,24,0.7)";
               ctx.fillRect(hudX, hudY, boxWidth, boxHeight);
               ctx.fillStyle = "#f8fafc";
@@ -2911,7 +3063,10 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
             if (k === "a") keys.a = down;
             if (k === "d") keys.d = down;
             if (down && (k === "r" || k === "enter")) loadTrack(trackName); // restart current track
-            if (down && k === " ") setRunning((r) => !r);
+            if (down && k === " ") {
+              if (countdownActiveRef.current) return;
+              setRunning((r) => !r);
+            }
             if (down && k === "t") {
               const next = trackName === "Silverstone" ? "Le Mans" : "Silverstone";
               setTrackName(next); setTimeout(() => loadTrack(next), 0);
@@ -2967,13 +3122,14 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
             const dt = Math.min(0.05, (t - last) / 1000); last = t;
             const physicsAPI = window.RacerPhysics;
             const carsForPlanck = planckCars();
+            const isRunning = runningRef.current;
             if (planckNeedsSync && physicsAPI && typeof physicsAPI.configureTrackCollision === 'function') {
               syncPlanckWorld();
             }
             if (physicsAPI && typeof physicsAPI.planckBeginStep === 'function') {
-              try { physicsAPI.planckBeginStep(running ? dt : 0, carsForPlanck); } catch(err){ console.warn('[Planck] begin step failed', err); }
+              try { physicsAPI.planckBeginStep(isRunning ? dt : 0, carsForPlanck); } catch(err){ console.warn('[Planck] begin step failed', err); }
             }
-            if (running) {
+            if (isRunning) {
               updatePlayer(dt); updateAI(dt);
             }
             if (physicsAPI && typeof physicsAPI.planckStep === 'function') {
@@ -2994,13 +3150,16 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               const idle = (gb?.state && gb.state.idleRpm)    || (gb?.c && gb.c.idleRPM)    || 1100;
               speedoCtrl.update({ gear, rpm: rpmSmooth, smoothedRpm: rpmSmooth, redline: red, idle, mph });
             }
-            if (running) {
+            if (isRunning) {
               const planckActive = physicsAPI && typeof physicsAPI.usesPlanckWorld === 'function' && physicsAPI.usesPlanckWorld();
               if (!planckActive) {
                 handleCollisions();
               }
-              if (!status && (player.lap >= 3)) {
-                setStatus("3 laps done! Press R to restart");
+              if (!statusRef.current && (player.lap >= LAPS_TO_FINISH)) {
+                const finishMsg = `${LAPS_TO_FINISH} laps done! Press R to restart`;
+                statusRef.current = finishMsg;
+                setStatus(finishMsg);
+                runningRef.current = false;
                 setRunning(false);
               }
             }
