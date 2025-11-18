@@ -1409,6 +1409,7 @@ const { useEffect, useRef, useState } = React;
           let ROAD_WIDTH = 80 * WIDTH_SCALE;
           let centerline = [];
           let startLine = null;
+          let startGrid = null;
           let waypoints = [];
           let labels = [];
           const customTrackCache = new Map();
@@ -1498,6 +1499,7 @@ const { useEffect, useRef, useState } = React;
             player.gearbox = new Gearbox(gbxCfg);
             try { if (window.RacerPhysics) window.RacerPhysics.initCar(player, player.kind); } catch(_){}
           }).catch(err => console.warn('Gearbox init failed', err));
+          const DEFAULT_AI_CAR_COUNT = 9;
           let aiCars = []; // array of AI cars
           let racingLine = [];
           let baseRacingLine = [];
@@ -1961,6 +1963,112 @@ const { useEffect, useRef, useState } = React;
             return segs;
           }
 
+          function makeStartGrid({ startLine: srcLine, slots, roadWidth, referenceAngle }) {
+            if (!srcLine || !srcLine.a || !srcLine.b || !Array.isArray(slots) || !slots.length) return null;
+            const ax = Number(srcLine.a.x);
+            const ay = Number(srcLine.a.y);
+            const bx = Number(srcLine.b.x);
+            const by = Number(srcLine.b.y);
+            if (!Number.isFinite(ax) || !Number.isFinite(ay) || !Number.isFinite(bx) || !Number.isFinite(by)) return null;
+            const vx = bx - ax;
+            const vy = by - ay;
+            const lineLen = Math.hypot(vx, vy);
+            if (!lineLen || lineLen < 1) return null;
+            const origin = { x: (ax + bx) * 0.5, y: (ay + by) * 0.5 };
+            const across = { x: vx / lineLen, y: vy / lineLen };
+            let forward = { x: -across.y, y: across.x };
+            if (typeof referenceAngle === "number" && Number.isFinite(referenceAngle)) {
+              const ref = { x: Math.cos(referenceAngle), y: Math.sin(referenceAngle) };
+              const dot = ref.x * forward.x + ref.y * forward.y;
+              if (dot < 0) {
+                forward = { x: -forward.x, y: -forward.y };
+              }
+            }
+            let minForward = Infinity;
+            let maxForward = -Infinity;
+            let widest = lineLen * 0.5;
+            const baseWidth = Number.isFinite(roadWidth) && roadWidth > 0 ? roadWidth : lineLen;
+            const lineThickness = clamp(baseWidth * 0.035, 2, 6);
+            const gridSlots = [];
+            for (const slot of slots) {
+              if (!slot) continue;
+              const cx = Number(slot.x);
+              const cy = Number(slot.y);
+              if (!Number.isFinite(cx) || !Number.isFinite(cy)) continue;
+              const dx = cx - origin.x;
+              const dy = cy - origin.y;
+              const forwardPos = dx * forward.x + dy * forward.y;
+              const lateralPos = dx * across.x + dy * across.y;
+              const slotLength = Math.max(24, Number(slot.length) || baseWidth * 0.65);
+              const slotWidth = Math.max(12, Number(slot.width) || baseWidth * 0.22);
+              const gridSlot = { forward: forwardPos, lateral: lateralPos, length: slotLength, width: slotWidth };
+              gridSlots.push(gridSlot);
+              const back = gridSlot.forward - gridSlot.length * 0.5;
+              const front = gridSlot.forward + gridSlot.length * 0.5;
+              minForward = Math.min(minForward, back);
+              maxForward = Math.max(maxForward, front);
+              widest = Math.max(widest, gridSlot.width * 0.5);
+            }
+            if (!gridSlots.length || !Number.isFinite(minForward) || !Number.isFinite(maxForward)) return null;
+            const frontPad = baseWidth * 0.5;
+            const backPad = baseWidth * 0.25;
+            const area = {
+              start: Math.min(minForward - backPad, -baseWidth),
+              end: Math.max(maxForward + frontPad, baseWidth * 0.75),
+              halfWidth: Math.max(widest + 6, lineLen * 0.5 + 4)
+            };
+            return {
+              origin,
+              forwardAngle: Math.atan2(forward.y, forward.x),
+              acrossWidth: lineLen,
+              slots: gridSlots,
+              area,
+              lineThickness,
+              checkSize: clamp(lineLen / 14, 4, 16)
+            };
+          }
+
+          function buildGridSlots({ startLine: srcLine, roadWidth, totalCars, forwardAngle }) {
+            if (!srcLine || !srcLine.a || !srcLine.b || totalCars <= 0) return null;
+            const ax = Number(srcLine.a.x);
+            const ay = Number(srcLine.a.y);
+            const bx = Number(srcLine.b.x);
+            const by = Number(srcLine.b.y);
+            if (!Number.isFinite(ax) || !Number.isFinite(ay) || !Number.isFinite(bx) || !Number.isFinite(by)) return null;
+            const vx = bx - ax;
+            const vy = by - ay;
+            const lineLen = Math.hypot(vx, vy);
+            if (!lineLen) return null;
+            const across = { x: vx / lineLen, y: vy / lineLen };
+            let forward = { x: -across.y, y: across.x };
+            if (typeof forwardAngle === "number" && Number.isFinite(forwardAngle)) {
+              const ref = { x: Math.cos(forwardAngle), y: Math.sin(forwardAngle) };
+              if (ref.x * forward.x + ref.y * forward.y < 0) {
+                forward = { x: -forward.x, y: -forward.y };
+              }
+            }
+            const origin = { x: (ax + bx) * 0.5, y: (ay + by) * 0.5 };
+            const baseWidth = Number.isFinite(roadWidth) && roadWidth > 0 ? roadWidth : lineLen;
+            const slotWidth = clamp(baseWidth * 0.22, 14, Math.min(baseWidth * 0.5, 48));
+            const slotLength = clamp(baseWidth * 0.65, 28, 90);
+            const rowGap = Math.max(slotLength * 0.9, 26);
+            const startGap = Math.max(slotLength * 0.35, 8);
+            const laneSpacing = totalCars === 1 ? 0 : Math.max(slotWidth + 8, Math.min(baseWidth * 0.45, slotWidth * 1.8));
+            const columns = totalCars === 1 ? 1 : 2;
+            const lateralOffsets = columns === 1 ? [0] : [-laneSpacing * 0.5, laneSpacing * 0.5];
+            const slots = [];
+            for (let i = 0; i < totalCars; i++) {
+              const row = Math.floor(i / columns);
+              const column = columns === 1 ? 0 : (i % columns);
+              const forwardOffset = -(row * rowGap + slotLength * 0.6 + startGap);
+              const lateralOffset = lateralOffsets[column] || 0;
+              const cx = origin.x + forwardOffset * forward.x + lateralOffset * across.x;
+              const cy = origin.y + forwardOffset * forward.y + lateralOffset * across.y;
+              slots.push({ x: cx, y: cy, angle: Math.atan2(forward.y, forward.x), width: slotWidth, length: slotLength });
+            }
+            return slots;
+          }
+
           function planckCars(){
             const list = [];
             if (player) list.push(player);
@@ -2033,8 +2141,9 @@ const { useEffect, useRef, useState } = React;
             const baseWorldWidth = (T.world && T.world.width) || BASE_WORLD_W;
             const baseWorldHeight = (T.world && T.world.height) || BASE_WORLD_H;
             applyWorldSize(baseWorldWidth * GEO_SCALE, baseWorldHeight * GEO_SCALE);
-            activeTrack = { ...T, name: displayName, key: name, world: { width: W, height: H }, baseWorld: { width: baseWorldWidth, height: baseWorldHeight }, isCustom: isCustomTrack };
+            activeTrack = { ...T, name: displayName, key: name, world: { width: W, height: H }, baseWorld: { width: baseWorldWidth, height: baseWorldHeight }, isCustom: isCustomTrack, roadWidth: (T.roadWidth || 80) * WIDTH_SCALE };
             activeTrackRef.current = activeTrack;
+            startGrid = null;
             decorLayerRef.current = { decorCanvas: null, shadowCanvas: null, metadata: null };
             decorSignatureRef.current = null;
 
@@ -2127,10 +2236,34 @@ const { useEffect, useRef, useState } = React;
             const pSpawn = playerSpawn || fallbackPose;
             Object.assign(player, { ...player, ...pSpawn, speed: 0, lap: 0, bestLap: null, lapStart: performance.now(), lastCross: 0, vx: 0, vy: 0, targetIndex: 0 });
             player.angle = headingAtNearest(player.x, player.y);
+
+            const totalGridSlots = 1 + DEFAULT_AI_CAR_COUNT;
+            const gridSlots = (activeTrack && activeTrack.isCustom)
+              ? buildGridSlots({ startLine, roadWidth: ROAD_WIDTH, totalCars: totalGridSlots, forwardAngle: player.angle })
+              : null;
+            if (gridSlots && gridSlots.length) {
+              const playerSlot = gridSlots[0];
+              if (playerSlot) {
+                player.x = playerSlot.x;
+                player.y = playerSlot.y;
+                player.angle = playerSlot.angle;
+              }
+            }
+
             const base = aiSpawn || pSpawn;
             const baseAngle = typeof rawAi.angle === "number" ? rawAi.angle : base.angle;
-            aiCars = buildAICars(9, base, baseAngle);
+            if (gridSlots && gridSlots.length > 1) {
+              const aiSlotDefs = gridSlots.slice(1, 1 + DEFAULT_AI_CAR_COUNT);
+              aiCars = buildAICarsFromSlots(aiSlotDefs);
+            } else {
+              aiCars = buildLegacyAICars(DEFAULT_AI_CAR_COUNT, base, baseAngle);
+            }
             rebuildAIControllers();
+            if (activeTrack && activeTrack.isCustom && gridSlots && gridSlots.length) {
+              startGrid = makeStartGrid({ startLine, slots: gridSlots, roadWidth: ROAD_WIDTH, referenceAngle: player.angle });
+            } else {
+              startGrid = null;
+            }
             syncPlanckWorld();
 
             const prettyName = activeTrack && activeTrack.name ? activeTrack.name : name;
@@ -2155,7 +2288,7 @@ const { useEffect, useRef, useState } = React;
           }
 
           // Build n AI cars in a staggered grid behind base position, aligned to angle
-          function buildAICars(n, base, angleRad) {
+          function buildLegacyAICars(n, base, angleRad) {
             const arr = [];
             const v = { x: Math.cos(angleRad), y: Math.sin(angleRad) };
             const vp = { x: -v.y, y: v.x }; // left perp
@@ -2171,9 +2304,25 @@ const { useEffect, useRef, useState } = React;
               const kind = kinds[i % kinds.length];
               const car = makeCar({ x, y, angle: angleRad, color: colors[i % colors.length], kind, steeringMode: "manual" });
               car.targetIndex = 0;
-              car.speedBias = (-20 + (i%5)*10); // small variety in target speed
+              car.speedBias = (-20 + (i%5)*10);
               arr.push(car);
             }
+            return arr;
+          }
+
+          function buildAICarsFromSlots(slots) {
+            const arr = [];
+            if (!Array.isArray(slots) || !slots.length) return arr;
+            const colors = ["#1e88e5","#43a047","#f4511e","#8e24aa","#00897b","#3949ab","#fdd835","#6d4c41","#00acc1","#c0ca33"];
+            const kinds = Object.keys(CarProfiles);
+            slots.forEach((slot, idx) => {
+              if (!slot) return;
+              const kind = kinds[idx % kinds.length];
+              const car = makeCar({ x: slot.x, y: slot.y, angle: slot.angle || 0, color: colors[idx % colors.length], kind, steeringMode: "manual" });
+              car.targetIndex = 0;
+              car.speedBias = (-20 + (idx % 5) * 10);
+              arr.push(car);
+            });
             return arr;
           }
 
@@ -2385,6 +2534,51 @@ function drawCarDetailed(ctx, car){
 
 
 function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath(); ctx.moveTo(x+r, y); ctx.arcTo(x+w, y, x+w, y+h, r); ctx.arcTo(x+w, y+h, x, y+h, r); ctx.arcTo(x, y+h, x, y, r); ctx.arcTo(x, y, x+w, y, r); ctx.closePath(); }
+          function drawStartGridArea(ctx) {
+            if (!startGrid || !startGrid.slots || !startGrid.slots.length) return;
+            const { origin, forwardAngle, slots, checkSize, acrossWidth } = startGrid;
+            const slotLineThickness = (typeof startGrid.lineThickness === "number" && startGrid.lineThickness > 0)
+              ? startGrid.lineThickness
+              : 4;
+            const trackWidth = (activeTrack && activeTrack.roadWidth) ? activeTrack.roadWidth : acrossWidth;
+            const halfWidth = Math.max(12, trackWidth * 0.5);
+            const finishDepth = Math.max(4, slotLineThickness * 1.8);
+            const checkerSize = Math.max(4, checkSize || 10);
+
+            ctx.save();
+            ctx.translate(origin.x, origin.y);
+            ctx.rotate(forwardAngle);
+
+            // Main race line (checkered pattern spanning track width)
+            const cells = Math.max(2, Math.ceil((halfWidth * 2) / checkerSize));
+            const startY = -halfWidth;
+            for (let i = 0; i < cells; i++) {
+              const cellY = startY + i * checkerSize;
+              const remaining = (halfWidth * 2) - (i * checkerSize);
+              const height = Math.min(checkerSize, Math.max(0, remaining));
+              if (height <= 0) break;
+              ctx.fillStyle = (i % 2 === 0) ? "rgba(245,245,245,0.98)" : "rgba(20,20,20,0.95)";
+              ctx.fillRect(-finishDepth * 0.5, cellY, finishDepth, height);
+            }
+
+            // Parking slot lines (single lead line per stall)
+            ctx.save();
+            ctx.strokeStyle = "rgba(255,255,255,0.9)";
+            ctx.lineWidth = slotLineThickness;
+            ctx.lineCap = "butt";
+            ctx.beginPath();
+            for (const slot of slots) {
+              if (!slot) continue;
+              const slotHalf = (slot.width || 24) * 0.5;
+              const slotLen = (slot.length || 36) * 0.5;
+              const front = slot.forward + slotLen;
+              ctx.moveTo(front, slot.lateral - slotHalf);
+              ctx.lineTo(front, slot.lateral + slotHalf);
+            }
+            ctx.stroke();
+            ctx.restore();
+            ctx.restore();
+          }
           function drawBackground() {
             // Clear screen-space
             ctx.setTransform(1,0,0,1,0,0);
@@ -2394,37 +2588,27 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
             ctx.fillStyle = "#184f1a";
             ctx.fillRect(0, 0, cw, ch);
 
-            // World-space transform centered on player every frame
-            const cam = camRef.current; const s = cam && cam.scale ? cam.scale : 1.0;
-            
             // Ensure player has valid position and track data is loaded
             if (!player || typeof player.x !== 'number' || typeof player.y !== 'number' || !trackData) {
               return;
             }
-            
-            ctx.save();
-            ctx.translate(cw/2, ch/2);
-            ctx.scale(s, s);
-            const focusX = cam && typeof cam.x === "number" ? cam.x : player.x;
-            const focusY = cam && typeof cam.y === "number" ? cam.y : player.y;
-            ctx.translate(-focusX, -focusY);
-            ctx.imageSmoothingEnabled = false;
 
-            const viewHalfW = (cw / (s || 1)) * 0.5;
-            const viewHalfH = (ch / (s || 1)) * 0.5;
-            const viewW = viewHalfW * 2;
-            const viewH = viewHalfH * 2;
-            const regionPad = 256;
-            const regionX = focusX - viewHalfW - regionPad;
-            const regionY = focusY - viewHalfH - regionPad;
-            const regionW = viewW + regionPad * 2;
-            const regionH = viewH + regionPad * 2;
-            const worldWidth = activeTrack && activeTrack.world ? activeTrack.world.width : W;
-            const worldHeight = activeTrack && activeTrack.world ? activeTrack.world.height : H;
+            const cam = camRef.current || {};
+            const zoom = typeof cam.scale === "number" && cam.scale > 0 ? cam.scale : 1;
+            const camX = Number.isFinite(cam.x) ? cam.x : player.x;
+            const camY = Number.isFinite(cam.y) ? cam.y : player.y;
+            const regionW = cw / zoom;
+            const regionH = ch / zoom;
+            const regionX = camX - regionW * 0.5;
+            const regionY = camY - regionH * 0.5;
+
             ctx.save();
+            ctx.translate(cw / 2, ch / 2);
+            ctx.scale(zoom, zoom);
+            ctx.translate(-camX, -camY);
+
             ctx.fillStyle = "#123b1a";
             ctx.fillRect(regionX, regionY, regionW, regionH);
-            ctx.restore();
 
             const trackSurfaceEntry = trackSurfaceRef.current;
             if (trackSurfaceEntry && trackSurfaceEntry.canvas) {
@@ -2437,9 +2621,17 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               drawLayerImage(ctx, decorLayer.decorCanvas, decorMapping, regionX, regionY, regionW, regionH);
             }
 
-            // Start line (ensure visible over decor)
-            ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 4; ctx.beginPath();
-            ctx.moveTo(startLine.a.x, startLine.a.y); ctx.lineTo(startLine.b.x, startLine.b.y); ctx.stroke();
+            // Start line / grid (ensure visible over decor)
+            if (startGrid && activeTrack && activeTrack.isCustom) {
+              drawStartGridArea(ctx);
+            } else if (startLine && startLine.a && startLine.b) {
+              ctx.strokeStyle = "#ffffff";
+              ctx.lineWidth = 4;
+              ctx.beginPath();
+              ctx.moveTo(startLine.a.x, startLine.a.y);
+              ctx.lineTo(startLine.b.x, startLine.b.y);
+              ctx.stroke();
+            }
 
             // Checkpoint visuals (subtle)
             ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.lineWidth = 2;
@@ -2582,7 +2774,8 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
 
             // Lap counting against start line
             const now = performance.now();
-            if (now - car.lastCross > 800) {
+            const hasStartLine = startLine && startLine.a && startLine.b;
+            if (hasStartLine && (now - car.lastCross > 800)) {
               if (segIntersect({x: prevX, y: prevY}, { x: car.x, y: car.y }, startLine.a, startLine.b)) {
                 car.lap += 1; car.lastCross = now;
                 const lapTime = (now - car.lapStart) / 1000;
