@@ -2517,7 +2517,40 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
           loadTrack(trackName);
           camInitRef.current = true; // ensure camera is initialized
           requestAnimationFrame(frame);
-          try { if (window.RacerPhysics) window.RacerPhysics.injectDevTools(()=>({ player, ai: aiCars })); } catch(_){}
+          try {
+            if (window.RacerPhysics) {
+              const getCars = () => ({ player, ai: aiCars });
+              window.RacerPhysics.injectDevTools(getCars);
+              if (typeof window.RacerPhysics.injectVehicleTweaker === 'function') {
+                const bridge = {
+                  listKinds: () => Object.keys(CarProfiles),
+                  getArtDimensions: (kind) => {
+                    const prof = CarProfiles[kind];
+                    return prof ? { width: prof.width, length: prof.length } : null;
+                  },
+                  setArtDimensions: (kind, dims) => {
+                    if (!kind || !CarProfiles[kind] || !dims) return;
+                    const width = clamp(+dims.width || CarProfiles[kind].width, 10, 80);
+                    const length = clamp(+dims.length || CarProfiles[kind].length, 30, 140);
+                    CarProfiles[kind].width = width;
+                    CarProfiles[kind].length = length;
+                    const applyDims = (car) => {
+                      if (!car || car.kind !== kind) return;
+                      car.width = width;
+                      car.length = length;
+                      if (car.physics && car.physics.params) {
+                        const mass = car.physics.params.mass || 1;
+                        car.physics.Izz = mass * (length * length + width * width) / 12;
+                      }
+                    };
+                    applyDims(player);
+                    if (Array.isArray(aiCars)) aiCars.forEach(applyDims);
+                  }
+                };
+                window.RacerPhysics.injectVehicleTweaker(bridge, getCars);
+              }
+            }
+          } catch(_){ }
 
           return () => {
             window.removeEventListener("keydown", kd);

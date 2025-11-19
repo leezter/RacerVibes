@@ -74,29 +74,6 @@
 
     <script src="modes/registry.js"></script>
     <script src="modes/grip.js"></script>
-    <script>
-      (function () {
-        function getCurrentModeId() {
-          try {
-            const url = new URL(location.href);
-            const id = url.searchParams.get('mode');
-            if (id && window.RacerModes && typeof window.RacerModes.get === 'function' && window.RacerModes.get(id)) {
-              return id;
-            }
-          } catch (e) {}
-          if (window.RacerModes && typeof window.RacerModes.getDefaultId === 'function') {
-            return window.RacerModes.getDefaultId();
-          }
-          return 'grip';
-        }
-        // Keep this return value for future use, but DO NOT wire it into physics/gearbox init yet.
-        // Grip must behave identically to before.
-        const currentModeId = getCurrentModeId();
-        // (Optional) expose read-only for future dev tools; avoid mutating globals.
-        Object.defineProperty(window, 'RACER_CURRENT_MODE', { value: currentModeId, writable: false });
-      })();
-    </script>
-
     <script type="text/babel" data-presets="env,react">
 // Utility: request fullscreen politely
 function requestFullscreen(el){
@@ -118,17 +95,7 @@ function getViewportSize(){
   const vh = (doc && doc.clientHeight) || window.innerHeight || 0;
   return { w: vw, h: vh };
 }
-
-// NOTE: legacy drift preset cleanup (do not enable until a future release)
-// try {
-//   for (let i = 0; i < localStorage.length; i++) {
-//     const k = localStorage.key(i);
-//     if (k && /(^|:)drift(:|$)/i.test(k)) {
-//       // localStorage.removeItem(k); // enable in a future cleanup pass
-//     }
-//   }
-// } catch (_) {}
-
+ 
 // ===== Skid marks =====
 let skids = []; // {x1,y1,x2,y2, life}
 const SKID_LIFE = 2.2;
@@ -623,30 +590,37 @@ const { useEffect, useRef, useState } = React;
           const vecDiff = safeNormalizeAngle(toNodeHeading - car.angle);
           return { desiredHeading, diff, dot, toNodeHeading, toNodeDiff: vecDiff, toNodeDot: vecDot, distance: dist };
         }
-        function beginAiRecovery(state, mode) {
+        function beginAiRecovery(state, car, mode) {
           if (!state) return;
+          const targetCar = car || null;
           state.active = true;
           state.mode = mode || "turn";
           state.timer = 0;
           state.phase = mode === "reverse" ? "reverseOut" : "turn";
           state.reverseTimer = 0;
+          state.cooldown = AI_RECOVERY_CFG.cooldown;
+          state.stuckTimer = 0;
+          state.phase = null;
+          state.reverseTimer = 0;
           state.phaseTimer = 0;
+          if (targetCar && targetCar.physics) {
+            targetCar.physics.dir = 1;
+          }
+          if (targetCar && targetCar.gearbox && typeof targetCar.gearbox.shiftUp === "function") {
+            try { targetCar.gearbox.shiftUp(); targetCar.gearbox.shiftUp(); } catch(_){ }
+          }
         }
         function endAiRecovery(state, car) {
           if (!state) return;
           state.active = false;
           state.mode = null;
           state.timer = 0;
-          state.cooldown = AI_RECOVERY_CFG.cooldown;
-          state.stuckTimer = 0;
           state.phase = null;
           state.reverseTimer = 0;
           state.phaseTimer = 0;
+          state.lineIdx = Number.isFinite(state.lineIdx) ? state.lineIdx : 0;
           if (car && car.physics) {
             car.physics.dir = 1;
-          }
-          if (car && car.gearbox && typeof car.gearbox.shiftUp === "function") {
-            try { car.gearbox.shiftUp(); car.gearbox.shiftUp(); } catch(_){ }
           }
         }
         // Override AI inputs when a car is stuck so it can perform a turn or reverse maneuver.
@@ -679,7 +653,7 @@ const { useEffect, useRef, useState } = React;
             const driftTrigger = stuck && headingInfo && headingInfo.distance > 80 && headingInfo.toNodeDot < 0.3 && state.stuckTimer > 0.5;
             if (wrongWayTrigger || offTrackTrigger || driftTrigger) {
               const preferReverse = backwards || driftingAway;
-              beginAiRecovery(state, preferReverse ? "reverse" : "turn");
+              beginAiRecovery(state, car, preferReverse ? "reverse" : "turn");
             }
           }
           const control = {
@@ -3224,7 +3198,40 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
           loadTrack(trackName);
           camInitRef.current = true; // ensure camera is initialized
           requestAnimationFrame(frame);
-          try { if (window.RacerPhysics) window.RacerPhysics.injectDevTools(()=>({ player, ai: aiCars })); } catch(_){}
+          try {
+            if (window.RacerPhysics) {
+              const getCars = () => ({ player, ai: aiCars });
+              window.RacerPhysics.injectDevTools(getCars);
+              if (typeof window.RacerPhysics.injectVehicleTweaker === 'function') {
+                const bridge = {
+                  listKinds: () => Object.keys(CarProfiles),
+                  getArtDimensions: (kind) => {
+                    const prof = CarProfiles[kind];
+                    return prof ? { width: prof.width, length: prof.length } : null;
+                  },
+                  setArtDimensions: (kind, dims) => {
+                    if (!kind || !CarProfiles[kind] || !dims) return;
+                    const width = clamp(+dims.width || CarProfiles[kind].width, 10, 80);
+                    const length = clamp(+dims.length || CarProfiles[kind].length, 30, 140);
+                    CarProfiles[kind].width = width;
+                    CarProfiles[kind].length = length;
+                    const applyDims = (car) => {
+                      if (!car || car.kind !== kind) return;
+                      car.width = width;
+                      car.length = length;
+                      if (car.physics && car.physics.params) {
+                        const mass = car.physics.params.mass || 1;
+                        car.physics.Izz = mass * (length * length + width * width) / 12;
+                      }
+                    };
+                    applyDims(player);
+                    if (Array.isArray(aiCars)) aiCars.forEach(applyDims);
+                  }
+                };
+                window.RacerPhysics.injectVehicleTweaker(bridge, getCars);
+              }
+            }
+          } catch (_){ }
 
           return () => {
             window.removeEventListener("keydown", kd);

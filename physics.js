@@ -211,6 +211,278 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     return mass * (length*length + width*width) / 12;
   }
 
+  function injectVehicleTweaker(bridge = {}, getCars){
+    if (document.getElementById('rv-vehicle-tweaker')) return;
+    ensureDevPanelStyles();
+    const listKinds = typeof bridge.listKinds === 'function'
+      ? bridge.listKinds
+      : (() => Object.keys(VEHICLE_DEFAULTS));
+    const kinds = (listKinds() || []).filter((k) => VEHICLE_DEFAULTS[k]);
+    if (!kinds.length) return;
+    const artState = {};
+    const artDefaults = {};
+    const fetchArt = typeof bridge.getArtDimensions === 'function'
+      ? bridge.getArtDimensions
+      : (() => null);
+    for (const kind of kinds) {
+      const dims = fetchArt(kind) || {};
+      const width = Number.isFinite(dims.width) ? dims.width : 30;
+      const length = Number.isFinite(dims.length) ? dims.length : 50;
+      artState[kind] = { width, length };
+      artDefaults[kind] = { width, length };
+    }
+    const physDefaults = JSON.parse(JSON.stringify(VEHICLE_DEFAULTS));
+    const DESCRIPTIONS = {
+      vehSelect: 'Choose a vehicle preset or Global to affect all presets.',
+      lockAspect: 'When enabled, changing length keeps the sprite width/length ratio.',
+      artWidth: 'Sprite/collision width in pixels. Larger values make the car visually wider.',
+      artLength: 'Sprite/collision length in pixels. Larger values make the car visually longer.',
+      wheelbase: 'Distance between axles (px). Influences stability and weight transfer.',
+      cgFront: 'Distance from the CG to the front axle. Adjust for balance on braking.',
+      cgRear: 'Distance from the CG to the rear axle. Adjust for traction on throttle.',
+      syncActive: 'Force currently spawned cars to rebuild physics bodies with the latest settings.',
+      resetSelection: 'Restore the selected vehicle(s) to their original geometry defaults.'
+    };
+    const escapeAttr = (value) => String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    const tipAttr = (key) => (DESCRIPTIONS[key] ? ` title="${escapeAttr(DESCRIPTIONS[key])}"` : '');
+
+    const wrap = document.createElement('div');
+    wrap.id = 'rv-vehicle-tweaker';
+    wrap.className = 'rv-devtools rv-veh';
+    wrap.innerHTML = `
+      <button class="toggle">Vehicle Tweaker ▾</button>
+      <div class="rv-panel" role="dialog" aria-label="Vehicle Tweaker">
+        <div class="rv-row"><label for="rv-veh-kind"><span${tipAttr('vehSelect')}>Vehicle</span></label>
+          <select id="rv-veh-kind">
+            <option value="Global">Global</option>
+            ${kinds.map((k) => `<option value="${k}">${k}</option>`).join('')}
+          </select>
+        </div>
+        <div class="rv-row"><label for="rv-veh-lock"><span${tipAttr('lockAspect')}>Lock aspect</span></label><input type="checkbox" id="rv-veh-lock"></div>
+        <div class="rv-section vehicle">
+          <h4>Visual Footprint</h4>
+          <div class="rv-row"><label for="rv-veh-width"><span${tipAttr('artWidth')}>Width (px)</span></label><input id="rv-veh-width" type="range" min="10" max="80" step="1"><div class="val" id="rv-veh-width-v"></div></div>
+          <div class="rv-row"><label for="rv-veh-length"><span${tipAttr('artLength')}>Length (px)</span></label><input id="rv-veh-length" type="range" min="30" max="140" step="1"><div class="val" id="rv-veh-length-v"></div></div>
+        </div>
+        <div class="rv-section vehicle">
+          <h4>Physics Footprint</h4>
+          <div class="rv-row"><label for="rv-veh-wheel"><span${tipAttr('wheelbase')}>Wheelbase</span></label><input id="rv-veh-wheel" type="range" min="20" max="140" step="1"><div class="val" id="rv-veh-wheel-v"></div></div>
+          <div class="rv-row"><label for="rv-veh-cgf"><span${tipAttr('cgFront')}>CG → front</span></label><input id="rv-veh-cgf" type="range" min="5" max="120" step="1"><div class="val" id="rv-veh-cgf-v"></div></div>
+          <div class="rv-row"><label for="rv-veh-cgr"><span${tipAttr('cgRear')}>CG → rear</span></label><input id="rv-veh-cgr" type="range" min="5" max="120" step="1"><div class="val" id="rv-veh-cgr-v"></div></div>
+        </div>
+        <div class="rv-row rv-btns">
+          <button id="rv-veh-sync" class="rv-mini"${tipAttr('syncActive')}>Sync active cars</button>
+          <button id="rv-veh-reset" class="rv-mini"${tipAttr('resetSelection')}>Reset selection</button>
+        </div>
+      </div>`;
+    document.body.appendChild(wrap);
+
+    const els = {
+      panel: wrap.querySelector('.rv-panel'),
+      toggle: wrap.querySelector('.toggle'),
+      kind: document.getElementById('rv-veh-kind'),
+      lock: document.getElementById('rv-veh-lock'),
+      width: document.getElementById('rv-veh-width'),
+      widthVal: document.getElementById('rv-veh-width-v'),
+      length: document.getElementById('rv-veh-length'),
+      lengthVal: document.getElementById('rv-veh-length-v'),
+      wheel: document.getElementById('rv-veh-wheel'),
+      wheelVal: document.getElementById('rv-veh-wheel-v'),
+      cgf: document.getElementById('rv-veh-cgf'),
+      cgfVal: document.getElementById('rv-veh-cgf-v'),
+      cgr: document.getElementById('rv-veh-cgr'),
+      cgrVal: document.getElementById('rv-veh-cgr-v'),
+      sync: document.getElementById('rv-veh-sync'),
+      reset: document.getElementById('rv-veh-reset')
+    };
+
+    function targetKinds(){
+      if (!els.kind) return [];
+      const sel = els.kind.value;
+      return sel === 'Global' ? kinds.slice() : [sel];
+    }
+
+    function anchorKind(){
+      if (!els.kind) return kinds[0];
+      return els.kind.value === 'Global' ? kinds[0] : els.kind.value;
+    }
+
+    function refreshFields(){
+      const anchor = anchorKind();
+      const art = artState[anchor];
+      const phys = VEHICLE_DEFAULTS[anchor];
+      if (art) {
+        if (els.width) {
+          els.width.value = art.width;
+          if (els.widthVal) els.widthVal.textContent = `${Math.round(art.width)}`;
+        }
+        if (els.length) {
+          els.length.value = art.length;
+          if (els.lengthVal) els.lengthVal.textContent = `${Math.round(art.length)}`;
+        }
+      }
+      if (phys) {
+        if (els.wheel) {
+          els.wheel.value = phys.wheelbase;
+          if (els.wheelVal) els.wheelVal.textContent = `${Math.round(phys.wheelbase)}`;
+        }
+        if (els.cgf) {
+          els.cgf.value = phys.cgToFront;
+          if (els.cgfVal) els.cgfVal.textContent = `${Math.round(phys.cgToFront)}`;
+        }
+        if (els.cgr) {
+          els.cgr.value = phys.cgToRear;
+          if (els.cgrVal) els.cgrVal.textContent = `${Math.round(phys.cgToRear)}`;
+        }
+      }
+    }
+
+    function refreshActiveCarPhysics(kindsToRefresh){
+      if (typeof getCars !== 'function') return;
+      const listKinds = Array.isArray(kindsToRefresh) ? kindsToRefresh : [kindsToRefresh];
+      const cset = getCars() || {};
+      const cars = [];
+      if (cset.player && listKinds.includes(cset.player.kind)) cars.push(cset.player);
+      if (Array.isArray(cset.ai)) {
+        for (const car of cset.ai) {
+          if (car && listKinds.includes(car.kind)) cars.push(car);
+        }
+      }
+      if (!cars.length) return;
+      for (const car of cars) {
+        const base = VEHICLE_DEFAULTS[car.kind];
+        if (base && car.physics && car.physics.params) {
+          car.physics.params.wheelbase = base.wheelbase;
+          car.physics.params.cgToFront = base.cgToFront;
+          car.physics.params.cgToRear = base.cgToRear;
+          car.physics.a = base.cgToFront;
+          car.physics.b = base.cgToRear;
+          const art = artState[car.kind];
+          const mass = car.physics.params.mass || base.mass || 1;
+          const Lpx = Number.isFinite(car.length) ? car.length : (art ? art.length : 50);
+          const Wpx = Number.isFinite(car.width) ? car.width : (art ? art.width : 20);
+          car.physics.Izz = inferIzz(mass, Lpx, Wpx);
+        }
+        removePlanckBody(car);
+      }
+      registerPlanckCars(cars);
+    }
+
+    function applyArtChange(prop, value, opts = {}){
+      const targets = targetKinds();
+      let changed = false;
+      for (const kind of targets) {
+        const entry = artState[kind];
+        if (!entry) continue;
+        const prevRatio = entry.length ? entry.width / entry.length : 1;
+        if (prop === 'length') {
+          entry.length = value;
+          if (opts.lockAspect) {
+            entry.width = clamp(value * prevRatio, 10, 80);
+          }
+        } else {
+          entry.width = value;
+        }
+        if (typeof bridge.setArtDimensions === 'function') {
+          bridge.setArtDimensions(kind, { ...entry });
+        }
+        changed = true;
+      }
+      if (changed) {
+        refreshActiveCarPhysics(targets);
+        refreshFields();
+      }
+    }
+
+    function applyPhysChange(prop, value){
+      const targets = targetKinds();
+      for (const kind of targets) {
+        const base = VEHICLE_DEFAULTS[kind];
+        if (!base) continue;
+        if (prop === 'wheelbase') {
+          const total = Math.max(1, base.cgToFront + base.cgToRear);
+          const ratio = total > 0 ? base.cgToFront / total : 0.5;
+          base.wheelbase = value;
+          base.cgToFront = clamp(value * ratio, 1, 140);
+          base.cgToRear = clamp(value - base.cgToFront, 1, 140);
+        } else if (prop === 'cgToFront') {
+          base.cgToFront = value;
+          base.wheelbase = clamp(base.cgToFront + base.cgToRear, 5, 180);
+        } else if (prop === 'cgToRear') {
+          base.cgToRear = value;
+          base.wheelbase = clamp(base.cgToFront + base.cgToRear, 5, 180);
+        }
+      }
+      refreshActiveCarPhysics(targets);
+      refreshFields();
+    }
+
+    function resetSelection(){
+      const targets = targetKinds();
+      for (const kind of targets) {
+        if (artDefaults[kind]) {
+          artState[kind] = { ...artDefaults[kind] };
+          if (typeof bridge.setArtDimensions === 'function') {
+            bridge.setArtDimensions(kind, { ...artState[kind] });
+          }
+        }
+        if (physDefaults[kind]) {
+          VEHICLE_DEFAULTS[kind].wheelbase = physDefaults[kind].wheelbase;
+          VEHICLE_DEFAULTS[kind].cgToFront = physDefaults[kind].cgToFront;
+          VEHICLE_DEFAULTS[kind].cgToRear = physDefaults[kind].cgToRear;
+        }
+      }
+      refreshActiveCarPhysics(targets);
+      refreshFields();
+    }
+
+    if (els.toggle && els.panel) {
+      els.toggle.addEventListener('click', ()=>{
+        els.panel.classList.toggle('open');
+        els.toggle.textContent = els.panel.classList.contains('open') ? 'Vehicle Tweaker ▴' : 'Vehicle Tweaker ▾';
+      });
+    }
+    if (els.kind) {
+      els.kind.addEventListener('change', ()=> refreshFields());
+    }
+    if (els.width) {
+      els.width.addEventListener('input', ()=>{
+        const v = clamp(+els.width.value || 0, 10, 80);
+        applyArtChange('width', v);
+      });
+    }
+    if (els.length) {
+      els.length.addEventListener('input', ()=>{
+        const v = clamp(+els.length.value || 0, 30, 140);
+        applyArtChange('length', v, { lockAspect: !!(els.lock && els.lock.checked) });
+      });
+    }
+    if (els.wheel) {
+      els.wheel.addEventListener('input', ()=>{
+        const v = clamp(+els.wheel.value || 0, 20, 140);
+        applyPhysChange('wheelbase', v);
+      });
+    }
+    if (els.cgf) {
+      els.cgf.addEventListener('input', ()=>{
+        const v = clamp(+els.cgf.value || 0, 5, 120);
+        applyPhysChange('cgToFront', v);
+      });
+    }
+    if (els.cgr) {
+      els.cgr.addEventListener('input', ()=>{
+        const v = clamp(+els.cgr.value || 0, 5, 120);
+        applyPhysChange('cgToRear', v);
+      });
+    }
+    if (els.reset) els.reset.addEventListener('click', resetSelection);
+    if (els.sync) els.sync.addEventListener('click', ()=>{
+      refreshActiveCarPhysics(targetKinds());
+    });
+
+    refreshFields();
+  }
+
   // -- Reverse stability knobs (single source of truth) --
   const REVERSE_CFG_DEFAULTS = {
     vxHyst: 18,   // hysteresis band (px/s) for forward/backward direction
@@ -1360,11 +1632,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     } catch(_){ }
     ctx.restore();
   }
-  // Dev tools UI
-  async function injectDevTools(getCars){
-    if (document.getElementById('rv-devtools')) return; // once
-    const style = document.createElement('style');
-    style.textContent = `
+  const DEVTOOLS_STYLE = `
     .rv-devtools{position:fixed;top:12px;left:12px;z-index:40;font:12px system-ui;}
     .rv-devtools .toggle{appearance:none;border:1px solid #334; background:#0b1322; color:#e6eef6; padding:8px 10px; border-radius:8px; cursor:pointer;}
     .rv-panel{display:none; margin-top:8px; padding:10px; border:1px solid #334; background:#0e1729ee; color:#e6eef6; border-radius:10px; min-width:280px; max-width:340px; box-shadow:0 8px 24px rgba(0,0,0,.5); max-height:80vh; overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; -webkit-overflow-scrolling:touch}
@@ -1372,8 +1640,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     .rv-row{display:flex; align-items:center; gap:8px; margin:6px 0}
     .rv-row label{width:120px; opacity:.9}
     .rv-row input[type=range]{flex:1}
-  .rv-row input[type=number]{width:80px;background:#0b1322;color:#e6eef6;border:1px solid #334;border-radius:6px;padding:4px}
-  .rv-row select{flex:1;background:#0b1322;color:#e6eef6;border:1px solid #334;border-radius:6px;padding:6px 8px}
+    .rv-row input[type=number]{width:80px;background:#0b1322;color:#e6eef6;border:1px solid #334;border-radius:6px;padding:4px}
+    .rv-row select{flex:1;background:#0b1322;color:#e6eef6;border:1px solid #334;border-radius:6px;padding:6px 8px}
     .rv-row .val{width:40px; text-align:right; opacity:.8}
     .rv-row .rv-btns{display:flex;flex-direction:column;gap:4px}
     .rv-row .rv-mini{appearance:none;border:1px solid #334;background:#18253c;color:#e6eef6;font-size:11px;padding:2px 6px;border-radius:4px;cursor:pointer}
@@ -1388,15 +1656,28 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     .rv-preset-menu button:hover{background:#1a2640}
     .rv-preset-menu .rv-empty{padding:8px 10px;font-size:12px;opacity:.75}
     .rv-row .small{opacity:.75;font-size:11px}
-  .rv-section{margin:12px 0;padding:8px 10px;border-radius:8px;border:1px solid rgba(148,163,184,0.35);background:rgba(15,23,42,0.65)}
-  .rv-section h4{margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#cbd5f5}
-  .rv-section.planck{border-color:rgba(34,197,94,0.45);background:rgba(21,128,61,0.25)}
-  .rv-section.planck h4{color:#34d399}
-  .rv-section.legacy{border-color:rgba(251,146,60,0.45);background:rgba(180,83,9,0.25)}
-  .rv-section.legacy h4{color:#fb923c}
-  .rv-section .rv-row{margin:6px 0}
-    `;
+    .rv-section{margin:12px 0;padding:8px 10px;border-radius:8px;border:1px solid rgba(148,163,184,0.35);background:rgba(15,23,42,0.65)}
+    .rv-section h4{margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#cbd5f5}
+    .rv-section.planck{border-color:rgba(34,197,94,0.45);background:rgba(21,128,61,0.25)}
+    .rv-section.planck h4{color:#34d399}
+    .rv-section.legacy{border-color:rgba(251,146,60,0.45);background:rgba(180,83,9,0.25)}
+    .rv-section.legacy h4{color:#fb923c}
+    .rv-section .rv-row{margin:6px 0}
+    .rv-devtools.rv-veh{left:auto;right:12px}
+  `;
+
+  function ensureDevPanelStyles(){
+    if (document.getElementById('rv-devtools-style')) return;
+    const style = document.createElement('style');
+    style.id = 'rv-devtools-style';
+    style.textContent = DEVTOOLS_STYLE;
     document.head.appendChild(style);
+  }
+
+  // Dev tools UI
+  async function injectDevTools(getCars){
+    if (document.getElementById('rv-devtools')) return; // once
+    ensureDevPanelStyles();
 
     const DESCRIPTIONS = {
       vehicle: "Select which vehicle preset you are tuning.",
@@ -2260,6 +2541,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     drawDebug,
     setDebugEnabled,
     injectDevTools,
+    injectVehicleTweaker,
     configureTrackCollision,
     rebuildPlanckWorld,
     registerPlanckCars,
