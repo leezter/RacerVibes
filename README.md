@@ -36,4 +36,5 @@ Notes
 - Motion sensors require a user gesture; we enable listeners on first pointerdown.
 - Place your PWA icons under `icons/icon-192.png` and `icons/icon-512.png`.
 - If motion steering is too sensitive, tweak the divisor (currently ~45 degrees for full lock) or thresholds in both mode files.
-- The Truck vehicle now uses the high-res sprite at `Truck.png` (cropped to 357x744, scaled to ~29x60 world units) so keep that file alongside `racer.html`.
+- Vehicle sprites now live under `assets/vehicles/` (e.g., `truck_orange.png` is the cropped 357×744 truck rendered at ~29×60 world units). Drop future cars in that folder and reference them via `loadSpriteAsset`.
+- Shared world art (trees, kerbs, props) uses the atlas at `assets/decor/decor_atlas.png`; update `decor_generator.js` if you add new atlases.

@@ -16,7 +16,7 @@
   const BARRIER_SPACING = 42;
   const BARRIER_CURVATURE_THRESHOLD = 0.35;
   const EDGE_SHADOW_BLUR = 8;
-  const SPRITE_ATLAS_URL = "decor_atlas.png";
+  const SPRITE_ATLAS_URL = "assets/decor/decor_atlas.png";
 
   const SPRITE_MAP = {
     tree: [
