@@ -36,3 +36,4 @@ Notes
 - Motion sensors require a user gesture; we enable listeners on first pointerdown.
 - Place your PWA icons under `icons/icon-192.png` and `icons/icon-512.png`.
 - If motion steering is too sensitive, tweak the divisor (currently ~45 degrees for full lock) or thresholds in both mode files.
+- The Truck vehicle now uses the high-res sprite at `Truck.png` (cropped to 357x744, scaled to ~29x60 world units) so keep that file alongside `racer.html`.

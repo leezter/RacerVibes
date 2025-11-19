@@ -159,9 +159,9 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     Truck: {
       ...PLANCK_DEFAULTS,
   mass: 2.20,
-      wheelbase: 44,
-      cgToFront: 21,
-      cgToRear: 23,
+      wheelbase: 57,
+      cgToFront: 27,
+      cgToRear: 30,
   enginePowerMult: 1.65,
   brakeForce: 600,
       maxSteer: 0.40,

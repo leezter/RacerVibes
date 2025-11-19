@@ -262,8 +262,23 @@ const { useEffect, useRef, useState } = React;
         "F1":    { width: 18, length: 44, maxK: 1.18, accelK: 1.10, brakeK: 1.05, turnK: 1.20, color: "#d32f2f" },
         "GT":    { width: 20, length: 38, maxK: 1.00, accelK: 1.00, brakeK: 1.00, turnK: 1.00, color: "#3949ab" },
         "Rally": { width: 18, length: 34, maxK: 0.95, accelK: 1.05, brakeK: 1.05, turnK: 1.15, color: "#2e7d32" },
-        "Truck": { width: 24, length: 46, maxK: 0.82, accelK: 0.85, brakeK: 0.90, turnK: 0.70, color: "#6d4c41" }
+        "Truck": { width: 29, length: 60, maxK: 0.82, accelK: 0.85, brakeK: 0.90, turnK: 0.70, color: "#f97316" }
       };
+
+      const spriteAssets = {};
+      function loadSpriteAsset(key, src){
+        if (spriteAssets[key]) return spriteAssets[key];
+        if (typeof Image === "undefined") return null;
+        const img = new Image();
+        img.decoding = "async";
+        img.src = src;
+        img.onerror = (err) => console.warn(`[sprites] ${key} failed to load`, err);
+        spriteAssets[key] = img;
+        return img;
+      }
+
+      const truckSprite = loadSpriteAsset("truck", "Truck.png");
+      const truckSpriteMeta = { sx: 408, sy: 73, sw: 357, sh: 744 };
       function getInitialCar() {
         try {
           const params = new URLSearchParams(window.location.search);
@@ -1816,7 +1831,7 @@ const { useEffect, useRef, useState } = React;
             const vp = { x: -v.y, y: v.x }; // left perp
             const gap = 38;       // gap along forward axis
             const lateral = 18;   // side column spacing
-            const colors = ["#1e88e5","#43a047","#f4511e","#8e24aa","#00897b","#3949ab","#fdd835","#6d4c41","#00acc1","#c0ca33"];
+            const colors = ["#1e88e5","#43a047","#f4511e","#8e24aa","#00897b","#3949ab","#fdd835","#f97316","#00acc1","#c0ca33"];
             const kinds = Object.keys(CarProfiles);
             for (let i = 0; i < n; i++) {
               const row = Math.floor(i/2) + 1;
@@ -1872,12 +1887,14 @@ function drawCarDetailed(ctx, car){
     ctx.restore();
   }
 
-  // Shadow (stronger differentiation for silhouettes)
-  ctx.save();
-  ctx.globalAlpha = 0.28;
-  ctx.fillStyle = '#000';
-  ctx.beginPath(); ctx.ellipse(0, 3, W*0.8, L*0.65, 0, 0, Math.PI*2); ctx.fill();
-  ctx.restore();
+  // Shadow (skip for sprite-based trucks that include baked shading)
+  if (car.kind !== 'Truck') {
+    ctx.save();
+    ctx.globalAlpha = 0.28;
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.ellipse(0, 3, W*0.8, L*0.65, 0, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
 
   // Common lights (head/tail intensity from speed)
   function drawLights(){
@@ -1985,6 +2002,25 @@ function drawCarDetailed(ctx, car){
   }
 
   function drawTruck(){
+    if (drawTruckSprite()) return;
+    drawTruckFallback();
+  }
+
+  function drawTruckSprite(){
+    const img = truckSprite;
+    if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return false;
+    const meta = truckSpriteMeta;
+    const aspect = meta.sw / meta.sh;
+    const drawLength = L;
+    const drawWidth = drawLength * aspect;
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(img, meta.sx, meta.sy, meta.sw, meta.sh, -drawWidth/2, -drawLength/2, drawWidth, drawLength);
+    ctx.restore();
+    return true;
+  }
+
+  function drawTruckFallback(){
     // Boxy cab-over with long chassis, twin rear axles, exhaust stacks, square lights
     // Chassis
     ctx.fillStyle = gradBody(car.color || '#f97316'); // bright truck orange
