@@ -357,15 +357,34 @@ const { useEffect, useRef, useState } = React;
         }
       }
 
-      const SCALE_MIN = 0.5;
-      const SCALE_MAX = 3.0;
-      const SCALE_STEP = 0.05;
-      const SCALE_DEFAULT = 2.5;
-  const CAM_BASE_ZOOM = 1.1;
-  const CAMERA_MIN = 0.6;
-  const CAMERA_MAX = 1.6;
-      const CAMERA_STEP = 0.05;
-  const CAMERA_DEFAULT = 0.85;
+        const SCALE_MIN = 0.5;
+        const SCALE_MAX = 3.0;
+        const SCALE_STEP = 0.05;
+        const SCALE_DEFAULT = 2.5;
+      const CAM_BASE_ZOOM = 1.1;
+      const CAMERA_MIN = 0.6;
+      const CAMERA_MAX = 1.6;
+        const CAMERA_STEP = 0.05;
+      const CAMERA_DEFAULT = 1.0;
+      const ZOOM_DELTA_MIN = 0;
+      const ZOOM_DELTA_MAX = 150;
+      const ZOOM_DELTA_STEP = 1;
+      const ZOOM_DELTA_DEFAULT = 100;
+      const ZOOM_DROP_MIN = 0.15; // minimum raw zoom span
+      const ZOOM_DROP_MAX = 1.05; // enables deep zoom-outs at high slider values
+      const ZOOM_RAW_MIN_FLOOR = 0.05;
+      const ZOOM_RESPONSE_MIN = 0.5;
+      const ZOOM_RESPONSE_MAX = 12;
+      const ZOOM_RESPONSE_STEP = 0.25;
+      const ZOOM_RESPONSE_DEFAULT = 1.25;
+      const ZOOM_SPEED_MIN = 0;
+      const ZOOM_SPEED_MAX = 200;
+      const ZOOM_SPEED_STEP = 1;
+      const SPEED_PX_PER_MPH = 30 / 2.23694; // ≈13.4 px/s per mph based on default 30 px/m
+      const ZOOM_SPEED_START_DEFAULT = 15;
+      const ZOOM_SPEED_FULL_DEFAULT = 89;
+      const ZOOM_SPEED_GAP = 5;
+      const ZOOM_STORAGE_PREFIX = "cameraZoom_";
       function clampScale(value) {
         return Math.min(SCALE_MAX, Math.max(SCALE_MIN, value));
       }
@@ -398,8 +417,73 @@ const { useEffect, useRef, useState } = React;
       function writeCameraDistance(value) {
         try { localStorage.setItem('cameraDistance', String(value)); } catch(_) {}
       }
+      function clampZoomDelta(value) {
+        return Math.min(ZOOM_DELTA_MAX, Math.max(ZOOM_DELTA_MIN, value));
+      }
+      function readZoomDeltaSetting(key, fallbackPercent) {
+        const raw = readZoomSetting(key, fallbackPercent);
+        if (!Number.isFinite(raw)) return fallbackPercent;
+        if (raw <= 1.5) {
+          // migrate legacy fraction values (0-1 range)
+          return clampZoomDelta(Math.round(raw * 100));
+        }
+        return clampZoomDelta(raw);
+      }
+      function resolveZoomSpan(percentValue) {
+        const normalized = clampZoomDelta(percentValue) / ZOOM_DELTA_MAX;
+        const span = ZOOM_DROP_MIN + normalized * (ZOOM_DROP_MAX - ZOOM_DROP_MIN);
+        return Math.max(ZOOM_DROP_MIN, Math.min(ZOOM_DROP_MAX, span));
+      }
+      function clampZoomResponse(value) {
+        return Math.min(ZOOM_RESPONSE_MAX, Math.max(ZOOM_RESPONSE_MIN, value));
+      }
+      function clampZoomSpeed(value) {
+        return Math.min(ZOOM_SPEED_MAX, Math.max(ZOOM_SPEED_MIN, value));
+      }
+      function mphToPx(speedMph) {
+        return Math.max(0, speedMph * SPEED_PX_PER_MPH);
+      }
+      function pxToMph(pxSpeed) {
+        return pxSpeed / SPEED_PX_PER_MPH;
+      }
+      function readZoomSetting(key, fallback) {
+        try {
+          const stored = localStorage.getItem(`${ZOOM_STORAGE_PREFIX}${key}`);
+          if (stored === null) return fallback;
+          const parsed = parseFloat(stored);
+          return Number.isFinite(parsed) ? parsed : fallback;
+        } catch (_) {
+          return fallback;
+        }
+      }
+      function writeZoomSetting(key, value) {
+        try { localStorage.setItem(`${ZOOM_STORAGE_PREFIX}${key}`, String(value)); } catch (_) {}
+      }
+      function readZoomSpeedSetting(key, fallbackMph) {
+        const raw = readZoomSetting(key, fallbackMph);
+        if (!Number.isFinite(raw)) return fallbackMph;
+        if (raw > ZOOM_SPEED_MAX * 2) {
+          // backwards compatibility: old px/s values
+          return clampZoomSpeed(raw / SPEED_PX_PER_MPH);
+        }
+        return clampZoomSpeed(raw);
+      }
       let GEO_SCALE = clampScale(readScale('geoScale', SCALE_DEFAULT));
       let WIDTH_SCALE = clampScale(readScale('widthScale', SCALE_DEFAULT));
+      const ZOOM_INIT = (() => {
+        const fullRaw = readZoomSpeedSetting('fullSpeed', ZOOM_SPEED_FULL_DEFAULT);
+        const full = Math.max(fullRaw, ZOOM_SPEED_MIN + ZOOM_SPEED_GAP);
+        let start = readZoomSpeedSetting('startSpeed', ZOOM_SPEED_START_DEFAULT);
+        if (start > full - ZOOM_SPEED_GAP) {
+          start = Math.max(ZOOM_SPEED_MIN, full - ZOOM_SPEED_GAP);
+        }
+        return {
+          start,
+          full,
+          maxDelta: readZoomDeltaSetting('maxDelta', ZOOM_DELTA_DEFAULT),
+          response: clampZoomResponse(readZoomSetting('response', ZOOM_RESPONSE_DEFAULT))
+        };
+      })();
 
 
       function TopDownRacer() {
@@ -740,7 +824,11 @@ const { useEffect, useRef, useState } = React;
         const [devPanelOpen, setDevPanelOpen] = useState(false);
         const [geoScaleInput, setGeoScaleInput] = useState(() => clampScale(GEO_SCALE));
         const [widthScaleInput, setWidthScaleInput] = useState(() => clampScale(WIDTH_SCALE));
-    const [cameraDistance, setCameraDistance] = useState(() => clampCamera(readCameraDistance(CAMERA_DEFAULT)));
+      const [cameraDistance, setCameraDistance] = useState(() => clampCamera(readCameraDistance(CAMERA_DEFAULT)));
+      const [zoomMaxDelta, setZoomMaxDelta] = useState(() => ZOOM_INIT.maxDelta);
+      const [zoomResponseRate, setZoomResponseRate] = useState(() => ZOOM_INIT.response);
+      const [zoomStartSpeed, setZoomStartSpeed] = useState(() => ZOOM_INIT.start);
+      const [zoomFullSpeed, setZoomFullSpeed] = useState(() => ZOOM_INIT.full);
 
         function readDecorSetting(key, fallback) {
           try {
@@ -951,6 +1039,42 @@ const { useEffect, useRef, useState } = React;
           writeCameraDistance(clamped);
         }
 
+        function handleZoomMaxDeltaChange(nextValue) {
+          const parsed = typeof nextValue === "number" ? nextValue : parseFloat(nextValue);
+          if (!Number.isFinite(parsed)) return;
+          const clamped = clampZoomDelta(parsed);
+          setZoomMaxDelta(clamped);
+          writeZoomSetting('maxDelta', clamped);
+        }
+
+        function handleZoomStartSpeedChange(nextValue) {
+          const parsed = typeof nextValue === "number" ? nextValue : parseFloat(nextValue);
+          if (!Number.isFinite(parsed)) return;
+          let clamped = clampZoomSpeed(parsed);
+          const maxAllowed = Math.max(ZOOM_SPEED_MIN, zoomFullSpeed - ZOOM_SPEED_GAP);
+          if (clamped > maxAllowed) clamped = maxAllowed;
+          setZoomStartSpeed(clamped);
+          writeZoomSetting('startSpeed', clamped);
+        }
+
+        function handleZoomFullSpeedChange(nextValue) {
+          const parsed = typeof nextValue === "number" ? nextValue : parseFloat(nextValue);
+          if (!Number.isFinite(parsed)) return;
+          let clamped = clampZoomSpeed(parsed);
+          const minAllowed = Math.min(ZOOM_SPEED_MAX, zoomStartSpeed + ZOOM_SPEED_GAP);
+          if (clamped < minAllowed) clamped = minAllowed;
+          setZoomFullSpeed(clamped);
+          writeZoomSetting('fullSpeed', clamped);
+        }
+
+        function handleZoomResponseChange(nextValue) {
+          const parsed = typeof nextValue === "number" ? nextValue : parseFloat(nextValue);
+          if (!Number.isFinite(parsed)) return;
+          const clamped = clampZoomResponse(parsed);
+          setZoomResponseRate(clamped);
+          writeZoomSetting('response', clamped);
+        }
+
         function fallbackHash(str) {
           let h = 0;
           for (let i = 0; i < str.length; i++) {
@@ -1039,9 +1163,17 @@ const { useEffect, useRef, useState } = React;
         }
 
         function computeCameraZoom(speed) {
-          const rawMin = 0.70;
           const rawMax = 1.10;
-          const rawTarget = Math.max(rawMin, Math.min(rawMax, 1.0 - Math.min(0.35, speed / 1200)));
+          const startPx = mphToPx(clampZoomSpeed(zoomStartSpeed));
+          const endPx = mphToPx(clampZoomSpeed(zoomFullSpeed));
+          const start = Math.min(startPx, endPx);
+          const end = Math.max(startPx, endPx);
+          const range = Math.max(1, end - start);
+          const normalized = speed <= start ? 0 : Math.min(1, (speed - start) / range);
+          const span = resolveZoomSpan(zoomMaxDelta);
+          const rawMin = Math.max(ZOOM_RAW_MIN_FLOOR, rawMax - span);
+          const desired = rawMax - normalized * span;
+          const rawTarget = Math.max(rawMin, Math.min(rawMax, desired));
           const displayScale = displayScaleRef.current || 1;
           const zoomFactor = cameraDistance || CAMERA_DEFAULT;
           const zoomBase = (CAM_BASE_ZOOM * zoomFactor) / ((displayScale > 0) ? displayScale : 1);
@@ -3182,7 +3314,8 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
             if (cam) {
               const { minZoom, maxZoom, targetZoom } = computeCameraZoom(spd);
               cam.targetScale = Math.max(minZoom, Math.min(maxZoom, targetZoom));
-              cam.scale += (cam.targetScale - cam.scale) * Math.min(1, dt * 4);
+              const zoomEase = clampZoomResponse(zoomResponseRate);
+              cam.scale += (cam.targetScale - cam.scale) * Math.min(1, dt * zoomEase);
               if (typeof cam.targetX === "number" && typeof cam.targetY === "number") {
                 cam.x = cam.targetX;
                 cam.y = cam.targetY;
@@ -3322,6 +3455,91 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                     step={CAMERA_STEP}
                     value={cameraDistance.toFixed(2)}
                     onChange={(e) => applyCameraDistanceChange(e.target.value)}
+                  />
+                </div>
+              </label>
+              <h4>Camera zoom</h4>
+              <label title="Maximum extra zoom-out applied at top speed (percentage of base zoom span).">
+                <span>Zoom-out amount (%)</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={ZOOM_DELTA_MIN}
+                    max={ZOOM_DELTA_MAX}
+                    step={ZOOM_DELTA_STEP}
+                    value={zoomMaxDelta}
+                    onChange={(e) => handleZoomMaxDeltaChange(e.target.value)}
+                  />
+                  <input
+                    type="number"
+                    min={ZOOM_DELTA_MIN}
+                    max={ZOOM_DELTA_MAX}
+                    step={ZOOM_DELTA_STEP}
+                    value={zoomMaxDelta.toFixed(0)}
+                    onChange={(e) => handleZoomMaxDeltaChange(e.target.value)}
+                  />
+                </div>
+              </label>
+              <label title="Vehicle speed (mph) where zoom-out begins to activate.">
+                <span>Zoom start speed (mph)</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={ZOOM_SPEED_MIN}
+                    max={ZOOM_SPEED_MAX}
+                    step={ZOOM_SPEED_STEP}
+                    value={zoomStartSpeed}
+                    onChange={(e) => handleZoomStartSpeedChange(e.target.value)}
+                  />
+                  <input
+                    type="number"
+                    min={ZOOM_SPEED_MIN}
+                    max={ZOOM_SPEED_MAX}
+                    step={ZOOM_SPEED_STEP}
+                    value={zoomStartSpeed.toFixed(0)}
+                    onChange={(e) => handleZoomStartSpeedChange(e.target.value)}
+                  />
+                </div>
+              </label>
+              <label title="Vehicle speed (mph) where the camera reaches the maximum zoom-out amount.">
+                <span>Full zoom speed (mph)</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={ZOOM_SPEED_MIN}
+                    max={ZOOM_SPEED_MAX}
+                    step={ZOOM_SPEED_STEP}
+                    value={zoomFullSpeed}
+                    onChange={(e) => handleZoomFullSpeedChange(e.target.value)}
+                  />
+                  <input
+                    type="number"
+                    min={ZOOM_SPEED_MIN}
+                    max={ZOOM_SPEED_MAX}
+                    step={ZOOM_SPEED_STEP}
+                    value={zoomFullSpeed.toFixed(0)}
+                    onChange={(e) => handleZoomFullSpeedChange(e.target.value)}
+                  />
+                </div>
+              </label>
+              <label title="Controls how quickly the camera interpolates to the new zoom level. Higher values feel snappier; lower values ease slowly.">
+                <span>Zoom response</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={ZOOM_RESPONSE_MIN}
+                    max={ZOOM_RESPONSE_MAX}
+                    step={ZOOM_RESPONSE_STEP}
+                    value={zoomResponseRate}
+                    onChange={(e) => handleZoomResponseChange(e.target.value)}
+                  />
+                  <input
+                    type="number"
+                    min={ZOOM_RESPONSE_MIN}
+                    max={ZOOM_RESPONSE_MAX}
+                    step={ZOOM_RESPONSE_STEP}
+                    value={zoomResponseRate.toFixed(2)}
+                    onChange={(e) => handleZoomResponseChange(e.target.value)}
                   />
                 </div>
               </label>
