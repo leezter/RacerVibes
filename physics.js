@@ -1663,7 +1663,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     .rv-section.legacy{border-color:rgba(251,146,60,0.45);background:rgba(180,83,9,0.25)}
     .rv-section.legacy h4{color:#fb923c}
     .rv-section .rv-row{margin:6px 0}
-    .rv-devtools.rv-veh{left:auto;right:12px}
+    .rv-devtools.rv-veh{left:auto;right:12px;top:104px}
   `;
 
   function ensureDevPanelStyles(){
