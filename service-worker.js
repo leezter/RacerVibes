@@ -5,7 +5,6 @@ const CACHE_VERSION = 'rv-static-v20251119-assets';
 const CORE_ASSETS = [
   'racer_start_menu.html',
   'racer.html',
-  'racer_mode_grip.html',
   'modes/registry.js',
   'modes/grip.js',
   'utils/mode-utils.js',
