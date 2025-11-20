@@ -507,6 +507,7 @@ const { useEffect, useRef, useState } = React;
 
       function TopDownRacer() {
         const AI_DIFFICULTY_KEY = "racingvibes_ai_difficulty";
+        const AI_LINE_VIS_KEY = "racingvibes_ai_line_visible";
         const AVAILABLE_AI_DIFFICULTIES = (() => {
           const skillMap = (window.RacerAI && window.RacerAI.AISkill) || null;
           const keys = skillMap ? Object.keys(skillMap) : ["easy", "medium", "hard"];
@@ -585,6 +586,15 @@ const { useEffect, useRef, useState } = React;
             return sanitizeDifficulty(stored);
           } catch(_){
             return null;
+          }
+        }
+        function loadStoredLineVisibility(){
+          try {
+            const stored = localStorage.getItem(AI_LINE_VIS_KEY);
+            if (stored === null) return false;
+            return stored === "1" || stored === "true";
+          } catch(_){
+            return false;
           }
         }
         function getAISkillDefaults(level){
@@ -893,6 +903,12 @@ const { useEffect, useRef, useState } = React;
         useEffect(() => {
           aiControlsRef.current = aiControls;
         }, [aiControls]);
+        const [showAiLine, setShowAiLine] = useState(() => loadStoredLineVisibility());
+        const showAiLineRef = useRef(showAiLine);
+        useEffect(() => {
+          showAiLineRef.current = showAiLine;
+          try { localStorage.setItem(AI_LINE_VIS_KEY, showAiLine ? "1" : "0"); } catch(_){ }
+        }, [showAiLine]);
         function getCurrentMaxThrottle() {
           const current = aiControlsRef.current;
           if (current && Number.isFinite(current.maxThrottle)) return current.maxThrottle;
@@ -2045,6 +2061,31 @@ const { useEffect, useRef, useState } = React;
             trackData = tctx.getImageData(0, 0, W, H).data;
           }
 
+          function strokeAiRacingLine(ctx, line, options = {}) {
+            if (!ctx || !line || line.length < 2) return;
+            const width = Number.isFinite(options.width) ? options.width : Math.max(2, ROAD_WIDTH * 0.15);
+            const color = options.color || "rgba(96,165,250,0.85)";
+            const dash = options.dash || [36, 24];
+            const alpha = Number.isFinite(options.alpha) ? options.alpha : 0.9;
+            const close = options.close !== false;
+            ctx.save();
+            ctx.lineWidth = width;
+            ctx.strokeStyle = color;
+            ctx.globalAlpha = alpha;
+            ctx.lineJoin = "round";
+            ctx.lineCap = "round";
+            if (dash && dash.length) ctx.setLineDash(dash);
+            ctx.beginPath();
+            for (let i = 0; i < line.length; i++) {
+              const node = line[i];
+              if (!node) continue;
+              if (i === 0) ctx.moveTo(node.x, node.y); else ctx.lineTo(node.x, node.y);
+            }
+            if (close) ctx.closePath();
+            ctx.stroke();
+            ctx.restore();
+          }
+
           function buildTrackSurfaceCanvas() {
             const LIMIT = 4096;
             const TARGET_PPM = 4;
@@ -2961,6 +3002,14 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               ctx.restore();
             }
 
+            if (showAiLineRef.current && racingLine && racingLine.length > 1) {
+              strokeAiRacingLine(ctx, racingLine, {
+                width: Math.max(2, ROAD_WIDTH * 0.12),
+                dash: [28, 18],
+                alpha: 0.8
+              });
+            }
+
             // Skids and labels
             drawSkids(ctx);
             ctx.fillStyle = "#e0f2f1"; ctx.font = "12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto";
@@ -3072,6 +3121,21 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               ctx.save(); ctx.beginPath(); ctx.rect(x+2,y+2,mw-4,mh-4); ctx.clip();
               ctx.lineWidth = Math.max(1, ROAD_WIDTH*0.12*s);
               ctx.strokeStyle = "#9aa5b1"; ctx.beginPath(); for (let i=0;i<centerline.length;i++){ const p=centerline[i]; const px=p.x*s+ox, py=p.y*s+oy; if(i===0)ctx.moveTo(px,py); else ctx.lineTo(px,py);} ctx.stroke();
+              if (showAiLineRef.current && racingLine && racingLine.length > 1) {
+                ctx.strokeStyle = "rgba(96,165,250,0.9)";
+                ctx.lineWidth = Math.max(1, ROAD_WIDTH*0.08*s);
+                ctx.setLineDash([8, 6]);
+                ctx.beginPath();
+                for (let i=0;i<racingLine.length;i++){
+                  const node = racingLine[i];
+                  const lx = node.x*s+ox;
+                  const ly = node.y*s+oy;
+                  if(i===0)ctx.moveTo(lx,ly); else ctx.lineTo(lx,ly);
+                }
+                ctx.closePath();
+                ctx.stroke();
+                ctx.setLineDash([]);
+              }
               // cars
               function dot(col, px,py){ ctx.fillStyle=col; ctx.beginPath(); ctx.arc(px,py,3,0,Math.PI*2); ctx.fill(); }
               const ppx = player.x*s+ox, ppy = player.y*s+oy; dot('#e53935', ppx, ppy);
@@ -3758,6 +3822,16 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                     <option key={key} value={key}>{key.charAt(0).toUpperCase() + key.slice(1)}</option>
                   ))}
                 </select>
+              </label>
+              <label title="Show or hide the path AI cars are targeting.">
+                <span>Show racing line</span>
+                <div className="field" style={{ justifyContent: "flex-end" }}>
+                  <input
+                    type="checkbox"
+                    checked={showAiLine}
+                    onChange={(e) => setShowAiLine(e.target.checked)}
+                  />
+                </div>
               </label>
               <label title={getAiControlDescription("apexAggression")}>
                 <span>Apex aggression</span>
