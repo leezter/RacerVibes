@@ -317,10 +317,10 @@ const { useEffect, useRef, useState } = React;
         } catch (e) { return "Le Mans"; }
       }
       const CarProfiles = {
-        "F1":    { width: 18, length: 44, maxK: 1.18, accelK: 1.10, brakeK: 1.05, turnK: 1.20, color: "#d32f2f" },
-        "GT":    { width: 20, length: 38, maxK: 1.00, accelK: 1.00, brakeK: 1.00, turnK: 1.00, color: "#3949ab" },
-        "Rally": { width: 18, length: 34, maxK: 0.95, accelK: 1.05, brakeK: 1.05, turnK: 1.15, color: "#2e7d32" },
-        "Truck": { width: 29, length: 60, maxK: 0.82, accelK: 0.85, brakeK: 0.90, turnK: 0.70, color: "#f97316" }
+        "F1":    { width: 18, length: 44, colliderWidth: 18, colliderLength: 44, maxK: 1.18, accelK: 1.10, brakeK: 1.05, turnK: 1.20, color: "#d32f2f" },
+        "GT":    { width: 20, length: 38, colliderWidth: 20, colliderLength: 38, maxK: 1.00, accelK: 1.00, brakeK: 1.00, turnK: 1.00, color: "#3949ab" },
+        "Rally": { width: 18, length: 34, colliderWidth: 18, colliderLength: 34, maxK: 0.95, accelK: 1.05, brakeK: 1.05, turnK: 1.15, color: "#2e7d32" },
+        "Truck": { width: 29, length: 60, colliderWidth: 29, colliderLength: 60, maxK: 0.82, accelK: 0.85, brakeK: 0.90, turnK: 0.70, color: "#f97316" }
       };
 
       const spriteAssets = {};
@@ -337,6 +337,24 @@ const { useEffect, useRef, useState } = React;
 
       const truckSprite = loadSpriteAsset("truck", "assets/vehicles/truck_orange.png");
       const truckSpriteMeta = { sx: 408, sy: 73, sw: 357, sh: 744 };
+      const COLLIDER_VIS_STORAGE_KEY = "vehicleColliderOverlay";
+      function readColliderOverlaySetting() {
+        try {
+          return localStorage.getItem(COLLIDER_VIS_STORAGE_KEY) === '1';
+        } catch (_) {
+          return false;
+        }
+      }
+      function persistColliderOverlaySetting(value) {
+        try { localStorage.setItem(COLLIDER_VIS_STORAGE_KEY, value ? '1' : '0'); } catch (_) {}
+      }
+      let colliderOverlayEnabled = readColliderOverlaySetting();
+      function setColliderOverlayEnabled(next) {
+        const enabled = !!next;
+        if (enabled === colliderOverlayEnabled) return;
+        colliderOverlayEnabled = enabled;
+        persistColliderOverlaySetting(enabled);
+      }
       const clipperSprite = loadSpriteAsset("clipper", "assets/vehicles/ClipperGT.png");
       function getInitialCar() {
         if (START_PAYLOAD && typeof START_PAYLOAD.car === 'string' && CarProfiles[START_PAYLOAD.car]) {
@@ -1636,10 +1654,12 @@ const { useEffect, useRef, useState } = React;
           function makeCar({ x, y, angle, color, kind = 'GT', steeringMode }) {
             const prof = CarProfiles[kind] || CarProfiles.GT;
             const width = prof.width, length = prof.length;
+            const colliderWidth = prof.colliderWidth ?? width;
+            const colliderLength = prof.colliderLength ?? length;
             const stats = { maxK: prof.maxK, accelK: prof.accelK, brakeK: prof.brakeK, turnK: prof.turnK };
             if (!color) color = prof.color;
             const mode = steeringMode === "touch" ? "touch" : "manual";
-            const car = { x, y, angle, speed: 0, width, length, color, kind, stats,
+            const car = { x, y, angle, speed: 0, width, length, colliderWidth, colliderLength, color, kind, stats,
                           lap: 0, lastCross: 0, bestLap: null, lapStart: performance.now(),
                           vx: 0, vy: 0, targetIndex: 0, speedBias: 0,
                           steerVis: 0, skidLPrev: null, skidRPrev: null, steeringMode: mode,
@@ -2542,7 +2562,19 @@ const { useEffect, useRef, useState } = React;
           }
 
           // ===== Rendering =====
-          
+
+          function getColliderHull(car) {
+            if (!car) return { width: 0, length: 0 };
+            const hull = car.physics && car.physics.colliderHull;
+            const width = Number.isFinite(hull?.width)
+              ? hull.width
+              : (car.colliderWidth ?? car.width ?? 18);
+            const length = Number.isFinite(hull?.length)
+              ? hull.length
+              : (car.colliderLength ?? car.length ?? 36);
+            return { width, length };
+          }
+
 // ===== Car rendering (detailed) =====
 // ===== Car rendering (per-vehicle models) =====
 // ===== Car rendering (distinct per-vehicle models) =====
@@ -2604,6 +2636,28 @@ function drawCarDetailed(ctx, car){
     ctx.save(); ctx.globalAlpha = brakeGlow; ctx.fillStyle = '#ff3b3b';
     roundRectLocal(-W*0.34,  L*0.46, W*0.24, L*0.04, 2); ctx.fill();
     roundRectLocal( W*0.10,  L*0.46, W*0.24, L*0.04, 2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawColliderOverlay(){
+    if (!colliderOverlayEnabled) return;
+    const hull = getColliderHull(car);
+    const cW = hull.width;
+    const cL = hull.length;
+    if (!cW || !cL) return;
+    const clampSize = (value, min, max) => Math.max(min, Math.min(max, value));
+    const w = clampSize(cW, 4, 200);
+    const l = clampSize(cL, 8, 260);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(64,196,255,0.95)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    roundRectLocal(-w/2, -l/2, w, l, 6);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(64,196,255,0.14)';
+    roundRectLocal(-w/2, -l/2, w, l, 6);
+    ctx.fill();
     ctx.restore();
   }
 
@@ -2784,6 +2838,8 @@ function drawCarDetailed(ctx, car){
     case 'Rally': drawRally(); break;
     default:      drawGT();    break;
   }
+
+  drawColliderOverlay();
 
   ctx.restore();
 }
@@ -3164,8 +3220,10 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
             for (let i = 0; i < all.length; i++) {
               for (let j = i+1; j < all.length; j++) {
                 const a = all[i], b = all[j];
-                const ra = Math.hypot((a.length||36)/2, (a.width||18)/2);
-                const rb = Math.hypot((b.length||36)/2, (b.width||18)/2);
+                const hullA = getColliderHull(a);
+                const hullB = getColliderHull(b);
+                const ra = Math.hypot((hullA.length || 36)/2, (hullA.width || 18)/2);
+                const rb = Math.hypot((hullB.length || 36)/2, (hullB.width || 18)/2);
                 const dx = b.x - a.x, dy = b.y - a.y;
                 const dist = Math.hypot(dx, dy) || 1e-6;
                 const minDist = ra + rb;
@@ -3380,6 +3438,40 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                     };
                     applyDims(player);
                     if (Array.isArray(aiCars)) aiCars.forEach(applyDims);
+                  },
+                  getColliderDimensions: (kind) => {
+                    const prof = CarProfiles[kind];
+                    if (!prof) return null;
+                    return {
+                      width: prof.colliderWidth ?? prof.width,
+                      length: prof.colliderLength ?? prof.length
+                    };
+                  },
+                  setColliderDimensions: (kind, dims) => {
+                    if (!kind || !CarProfiles[kind] || !dims) return;
+                    const profile = CarProfiles[kind];
+                    const width = Math.max(10, Math.min(80, Number(dims.width) || profile.colliderWidth || profile.width));
+                    const length = Math.max(30, Math.min(140, Number(dims.length) || profile.colliderLength || profile.length));
+                    profile.colliderWidth = width;
+                    profile.colliderLength = length;
+                    const applyCollider = (car) => {
+                      if (!car || car.kind !== kind) return;
+                      car.colliderWidth = width;
+                      car.colliderLength = length;
+                      if (car.physics && car.physics.params) {
+                        const mass = car.physics.params.mass || 1;
+                        car.physics.Izz = mass * (length * length + width * width) / 12;
+                      }
+                    };
+                    applyCollider(player);
+                    if (Array.isArray(aiCars)) aiCars.forEach(applyCollider);
+                    if (window.RacerPhysics && typeof window.RacerPhysics.forcePlanckRefresh === 'function') {
+                      window.RacerPhysics.forcePlanckRefresh(kind);
+                    }
+                  },
+                  getColliderVisibility: () => colliderOverlayEnabled,
+                  setColliderVisibility: (enabled) => {
+                    setColliderOverlayEnabled(!!enabled);
                   }
                 };
                 window.RacerPhysics.injectVehicleTweaker(bridge, getCars);

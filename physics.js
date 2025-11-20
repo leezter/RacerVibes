@@ -211,6 +211,23 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     return mass * (length*length + width*width) / 12;
   }
 
+  function recordColliderHull(car, widthPx, lengthPx){
+    if (!car) return;
+    const resolvedWidth = Number.isFinite(widthPx)
+      ? widthPx
+      : (car.colliderWidth || car.width || 18);
+    const resolvedLength = Number.isFinite(lengthPx)
+      ? lengthPx
+      : (car.colliderLength || car.length || 36);
+    if (!car.physics) car.physics = {};
+    car.physics.colliderHull = {
+      width: resolvedWidth,
+      length: resolvedLength
+    };
+  }
+
+  let sharedPlanckRefresh = null;
+
   function injectVehicleTweaker(bridge = {}, getCars){
     if (document.getElementById('rv-vehicle-tweaker')) return;
     ensureDevPanelStyles();
@@ -221,8 +238,13 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     if (!kinds.length) return;
     const artState = {};
     const artDefaults = {};
+    const colliderState = {};
+    const colliderDefaults = {};
     const fetchArt = typeof bridge.getArtDimensions === 'function'
       ? bridge.getArtDimensions
+      : (() => null);
+    const fetchCollider = typeof bridge.getColliderDimensions === 'function'
+      ? bridge.getColliderDimensions
       : (() => null);
     for (const kind of kinds) {
       const dims = fetchArt(kind) || {};
@@ -230,13 +252,24 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       const length = Number.isFinite(dims.length) ? dims.length : 50;
       artState[kind] = { width, length };
       artDefaults[kind] = { width, length };
+      const colliderDims = fetchCollider(kind) || {};
+      const colliderWidth = Number.isFinite(colliderDims.width) ? colliderDims.width : width;
+      const colliderLength = Number.isFinite(colliderDims.length) ? colliderDims.length : length;
+      colliderState[kind] = { width: colliderWidth, length: colliderLength };
+      colliderDefaults[kind] = { width: colliderWidth, length: colliderLength };
     }
     const physDefaults = JSON.parse(JSON.stringify(VEHICLE_DEFAULTS));
+    let colliderVisible = typeof bridge.getColliderVisibility === 'function'
+      ? !!bridge.getColliderVisibility()
+      : false;
     const DESCRIPTIONS = {
       vehSelect: 'Choose a vehicle preset or Global to affect all presets.',
       lockAspect: 'When enabled, changing length keeps the sprite width/length ratio.',
       artWidth: 'Sprite/collision width in pixels. Larger values make the car visually wider.',
       artLength: 'Sprite/collision length in pixels. Larger values make the car visually longer.',
+      colliderWidth: 'Physics collider width (px). Larger values expand the contact patch.',
+      colliderLength: 'Physics collider length (px). Longer values extend the hitbox forward/back.',
+      colliderVisible: 'Toggle a debug overlay that renders each vehicle collider.',
       wheelbase: 'Distance between axles (px). Influences stability and weight transfer.',
       cgFront: 'Distance from the CG to the front axle. Adjust for balance on braking.',
       cgRear: 'Distance from the CG to the rear axle. Adjust for traction on throttle.',
@@ -265,6 +298,12 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
           <div class="rv-row"><label for="rv-veh-length"><span${tipAttr('artLength')}>Length (px)</span></label><input id="rv-veh-length" type="range" min="30" max="140" step="1"><div class="val" id="rv-veh-length-v"></div></div>
         </div>
         <div class="rv-section vehicle">
+          <h4>Collider</h4>
+          <div class="rv-row"><label for="rv-veh-colw"><span${tipAttr('colliderWidth')}>Width (px)</span></label><input id="rv-veh-colw" type="range" min="10" max="80" step="1"><div class="val" id="rv-veh-colw-v"></div></div>
+          <div class="rv-row"><label for="rv-veh-coll"><span${tipAttr('colliderLength')}>Length (px)</span></label><input id="rv-veh-coll" type="range" min="30" max="140" step="1"><div class="val" id="rv-veh-coll-v"></div></div>
+          <div class="rv-row"><label for="rv-veh-colshow"><span${tipAttr('colliderVisible')}>Show collider</span></label><input type="checkbox" id="rv-veh-colshow"></div>
+        </div>
+        <div class="rv-section vehicle">
           <h4>Physics Footprint</h4>
           <div class="rv-row"><label for="rv-veh-wheel"><span${tipAttr('wheelbase')}>Wheelbase</span></label><input id="rv-veh-wheel" type="range" min="20" max="140" step="1"><div class="val" id="rv-veh-wheel-v"></div></div>
           <div class="rv-row"><label for="rv-veh-cgf"><span${tipAttr('cgFront')}>CG → front</span></label><input id="rv-veh-cgf" type="range" min="5" max="120" step="1"><div class="val" id="rv-veh-cgf-v"></div></div>
@@ -286,6 +325,11 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       widthVal: document.getElementById('rv-veh-width-v'),
       length: document.getElementById('rv-veh-length'),
       lengthVal: document.getElementById('rv-veh-length-v'),
+        colWidth: document.getElementById('rv-veh-colw'),
+        colWidthVal: document.getElementById('rv-veh-colw-v'),
+        colLength: document.getElementById('rv-veh-coll'),
+        colLengthVal: document.getElementById('rv-veh-coll-v'),
+        colShow: document.getElementById('rv-veh-colshow'),
       wheel: document.getElementById('rv-veh-wheel'),
       wheelVal: document.getElementById('rv-veh-wheel-v'),
       cgf: document.getElementById('rv-veh-cgf'),
@@ -310,6 +354,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     function refreshFields(){
       const anchor = anchorKind();
       const art = artState[anchor];
+      const collider = colliderState[anchor];
       const phys = VEHICLE_DEFAULTS[anchor];
       if (art) {
         if (els.width) {
@@ -320,6 +365,19 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
           els.length.value = art.length;
           if (els.lengthVal) els.lengthVal.textContent = `${Math.round(art.length)}`;
         }
+      }
+      if (collider) {
+        if (els.colWidth) {
+          els.colWidth.value = collider.width;
+          if (els.colWidthVal) els.colWidthVal.textContent = `${Math.round(collider.width)}`;
+        }
+        if (els.colLength) {
+          els.colLength.value = collider.length;
+          if (els.colLengthVal) els.colLengthVal.textContent = `${Math.round(collider.length)}`;
+        }
+      }
+      if (els.colShow) {
+        els.colShow.checked = !!colliderVisible;
       }
       if (phys) {
         if (els.wheel) {
@@ -358,15 +416,20 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
           car.physics.a = base.cgToFront;
           car.physics.b = base.cgToRear;
           const art = artState[car.kind];
+          const collider = colliderState[car.kind];
           const mass = car.physics.params.mass || base.mass || 1;
-          const Lpx = Number.isFinite(car.length) ? car.length : (art ? art.length : 50);
-          const Wpx = Number.isFinite(car.width) ? car.width : (art ? art.width : 20);
+          const Lpx = Number.isFinite(car.colliderLength) ? car.colliderLength
+            : (collider ? collider.length : Number.isFinite(car.length) ? car.length : (art ? art.length : 50));
+          const Wpx = Number.isFinite(car.colliderWidth) ? car.colliderWidth
+            : (collider ? collider.width : Number.isFinite(car.width) ? car.width : (art ? art.width : 20));
+          recordColliderHull(car, Wpx, Lpx);
           car.physics.Izz = inferIzz(mass, Lpx, Wpx);
         }
         removePlanckBody(car);
       }
       registerPlanckCars(cars);
     }
+      sharedPlanckRefresh = refreshActiveCarPhysics;
 
     function applyArtChange(prop, value, opts = {}){
       const targets = targetKinds();
@@ -391,6 +454,33 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       if (changed) {
         refreshActiveCarPhysics(targets);
         refreshFields();
+      }
+    }
+
+    function applyColliderChange(prop, value){
+      const targets = targetKinds();
+      let changed = false;
+      for (const kind of targets) {
+        const entry = colliderState[kind];
+        if (!entry) continue;
+        entry[prop] = value;
+        if (typeof bridge.setColliderDimensions === 'function') {
+          bridge.setColliderDimensions(kind, { ...entry });
+        }
+        changed = true;
+      }
+      if (changed) {
+        refreshActiveCarPhysics(targets);
+        refreshFields();
+      }
+    }
+
+    function applyColliderVisibilityChange(next){
+      const enabled = !!next;
+      colliderVisible = enabled;
+      if (els.colShow) els.colShow.checked = enabled;
+      if (typeof bridge.setColliderVisibility === 'function') {
+        bridge.setColliderVisibility(enabled);
       }
     }
 
@@ -426,6 +516,12 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
             bridge.setArtDimensions(kind, { ...artState[kind] });
           }
         }
+        if (colliderDefaults[kind]) {
+          colliderState[kind] = { ...colliderDefaults[kind] };
+          if (typeof bridge.setColliderDimensions === 'function') {
+            bridge.setColliderDimensions(kind, { ...colliderState[kind] });
+          }
+        }
         if (physDefaults[kind]) {
           VEHICLE_DEFAULTS[kind].wheelbase = physDefaults[kind].wheelbase;
           VEHICLE_DEFAULTS[kind].cgToFront = physDefaults[kind].cgToFront;
@@ -457,6 +553,23 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
         applyArtChange('length', v, { lockAspect: !!(els.lock && els.lock.checked) });
       });
     }
+    if (els.colWidth) {
+      els.colWidth.addEventListener('input', ()=>{
+        const v = clamp(+els.colWidth.value || 0, 10, 80);
+        applyColliderChange('width', v);
+      });
+    }
+    if (els.colLength) {
+      els.colLength.addEventListener('input', ()=>{
+        const v = clamp(+els.colLength.value || 0, 30, 140);
+        applyColliderChange('length', v);
+      });
+    }
+    if (els.colShow) {
+      els.colShow.addEventListener('change', ()=>{
+        applyColliderVisibilityChange(!!els.colShow.checked);
+      });
+    }
     if (els.wheel) {
       els.wheel.addEventListener('input', ()=>{
         const v = clamp(+els.wheel.value || 0, 20, 140);
@@ -481,6 +594,12 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     });
 
     refreshFields();
+  }
+
+  function forcePlanckRefresh(kinds){
+    if (!sharedPlanckRefresh) return;
+    const list = Array.isArray(kinds) ? kinds : [kinds];
+    sharedPlanckRefresh(list);
   }
 
   // -- Reverse stability knobs (single source of truth) --
@@ -795,13 +914,18 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     const pl = window.planck;
     if (!world || !car || !pl) return null;
     const ppm = ppmOverride || planckState.ppm || PPM_DEFAULT;
-    const widthPx = car.width || (car.dim && car.dim.widthPx) || 18;
-    const lengthPx = car.length || (car.dim && car.dim.lengthPx) || 36;
-  const w = meters(widthPx, ppm);
-  const h = meters(lengthPx, ppm);
-  const desiredMass = (P && typeof P.mass === 'number') ? Math.max(0.01, P.mass) : 1.0;
-  const area = Math.max(1e-6, w * h);
-  const density = desiredMass / area;
+    const visualWidthPx = car.width || (car.dim && car.dim.widthPx) || 18;
+    const visualLengthPx = car.length || (car.dim && car.dim.lengthPx) || 36;
+    const colliderWidthPx = car.colliderWidth || visualWidthPx;
+    const colliderLengthPx = car.colliderLength || visualLengthPx;
+    recordColliderHull(car, colliderWidthPx, colliderLengthPx);
+    const lengthMeters = meters(colliderLengthPx, ppm);
+    const widthMeters = meters(colliderWidthPx, ppm);
+    const halfLength = Math.max(0.01, lengthMeters * 0.5);
+    const halfWidth  = Math.max(0.01, widthMeters  * 0.5);
+    const desiredMass = (P && typeof P.mass === 'number') ? Math.max(0.01, P.mass) : 1.0;
+    const area = Math.max(1e-6, lengthMeters * widthMeters);
+    const density = desiredMass / area;
     const body = world.createBody({
       type: 'dynamic',
       position: pl.Vec2(meters(car.x || 0, ppm), meters(car.y || 0, ppm)),
@@ -811,7 +935,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       bullet: true,
       allowSleep: P && typeof P.planckDoSleep === 'boolean' ? P.planckDoSleep : planckState.doSleep
     });
-    const shape = pl.Box(Math.max(0.01, w * 0.5), Math.max(0.01, h * 0.5));
+    const shape = pl.Box(halfLength, halfWidth);
     body.createFixture(shape, {
       density,
       friction: 0.45,
@@ -937,7 +1061,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     };
   const params = { ...PLANCK_DEFAULTS, ...base, touchSteer: touchSteerDefaults };
     // If the art length/width differs, adapt wheelbase slightly to fit
-    const Lpx = (car.length || 36); const Wpx = (car.width || 18);
+    const Lpx = car.colliderLength || car.length || 36;
+    const Wpx = car.colliderWidth || car.width || 18;
     // Keep cg distances proportional to given wheelbase
     const scale = params.wheelbase / Math.max(1, (params.cgToFront + params.cgToRear));
     const a = params.cgToFront, b = params.cgToRear; // already sum to wheelbase
@@ -955,6 +1080,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       skid: 0,            // last computed skid intensity 0..1
       planckBody: null
     };
+    recordColliderHull(car, Wpx, Lpx);
     if (!car.gearbox) {
       car.gearbox = new Gearbox(gearboxDefaults);
     }
@@ -1018,7 +1144,9 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     } else if (car.physics.planckBody) {
       removePlanckBody(car);
     }
-    const Izz = car.physics.Izz || inferIzz(P.mass, car.length||36, car.width||18);
+    const inertiaLength = car.colliderLength || car.length || 36;
+    const inertiaWidth = car.colliderWidth || car.width || 18;
+    const Izz = car.physics.Izz || inferIzz(P.mass, inertiaLength, inertiaWidth);
     const a = car.physics.a, b = car.physics.b, L=a+b;
     const onRoad = surface && surface.onRoad !== false;
     const muLat = onRoad ? P.muLatRoad : P.muLatGrass;
@@ -2548,6 +2676,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     planckBeginStep,
     planckStep,
     usesPlanckWorld,
+    forcePlanckRefresh,
     defaults: VEHICLE_DEFAULTS
   };
   window.RacerPhysics = API;
