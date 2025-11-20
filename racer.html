@@ -337,6 +337,7 @@ const { useEffect, useRef, useState } = React;
 
       const truckSprite = loadSpriteAsset("truck", "assets/vehicles/truck_orange.png");
       const truckSpriteMeta = { sx: 408, sy: 73, sw: 357, sh: 744 };
+      const clipperSprite = loadSpriteAsset("clipper", "assets/vehicles/ClipperGT.png");
       function getInitialCar() {
         if (START_PAYLOAD && typeof START_PAYLOAD.car === 'string' && CarProfiles[START_PAYLOAD.car]) {
           return START_PAYLOAD.car;
@@ -2552,6 +2553,7 @@ function drawCarDetailed(ctx, car){
 
   const L = car.length, W = car.width;
   const steerAngle = (car.steerVis || 0) * 0.45;
+  const clipperReady = car.kind === 'GT' && canRenderClipperSprite();
 
   // Helpers
   function roundRectLocal(x,y,w,h,r){
@@ -2581,7 +2583,7 @@ function drawCarDetailed(ctx, car){
   }
 
   // Shadow (skip for sprite-based trucks that include baked shading)
-  if (car.kind !== 'Truck') {
+  if (!(car.kind === 'Truck' || clipperReady)) {
     ctx.save();
     ctx.globalAlpha = 0.28;
     ctx.fillStyle = '#000';
@@ -2607,6 +2609,7 @@ function drawCarDetailed(ctx, car){
 
   // === Distinct models ===
   function drawGT(){
+    if (drawClipperSprite()) return;
     // Wide, low silhouette with big rear wing and twin stripes
     ctx.fillStyle = gradBody(car.color || '#f59e0b'); // warm GT tone by default
     roundRectLocal(-W/2, -L/2, W, L, Math.min(W,L)*0.22); ctx.fill();
@@ -2692,6 +2695,24 @@ function drawCarDetailed(ctx, car){
     wheel(-t, axY, 0, ww, ll); wheel(t, axY, 0, ww, ll);
     wheel(-t,-axY, steerAngle, ww, ll); wheel(t,-axY, steerAngle, ww, ll);
     // No body over the wheels -> silhouette reads F1 at a glance
+  }
+
+  function canRenderClipperSprite(){
+    const img = clipperSprite;
+    return !!(img && img.complete && img.naturalWidth && img.naturalHeight);
+  }
+
+  function drawClipperSprite(){
+    const img = clipperSprite;
+    if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return false;
+    const drawLength = L;
+    const aspect = img.naturalWidth / img.naturalHeight;
+    const drawWidth = drawLength * aspect;
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(img, -drawWidth/2, -drawLength/2, drawWidth, drawLength);
+    ctx.restore();
+    return true;
   }
 
   function drawTruck(){
