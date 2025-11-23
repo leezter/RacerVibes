@@ -5,7 +5,7 @@
 
   const DEFAULT_LINE_CFG = {
     sampleStep: 6,
-    smoothingPasses: 2,
+    smoothingPasses: 5,
     apexAggression: 0.0,
     maxOffset: 0.65,
     minRadius: 12,

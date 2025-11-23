@@ -2083,6 +2083,18 @@ const { useEffect, useRef, useState } = React;
             }
             if (close) ctx.closePath();
             ctx.stroke();
+            
+            // Direction indicators (dots)
+            ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+            ctx.setLineDash([]);
+            for (let i = 0; i < line.length; i += 8) {
+              const node = line[i];
+              if (!node) continue;
+              ctx.beginPath();
+              ctx.arc(node.x, node.y, width * 0.4, 0, Math.PI * 2);
+              ctx.fill();
+            }
+
             ctx.restore();
           }
 

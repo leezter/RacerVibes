@@ -497,6 +497,11 @@
     if (this.state.pointerId !== e.pointerId) return;
     const pos = this.getCanvasPos(e);
     if (this.state.tool === "pen" && this.state.isDrawing) {
+      // Filter jitter: only add point if far enough from last point
+      if (this.state.points.length > 0) {
+        const last = this.state.points[this.state.points.length - 1];
+        if (distance(last, pos) < SAMPLING_SPACING) return;
+      }
       this.addPoint(pos, false);
       this.render();
     } else if (this.state.tool === "erase" && e.buttons) {
