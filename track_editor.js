@@ -514,7 +514,27 @@
     if (this.state.pointerId !== e.pointerId) return;
     if (this.state.tool === "pen" && this.state.isDrawing) {
       this.state.isDrawing = false;
+
+      // --- Post-processing to fix "wobbly" tracks ---
+      if (this.state.points.length > 10) {
+        // 1. Simplify: Remove points that don't add shape (Ramer-Douglas-Peucker)
+        // Tolerance of 2.0 removes micro-jitters
+        this.state.points = simplifyPath(this.state.points, 2.0);
+        
+        // 2. Resample: Force even spacing before smoothing (critical for quality)
+        this.state.points = resamplePath(this.state.points, 20);
+
+        // 3. Smooth: Apply multiple passes of averaging (Chaikin/Gaussian)
+        // 4 passes makes it very smooth
+        this.state.points = smoothPath(this.state.points, 4);
+        
+        // 4. Ensure the loop is closed cleanly if near start
+        this.state.points = ensureClosed(this.state.points, 24);
+      }
+      // ---------------------------------------------------
+
       this.pushHistory();
+      this.render();
     }
     this.state.pointerId = null;
   };

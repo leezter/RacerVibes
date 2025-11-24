@@ -36,8 +36,8 @@
       brakeAggro: 0.9,
       steerP: 2.1,
       steerD: 0.1,
-      lookaheadBase: 55,
-      lookaheadSpeed: 0.32,
+      lookaheadBase: 40,
+      lookaheadSpeed: 0.25,
       cornerMargin: 22,
       steerCutThrottle: 0.3,
       searchWindow: 56,
@@ -50,8 +50,8 @@
       brakeAggro: 0.62,
       steerP: 3.2,
       steerD: 0.16,
-      lookaheadBase: 140,
-      lookaheadSpeed: 0.7,
+      lookaheadBase: 80,
+      lookaheadSpeed: 0.5,
       cornerMargin: 0,
       steerCutThrottle: 0.18,
       searchWindow: 64,
@@ -117,31 +117,129 @@
   function buildRacingLine(centerline, roadWidth, options = {}) {
     if (!Array.isArray(centerline) || centerline.length < 3) return [];
     const cfg = { ...DEFAULT_LINE_CFG, ...options };
-    const dense = smooth(resample(centerline, cfg.sampleStep), cfg.smoothingPasses);
-    const halfWidth = roadWidth * 0.5;
+
+    // 1. Resample centerline to fixed steps for stability
+    // A step of ~20-30 creates a nice flowing line
+    const step = 25; 
+    const points = resample(centerline, step);
+    const n = points.length;
+    if (n < 3) return points;
+
+    // 2. Calculate "Virtual Center" (Outside Hugging Path)
+    // We shift the centerline points to the outside of the turn based on curvature.
+    // This creates an "attractor" path that encourages the line to stay wide on entry/exit.
+    const curvatureMap = new Float32Array(n);
+    const virtualCenter = points.map((p, i) => {
+      const prev = points[(i - 1 + n) % n];
+      const next = points[(i + 1) % n];
+      const c = signedCurvature(prev, p, next);
+      curvatureMap[i] = Math.abs(c);
+      
+      // Calculate normal
+      const dx = next.x - prev.x;
+      const dy = next.y - prev.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len;
+      const ny = dx / len;
+      
+      // Shift to outside: -Sign(Curvature)
+      // If curvature is positive (Left turn), Normal is Left. We want Right (Outside).
+      // So -1 * Normal.
+      // Magnitude: Use a significant portion of the track width (e.g. 45%)
+      const shift = -Math.sign(c) * (roadWidth * 0.45);
+      
+      return {
+        x: p.x + nx * shift,
+        y: p.y + ny * shift
+      };
+    });
+
+    // Initialize racing line as the Virtual Center (Outside)
+    // This gives the solver a "wide" starting guess.
+    const path = virtualCenter.map(p => ({ x: p.x, y: p.y }));
+    
+    // 3. "Elastic Band" Iteration
+    // We try to straighten the line (zero curvature) while keeping it on track.
+    const iterations = 100; 
+    
+    // Calculate limit based on AI settings
+    const halfWidth = roadWidth / 2;
+    const maxOff = (cfg.maxOffset !== undefined) ? cfg.maxOffset : 0.65;
+    const aggression = (cfg.apexAggression !== undefined) ? cfg.apexAggression : 0.5;
+
+    // Limit: How close to the edge can we go?
+    const limit = halfWidth * maxOff;
+    const limitSq = limit * limit;
+
+    // Tension Base:
+    // High aggression -> Higher tension (cuts corners more tightly).
+    // Range: 0.96 (Loose) to 0.99 (Tight)
+    const baseAlpha = 0.96 + (0.03 * aggression);
+
+    for (let iter = 0; iter < iterations; iter++) {
+      for (let i = 0; i < n; i++) {
+        const prev = path[(i - 1 + n) % n];
+        const next = path[(i + 1) % n];
+        const curr = path[i];
+        const center = points[i]; // The original center point
+        const attractor = virtualCenter[i];
+        const cMag = curvatureMap[i];
+
+        // Calculate the "straightest" position (midpoint of neighbors)
+        const targetX = (prev.x + next.x) / 2;
+        const targetY = (prev.y + next.y) / 2;
+
+        // Dynamic Weighting:
+        // If curvature is high (Apex), we ignore the Attractor (Outside) and use Pure Tension (Inside).
+        // If curvature is low (Entry/Exit), we allow the Attractor to pull us Outside.
+        // curveFactor: 0 (Straight) -> 1 (Tight Turn)
+        // Radius 100px => c=0.01. We want this to be significant.
+        const curveFactor = Math.min(1, cMag * 100); 
+        
+        // Mix: When curveFactor is 1, we use 1.0 (Pure Tension).
+        // When curveFactor is 0, we use baseAlpha (Some Attractor).
+        const mix = baseAlpha + (1.0 - baseAlpha) * curveFactor;
+
+        // Move current point towards target (Tension) mixed with Attractor
+        let newX = targetX * mix + attractor.x * (1 - mix);
+        let newY = targetY * mix + attractor.y * (1 - mix);
+
+        // Constraint: Clamp point to stay within track width (Real limits)
+        const dx = newX - center.x;
+        const dy = newY - center.y;
+        const distSq = dx*dx + dy*dy;
+
+        if (distSq > limitSq) {
+          const dist = Math.sqrt(distSq);
+          const ratio = limit / dist;
+          newX = center.x + dx * ratio;
+          newY = center.y + dy * ratio;
+        }
+
+        path[i].x = newX;
+        path[i].y = newY;
+      }
+    }
+
+    // 4. Calculate metadata (speed, curvature, etc.) for the new path
     const g = cfg.gravity;
     let arc = 0;
-    return dense.map((pt, idx) => {
-      const prev = dense[(idx - 1 + dense.length) % dense.length];
-      const next = dense[(idx + 1) % dense.length];
+    return path.map((pt, idx) => {
+      const prev = path[(idx - 1 + n) % n];
+      const next = path[(idx + 1) % n];
       const segLen = Math.hypot(next.x - pt.x, next.y - pt.y) || 1;
       arc += segLen;
       const tangent = { x: (next.x - pt.x) / segLen, y: (next.y - pt.y) / segLen };
       const normal = { x: -tangent.y, y: tangent.x };
       const curvature = signedCurvature(prev, pt, next);
-      const curvatureMag = Math.abs(curvature);
-      const offsetRatio = clamp(curvatureMag * halfWidth * cfg.apexAggression, 0, cfg.maxOffset);
-      const apexOffset = Math.sign(curvature || 0) * offsetRatio * halfWidth;
-      const rx = pt.x + normal.x * apexOffset;
-      const ry = pt.y + normal.y * apexOffset;
       const radiusPx = Math.max(cfg.minRadius, Math.abs(1 / (curvature || 1e-4)));
       const rawSpeed = Math.sqrt(Math.max(0, cfg.roadFriction * g * radiusPx));
       const targetSpeed = clamp(rawSpeed, cfg.cornerSpeedFloor, cfg.straightSpeed);
       return {
         index: idx,
         s: arc,
-        x: rx,
-        y: ry,
+        x: pt.x,
+        y: pt.y,
         tangent,
         normal,
         curvature,
