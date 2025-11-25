@@ -119,92 +119,51 @@
     const cfg = { ...DEFAULT_LINE_CFG, ...options };
 
     // 1. Resample centerline to fixed steps for stability
-    // A step of ~20-30 creates a nice flowing line
     const step = 25; 
     const points = resample(centerline, step);
     const n = points.length;
     if (n < 3) return points;
 
-    // 2. Calculate "Virtual Center" (Outside Hugging Path)
-    // We shift the centerline points to the outside of the turn based on curvature.
-    // This creates an "attractor" path that encourages the line to stay wide on entry/exit.
-    const curvatureMap = new Float32Array(n);
-    const virtualCenter = points.map((p, i) => {
-      const prev = points[(i - 1 + n) % n];
-      const next = points[(i + 1) % n];
-      const c = signedCurvature(prev, p, next);
-      curvatureMap[i] = Math.abs(c);
-      
-      // Calculate normal
-      const dx = next.x - prev.x;
-      const dy = next.y - prev.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const nx = -dy / len;
-      const ny = dx / len;
-      
-      // Shift to outside: -Sign(Curvature)
-      // If curvature is positive (Left turn), Normal is Left. We want Right (Outside).
-      // So -1 * Normal.
-      // Magnitude: Use a significant portion of the track width (e.g. 45%)
-      const shift = -Math.sign(c) * (roadWidth * 0.45);
-      
-      return {
-        x: p.x + nx * shift,
-        y: p.y + ny * shift
-      };
-    });
-
-    // Initialize racing line as the Virtual Center (Outside)
-    // This gives the solver a "wide" starting guess.
-    const path = virtualCenter.map(p => ({ x: p.x, y: p.y }));
-    
-    // 3. "Elastic Band" Iteration
-    // We try to straighten the line (zero curvature) while keeping it on track.
-    const iterations = 100; 
-    
-    // Calculate limit based on AI settings
+    // 2. Setup Constraints
     const halfWidth = roadWidth / 2;
     const maxOff = (cfg.maxOffset !== undefined) ? cfg.maxOffset : 0.65;
+    // Allow getting closer to the edge if aggression is high
+    // Aggression 0 -> 0.90 safety margin
+    // Aggression 1 -> 0.98 safety margin
     const aggression = (cfg.apexAggression !== undefined) ? cfg.apexAggression : 0.5;
-
-    // Limit: How close to the edge can we go?
-    const limit = halfWidth * maxOff;
+    const safetyMargin = 0.90 + (0.08 * aggression);
+    const limit = (halfWidth * maxOff) * safetyMargin;
     const limitSq = limit * limit;
 
-    // Tension Base:
-    // High aggression -> Higher tension (cuts corners more tightly).
-    // Range: 0.96 (Loose) to 0.99 (Tight)
-    const baseAlpha = 0.96 + (0.03 * aggression);
+    // Initialize racing line as the centerline
+    // We will iteratively "pull" this string tight.
+    const path = points.map(p => ({ x: p.x, y: p.y }));
+
+    // 3. Iterative Optimization (Shortest Path / String Tightening)
+    // We treat the path as a string and pull it tight (minimize length)
+    // while keeping it constrained within the track width.
+    const iterations = 200; 
+    
+    // "Smoothing" factor: How much we move towards the straight line each step.
+    // Higher = faster convergence but potential instability.
+    const alpha = 0.5; 
 
     for (let iter = 0; iter < iterations; iter++) {
       for (let i = 0; i < n; i++) {
         const prev = path[(i - 1 + n) % n];
         const next = path[(i + 1) % n];
-        const curr = path[i];
-        const center = points[i]; // The original center point
-        const attractor = virtualCenter[i];
-        const cMag = curvatureMap[i];
+        const center = points[i]; // The hard constraint center
 
         // Calculate the "straightest" position (midpoint of neighbors)
+        // This represents the shortest path (zero curvature)
         const targetX = (prev.x + next.x) / 2;
         const targetY = (prev.y + next.y) / 2;
 
-        // Dynamic Weighting:
-        // If curvature is high (Apex), we ignore the Attractor (Outside) and use Pure Tension (Inside).
-        // If curvature is low (Entry/Exit), we allow the Attractor to pull us Outside.
-        // curveFactor: 0 (Straight) -> 1 (Tight Turn)
-        // Radius 100px => c=0.01. We want this to be significant.
-        const curveFactor = Math.min(1, cMag * 100); 
-        
-        // Mix: When curveFactor is 1, we use 1.0 (Pure Tension).
-        // When curveFactor is 0, we use baseAlpha (Some Attractor).
-        const mix = baseAlpha + (1.0 - baseAlpha) * curveFactor;
+        // Move towards target
+        let newX = path[i].x + (targetX - path[i].x) * alpha;
+        let newY = path[i].y + (targetY - path[i].y) * alpha;
 
-        // Move current point towards target (Tension) mixed with Attractor
-        let newX = targetX * mix + attractor.x * (1 - mix);
-        let newY = targetY * mix + attractor.y * (1 - mix);
-
-        // Constraint: Clamp point to stay within track width (Real limits)
+        // Constraint: Clamp point to stay within track width
         const dx = newX - center.x;
         const dy = newY - center.y;
         const distSq = dx*dx + dy*dy;
@@ -221,7 +180,37 @@
       }
     }
 
-    // 4. Calculate metadata (speed, curvature, etc.) for the new path
+    // 4. Post-Smoothing
+    // A few passes of Chaikin/Gaussian to remove any micro-kinks from clamping
+    for (let pass = 0; pass < 4; pass++) {
+        const smoothed = [];
+        for (let i = 0; i < n; i++) {
+            const prev = path[(i - 1 + n) % n];
+            const curr = path[i];
+            const next = path[(i + 1) % n];
+            smoothed.push({
+                x: prev.x * 0.25 + curr.x * 0.5 + next.x * 0.25,
+                y: prev.y * 0.25 + curr.y * 0.5 + next.y * 0.25
+            });
+        }
+        // Re-clamp after smoothing
+        for (let i = 0; i < n; i++) {
+            const p = smoothed[i];
+            const center = points[i];
+            const dx = p.x - center.x;
+            const dy = p.y - center.y;
+            const distSq = dx*dx + dy*dy;
+            if (distSq > limitSq) {
+                const dist = Math.sqrt(distSq);
+                const ratio = limit / dist;
+                p.x = center.x + dx * ratio;
+                p.y = center.y + dy * ratio;
+            }
+            path[i] = p;
+        }
+    }
+
+    // 5. Calculate metadata (speed, curvature, etc.)
     const g = cfg.gravity;
     let arc = 0;
     return path.map((pt, idx) => {

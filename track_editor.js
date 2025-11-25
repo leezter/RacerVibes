@@ -96,6 +96,117 @@
     return pts;
   }
 
+  /**
+   * Aggressive Laplacian smoothing for closed loops.
+   * This is the primary tool for eliminating sharp corners.
+   */
+  function relaxPath(points, iterations = 1, strength = 0.5) {
+    let pts = ensureClosed(points).map(p => ({ x: p.x, y: p.y }));
+    const n = pts.length;
+    if (n < 4) return pts;
+    
+    for (let k = 0; k < iterations; k++) {
+      const next = new Array(n);
+      
+      for (let i = 0; i < n - 1; i++) {
+        const prevIdx = (i - 1 + n - 1) % (n - 1);
+        const nextIdx = (i + 1) % (n - 1);
+        
+        const prev = pts[prevIdx];
+        const curr = pts[i];
+        const nextPt = pts[nextIdx];
+        
+        // Move towards midpoint of neighbors
+        const midX = (prev.x + nextPt.x) / 2;
+        const midY = (prev.y + nextPt.y) / 2;
+        
+        next[i] = {
+          x: curr.x + (midX - curr.x) * strength,
+          y: curr.y + (midY - curr.y) * strength
+        };
+      }
+      next[n - 1] = { ...next[0] }; // Close the loop
+      pts = next;
+    }
+    return pts;
+  }
+
+  /**
+   * Calculate the signed curvature at a point given its neighbors.
+   * Returns: curvature (1/radius). Positive = left turn, negative = right turn.
+   */
+  function calcCurvature(prev, curr, next) {
+    const v1x = curr.x - prev.x;
+    const v1y = curr.y - prev.y;
+    const v2x = next.x - curr.x;
+    const v2y = next.y - curr.y;
+    
+    const cross = v1x * v2y - v1y * v2x;
+    const dot = v1x * v2x + v1y * v2y;
+    const len1 = Math.hypot(v1x, v1y) || 1;
+    const len2 = Math.hypot(v2x, v2y) || 1;
+    
+    // Curvature approximation: angle change / arc length
+    const angle = Math.atan2(cross, dot);
+    const avgLen = (len1 + len2) / 2;
+    
+    return angle / avgLen;
+  }
+
+  /**
+   * Enforce minimum turning radius by iteratively smoothing points
+   * where curvature exceeds the limit (1/minRadius).
+   * This is road-width aware to prevent edge overlap.
+   */
+  function enforceMinimumRadius(points, minRadius, maxIterations = 200) {
+    let pts = ensureClosed(points).map(p => ({ x: p.x, y: p.y }));
+    const n = pts.length;
+    if (n < 4) return pts;
+    
+    const maxCurvature = 1 / minRadius;
+    
+    for (let iter = 0; iter < maxIterations; iter++) {
+      let maxViolation = 0;
+      const next = pts.map(p => ({ x: p.x, y: p.y }));
+      
+      for (let i = 0; i < n - 1; i++) {
+        const prevIdx = (i - 1 + n - 1) % (n - 1);
+        const nextIdx = (i + 1) % (n - 1);
+        
+        const prev = pts[prevIdx];
+        const curr = pts[i];
+        const nextPt = pts[nextIdx];
+        
+        const curvature = Math.abs(calcCurvature(prev, curr, nextPt));
+        
+        if (curvature > maxCurvature) {
+          // This point is too sharp - smooth it more aggressively
+          const violation = curvature / maxCurvature;
+          maxViolation = Math.max(maxViolation, violation);
+          
+          // Blend towards the midpoint of neighbors
+          // More aggressive blend for higher violations
+          const blend = Math.min(0.7, 0.3 * violation);
+          const midX = (prev.x + nextPt.x) / 2;
+          const midY = (prev.y + nextPt.y) / 2;
+          
+          next[i] = {
+            x: curr.x + (midX - curr.x) * blend,
+            y: curr.y + (midY - curr.y) * blend
+          };
+        }
+      }
+      
+      next[n - 1] = { ...next[0] };
+      pts = next;
+      
+      // Stop if we're within tolerance
+      if (maxViolation < 1.05) break;
+    }
+    
+    return pts;
+  }
+
   function resamplePath(points, spacing){
     const pts = ensureClosed(points);
     if (pts.length < 2) return pts;
@@ -517,19 +628,28 @@
 
       // --- Post-processing to fix "wobbly" tracks ---
       if (this.state.points.length > 10) {
-        // 1. Simplify: Remove points that don't add shape (Ramer-Douglas-Peucker)
-        // Tolerance of 2.0 removes micro-jitters
+        // 1. Simplify: Remove points that don't add shape
         this.state.points = simplifyPath(this.state.points, 2.0);
         
-        // 2. Resample: Force even spacing before smoothing (critical for quality)
-        this.state.points = resamplePath(this.state.points, 20);
+        // 2. Resample to fine spacing
+        this.state.points = resamplePath(this.state.points, 8);
 
-        // 3. Smooth: Apply multiple passes of averaging (Chaikin/Gaussian)
-        // 4 passes makes it very smooth
-        this.state.points = smoothPath(this.state.points, 4);
+        // 3. AGGRESSIVE Laplacian relaxation - rounds out sharp corners
+        this.state.points = relaxPath(this.state.points, 40, 0.5);
         
-        // 4. Ensure the loop is closed cleanly if near start
-        this.state.points = ensureClosed(this.state.points, 24);
+        // 4. Resample to even spacing
+        this.state.points = resamplePath(this.state.points, 10);
+        
+        // 5. CRITICAL: Enforce minimum turning radius based on road width
+        // Minimum radius must be > half road width to prevent overlap
+        const minRadius = this.state.roadWidth * 0.55;
+        this.state.points = enforceMinimumRadius(this.state.points, minRadius);
+        
+        // 6. Final smoothing after radius enforcement
+        this.state.points = relaxPath(this.state.points, 10, 0.3);
+        
+        // 7. Ensure the loop is closed cleanly if near start
+        this.state.points = ensureClosed(this.state.points, 32);
       }
       // ---------------------------------------------------
 
@@ -678,17 +798,42 @@
     const rawName = this.nameInput.value.trim();
     const name = rawName || "Custom Circuit";
     const closedRaw = ensureClosed(copyPoints(this.state.points));
-    const simplified = simplifyPath(closedRaw, 3.2);
-    const smoothed = smoothPath(simplified, 2);
-    const resampled = resamplePath(smoothed, SAMPLING_SPACING);
-    const intersections = findSelfIntersections(resampled);
-    const scaled = resampled.map((p) => ({
+    const roadWidth = this.state.roadWidth;
+    
+    // AGGRESSIVE SMOOTHING PIPELINE to prevent overlapping corners
+    // The key insight: we use MANY passes of Laplacian smoothing which
+    // naturally rounds out sharp corners without complex geometry math.
+    
+    // Step 1: Basic simplification (remove noise while keeping shape)
+    let processed = simplifyPath(closedRaw, 2.0);
+    
+    // Step 2: Resample to fine spacing for smooth curves
+    processed = resamplePath(processed, 8);
+    
+    // Step 3: AGGRESSIVE Laplacian relaxation - this is the key!
+    // Many iterations with high strength will round out any sharp corner
+    processed = relaxPath(processed, 60, 0.5);
+    
+    // Step 4: Resample again to even out the spacing
+    processed = resamplePath(processed, 8);
+    
+    // Step 5: CRITICAL - Enforce minimum turning radius based on road width
+    // The minimum radius MUST be greater than half road width to prevent overlap
+    // We use roadWidth * 0.55 to give a small safety margin
+    const minTurnRadius = roadWidth * 0.55;
+    processed = enforceMinimumRadius(processed, minTurnRadius, 300);
+    
+    // Step 6: Final smoothing after radius enforcement
+    processed = resamplePath(processed, SAMPLING_SPACING);
+    processed = relaxPath(processed, 15, 0.3);
+    
+    const intersections = findSelfIntersections(processed);
+    const scaled = processed.map((p) => ({
       x: p.x * this.state.scale,
       y: p.y * this.state.scale
     }));
     const worldWidth = Math.round(this.canvas.width * this.state.scale);
     const worldHeight = Math.round(this.canvas.height * this.state.scale);
-    const roadWidth = this.state.roadWidth;
     const meta = computeTrackMeta(scaled, roadWidth);
     const mask = makeMask(scaled, roadWidth, worldWidth, worldHeight);
     const thumbnail = makeThumbnail(scaled, worldWidth, worldHeight);
