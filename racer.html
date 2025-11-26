@@ -1210,8 +1210,10 @@ const { useEffect, useRef, useState } = React;
           const desired = rawMax - normalized * span;
           const rawTarget = Math.max(rawMin, Math.min(rawMax, desired));
           const displayScale = displayScaleRef.current || 1;
+          // Normalize displayScale to factor out GEO_SCALE so camera distance stays consistent
+          const baseDisplayScale = displayScale * GEO_SCALE;
           const zoomFactor = cameraDistance || CAMERA_DEFAULT;
-          const zoomBase = (CAM_BASE_ZOOM * zoomFactor) / ((displayScale > 0) ? displayScale : 1);
+          const zoomBase = (CAM_BASE_ZOOM * zoomFactor) / ((baseDisplayScale > 0) ? baseDisplayScale : 1);
           const minZoom = rawMin * zoomBase;
           const maxZoom = rawMax * zoomBase;
           const targetZoom = Math.max(minZoom, Math.min(maxZoom, rawTarget * zoomBase));
