@@ -62,6 +62,107 @@ RacerModes.setDefault('grip');
 - Racing line computed via `resample()` → `smooth()` → curvature analysis
 - `MAX_TARGET_SPEED` (2600 px/s) caps AI target speeds
 
+### AI Recovery System (`racer.html`)
+The AI recovery system in `racer.html` handles situations where AI cars get stuck or face the wrong direction. This is a **known problem area** — AI cars struggle to recover gracefully from crashes and collisions.
+
+#### Recovery Configuration (`AI_RECOVERY_CFG`)
+```js
+const AI_RECOVERY_CFG = {
+  stuckSpeed: 32,           // Speed threshold to consider car "stuck" (px/s)
+  exitSpeed: 70,            // Speed needed to exit recovery when aligned
+  exitSpeedSoft: 34,        // Softer exit threshold when on-road and facing line
+  wrongHeadingDot: 0.45,    // Dot product threshold for "wrong heading" (<0.45 = sideways/backwards)
+  backwardsDot: -0.05,      // Dot product threshold for "racing backwards" (negative = opposite direction)
+  exitDot: 0.78,            // Alignment needed to exit recovery
+  forwardExitDot: 0.86,     // Stricter alignment for forward exit
+  stuckTime: 0.6,           // Seconds stuck before triggering recovery
+  offTrackTime: 0.4,        // Seconds off-track+stuck before recovery
+  backwardsTime: 0.8,       // Seconds racing backwards before recovery trigger
+  reverseSwitch: 1.0,       // Seconds in "turn" mode before switching to "reverse"
+  reverseDuration: 1.0,     // How long to reverse before switching to turn
+  maxDuration: 5,           // Maximum recovery time before forced exit
+  cooldown: 0.7,            // Cooldown after recovery ends
+  searchWindow: 200,        // Index range to search for nearest racing line point
+  lineAimDistance: 140,     // Distance threshold for "far from line"
+  lineCloseDistance: 60     // Distance threshold for "close to line"
+};
+```
+
+#### Recovery Flow
+1. **Detection**: `applyAiRecoveryControl()` checks every frame:
+   - `stuckTimer` increments when speed < `stuckSpeed`
+   - `backwardsTimer` increments when dot product < `backwardsDot` AND speed > `stuckSpeed`
+   
+2. **Trigger Conditions** (any of these triggers recovery):
+   - `wrongWayTrigger`: stuck + wrong heading + stuckTimer > stuckTime
+   - `offTrackTrigger`: stuck + off-road + stuckTimer > offTrackTime
+   - `driftTrigger`: stuck + far from line + not facing line
+   - `backwardsRacingTrigger`: racing backwards at speed for > backwardsTime
+
+3. **Recovery Modes**:
+   - `"turn"`: Steer toward racing line while applying throttle
+   - `"reverse"`: Brake/reverse to reposition (phase: `"reverseOut"`)
+
+4. **Exit Conditions**:
+   - Aligned with track (`dot > exitDot`) AND moving fast enough
+   - OR recovery timer exceeds `maxDuration` (forced exit)
+
+#### Known Issue: Aggressive Crash Recovery
+**Problem**: AI cars struggle to recover from crashes. Their current behavior is too aggressive, causing them to repetitively reverse into barriers/edges at high speed before eventually finding their way back onto the racing line.
+
+**Root causes**:
+1. **High brake values in reverse phase** (`brake: 0.95` in reverseOut) cause aggressive backward speed
+2. **Reverse duration too long** (`reverseDuration: 1.0s`) — car builds up too much backward momentum
+3. **Phase transition timing** — car switches back to "turn" mode while still moving fast backwards
+4. **No speed limiting during recovery** — car can accelerate to high speeds while misaligned
+
+**Potential fixes**:
+```js
+// 1. Reduce reverse aggression
+control.brake = Math.max(0.55, control.brake || 0); // ↓ from 0.95
+
+// 2. Shorter reverse bursts
+reverseDuration: 0.4,  // ↓ from 1.0
+
+// 3. Speed-limited recovery (in reverseOut phase):
+const maxReverseSpeed = 50; // px/s
+if (speed > maxReverseSpeed) {
+  control.brake = 0; // Stop braking when reversing too fast
+}
+
+// 4. Require slower speed before phase transitions
+const reversedEnough = state.reverseTimer > AI_RECOVERY_CFG.reverseDuration 
+  && speed < 40; // Added speed check
+```
+
+**Where to modify**:
+- `AI_RECOVERY_CFG` object (lines ~559-580 in racer.html)
+- `applyAiRecoveryControl()` function (lines ~730-840 in racer.html)
+- `beginAiRecovery()` / `endAiRecovery()` state management functions
+
+#### AI Steering Controller (`createController` in racer_ai.js)
+The main AI controller uses PD steering with lookahead:
+```js
+// Lookahead distance scales with speed
+const lookahead = skill.lookaheadBase + speed * skill.lookaheadSpeed;
+
+// PD steering toward racing line target
+const error = normalizeAngle(targetHeading - car.angle);
+const steer = clamp(error * skill.steerP + (error - prevError) / dt * skill.steerD, -1, 1);
+
+// Speed control with anticipatory braking
+const futureDrop = scaledCurrent - scaledFuture;
+if (futureDrop > 0) {
+  brake = Math.max(brake, anticipation * skill.cornerEntryFactor);
+}
+```
+
+Key tuning for controller stability:
+- `steerP`: Proportional gain (higher = more aggressive steering)
+- `steerD`: Derivative gain (dampens oscillations)
+- `steerCutThrottle`: Reduces throttle when steering hard
+- `cornerEntryFactor`: How aggressively to brake for upcoming corners
+
 ### Gearbox/Drivetrain (`src/gearbox.js`)
 Core transmission simulation with realistic torque curves:
 - `GEARBOX_CONFIG`: global defaults (redlineRpm, finalDrive, tireRadiusM, shiftCutMs)
