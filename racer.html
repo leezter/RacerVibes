@@ -560,20 +560,23 @@ const { useEffect, useRef, useState } = React;
           stuckSpeed: 32,
           exitSpeed: 70,
           exitSpeedSoft: 34,
+          exitSpeedMinimum: 20,     // Minimum speed to exit recovery when well-aligned
+          phaseTransitionSpeed: 40, // Maximum speed before allowing phase transitions
           wrongHeadingDot: 0.45,
           backwardsDot: -0.05,
-          exitDot: 0.78,
-          forwardExitDot: 0.86,
+          exitDot: 0.70,           // Lowered from 0.78 to exit recovery earlier when aligned
+          forwardExitDot: 0.80,    // Lowered from 0.86 to be less strict about forward facing
           stuckTime: 0.6,
           offTrackTime: 0.4,
           backwardsTime: 0.8, // Time racing backwards before triggering recovery
-          reverseSwitch: 1.0,
-          reverseDuration: 1.0,
+          reverseSwitch: 0.6,      // Reduced from 1.0 for quicker mode transitions
+          reverseDuration: 0.4,    // Reduced from 1.0 to prevent excessive backward momentum
           maxDuration: 5,
           cooldown: 0.7,
           searchWindow: 200,
           lineAimDistance: 140,
-          lineCloseDistance: 60
+          lineCloseDistance: 60,
+          maxReverseSpeed: 50      // Maximum speed (px/s) during reversing to prevent aggressive backup
         };
         const gripModeConfig = (window.RacerModes && typeof window.RacerModes.get === "function") ? window.RacerModes.get("grip") : null;
         function sanitizeDifficulty(value){
@@ -790,11 +793,14 @@ const { useEffect, useRef, useState } = React;
           state.timer += dt;
           state.phaseTimer = (state.phaseTimer || 0) + dt;
           const aligned = headingInfo ? headingInfo.dot > AI_RECOVERY_CFG.exitDot : false;
-          const facingLine = headingInfo ? headingInfo.toNodeDot > 0.65 : false;
+          const facingLine = headingInfo ? headingInfo.toNodeDot > 0.50 : false;  // Lowered from 0.65 for earlier exit
           const closeToLine = headingInfo ? headingInfo.distance < AI_RECOVERY_CFG.lineCloseDistance : false;
           const movingFast = speed > AI_RECOVERY_CFG.exitSpeed;
           const movingEnough = speed > AI_RECOVERY_CFG.exitSpeedSoft && safeOnRoad(car.x, car.y);
-          if (state.phase !== "reverseOut" && ((aligned && (movingFast || (facingLine && (closeToLine || movingEnough)))) || state.timer > AI_RECOVERY_CFG.maxDuration)) {
+          const movingMinimum = speed > AI_RECOVERY_CFG.exitSpeedMinimum;
+          // Exit recovery more readily when well-aligned, even at lower speeds
+          const goodPosition = aligned && (facingLine || closeToLine);
+          if (state.phase !== "reverseOut" && ((goodPosition && (movingFast || movingEnough || movingMinimum)) || (aligned && movingFast) || state.timer > AI_RECOVERY_CFG.maxDuration)) {
             if (headingInfo && headingInfo.dot < AI_RECOVERY_CFG.forwardExitDot) {
               state.phase = "turn";
               state.timer = Math.max(0.1, state.timer * 0.5);
@@ -814,9 +820,15 @@ const { useEffect, useRef, useState } = React;
             const headingDiff = safeNormalizeAngle(headingTarget - car.angle);
             control.steer = safeClamp(headingDiff / (Math.PI * 0.25), -1, 1);
             control.throttle = 0;
-            control.brake = Math.max(0.95, control.brake || 0);
+            // Reduce brake aggression and limit reverse speed to prevent high-speed collisions
+            const reverseTooFast = speed > AI_RECOVERY_CFG.maxReverseSpeed;
+            control.brake = reverseTooFast ? 0 : Math.max(0.55, control.brake || 0);
             state.reverseTimer = (state.reverseTimer || 0) + dt;
-            const reversedEnough = state.reverseTimer > AI_RECOVERY_CFG.reverseDuration || (headingInfo && headingInfo.distance > AI_RECOVERY_CFG.lineCloseDistance * 0.8 && speed > 14);
+            // Exit reverseOut phase when reversed enough OR when well-aligned with track
+            const alignedEnough = headingInfo && headingInfo.dot > AI_RECOVERY_CFG.exitDot;
+            const reversedEnough = (state.reverseTimer > AI_RECOVERY_CFG.reverseDuration && speed < AI_RECOVERY_CFG.phaseTransitionSpeed) || 
+                                   (headingInfo && headingInfo.distance > AI_RECOVERY_CFG.lineCloseDistance * 0.8 && speed > 14) ||
+                                   alignedEnough;
             if (reversedEnough) {
               state.phase = "turn";
               state.mode = "turn"; // Switch to turn mode so car can accelerate forward
@@ -833,7 +845,9 @@ const { useEffect, useRef, useState } = React;
           control.steer = steerTarget;
           if (state.mode === "reverse") {
             control.throttle = 0;
-            control.brake = Math.max(0.88, control.brake || 0);
+            // Limit reverse speed to prevent aggressive backup into barriers
+            const reverseTooFast = speed > AI_RECOVERY_CFG.maxReverseSpeed;
+            control.brake = reverseTooFast ? 0 : Math.max(0.60, control.brake || 0);
           } else {
             const turningHard = Math.abs(headingDiff) > 1.1;
             const throttleBase = turningHard ? 0.3 : 0.65;
