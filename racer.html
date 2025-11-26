@@ -565,19 +565,27 @@ const { useEffect, useRef, useState } = React;
           backwardsMovingDot: 0.1, // threshold for detecting backwards driving at speed
           backwardsMovingSpeed: 50, // minimum speed to consider "moving backwards"
           backwardsMovingTime: 0.4, // time driving backwards before triggering recovery
-          idleSpeed: 5, // speed below which a car is considered idle
-          idleTime: 0.8, // time idle before triggering recovery
+          idleSpeed: 8, // speed below which a car is considered idle (increased for better detection)
+          idleTime: 0.5, // time idle before triggering recovery (reduced for faster response)
+          idleHeadingThreshold: 0.6, // dot product threshold for idle recovery (range: -1 to 1, lower = more lenient)
           exitDot: 0.78,
           forwardExitDot: 0.86,
           stuckTime: 0.6,
           offTrackTime: 0.4,
           reverseSwitch: 1.0,
-          reverseDuration: 1.0,
-          maxDuration: 5,
-          cooldown: 0.7,
+          reverseDuration: 1.2, // slightly longer reverse for better positioning
+          maxDuration: 6, // increased to allow more time for recovery
+          cooldown: 0.5, // reduced cooldown for faster re-engagement
           searchWindow: 200,
           lineAimDistance: 140,
-          lineCloseDistance: 60
+          lineCloseDistance: 60,
+          // Turning smoothness parameters
+          turnSteerGain: 0.55, // steering multiplier: lower = smoother turning
+          turnThrottleLow: 0.20, // throttle when turning hard
+          turnThrottleHigh: 0.45, // throttle when turning gently
+          turnBrakeLow: 0.05, // brake when turning gently
+          turnBrakeHigh: 0.12, // brake when turning hard
+          turnHardThreshold: 0.9 // heading diff threshold for "turning hard" (radians)
         };
         const gripModeConfig = (window.RacerModes && typeof window.RacerModes.get === "function") ? window.RacerModes.get("grip") : null;
         function sanitizeDifficulty(value){
@@ -790,10 +798,16 @@ const { useEffect, useRef, useState } = React;
             const driftTrigger = stuck && headingInfo && headingInfo.distance > 80 && headingInfo.toNodeDot < 0.3 && state.stuckTimer > 0.5;
             // Trigger recovery for backwards-driving cars even when moving fast
             const backwardsDrivingTrigger = movingBackwards && state.backwardsTimer > AI_RECOVERY_CFG.backwardsMovingTime;
-            // Trigger recovery for completely idle cars not facing forward
-            const idleNeedsRecovery = headingInfo && headingInfo.dot < AI_RECOVERY_CFG.forwardExitDot;
+            // Trigger recovery for idle cars - use more forgiving threshold
+            // Also trigger if car is idle and off the racing line, even if somewhat forward-facing
+            const idleNeedsRecovery = headingInfo && (
+              headingInfo.dot < AI_RECOVERY_CFG.idleHeadingThreshold || 
+              headingInfo.distance > AI_RECOVERY_CFG.lineCloseDistance
+            );
             const idleTrigger = idle && state.idleTimer > AI_RECOVERY_CFG.idleTime && idleNeedsRecovery;
-            if (wrongWayTrigger || offTrackTrigger || driftTrigger || backwardsDrivingTrigger || idleTrigger) {
+            // Also trigger for any car that's completely stopped for too long
+            const stoppedTooLong = speed < 2 && state.idleTimer > AI_RECOVERY_CFG.idleTime * 1.5;
+            if (wrongWayTrigger || offTrackTrigger || driftTrigger || backwardsDrivingTrigger || idleTrigger || stoppedTooLong) {
               // Prefer reverse when facing away from the racing line
               const idleFacingAway = idle && headingInfo && headingInfo.toNodeDot < 0;
               const preferReverse = backwards || driftingAway || idleFacingAway;
@@ -849,16 +863,23 @@ const { useEffect, useRef, useState } = React;
             ? (aimUsingLineVector ? headingInfo.toNodeHeading : headingInfo.desiredHeading)
             : car.angle;
           const headingDiff = safeNormalizeAngle(headingTarget - car.angle);
-          const steerTarget = safeClamp(headingDiff / (Math.PI * 0.35), -1, 1);
+          // Smoother steering: use configurable gain instead of aggressive fixed divisor
+          const steerTarget = safeClamp(headingDiff * AI_RECOVERY_CFG.turnSteerGain, -1, 1);
           control.steer = steerTarget;
           if (state.mode === "reverse") {
             control.throttle = 0;
             control.brake = Math.max(0.88, control.brake || 0);
           } else {
-            const turningHard = Math.abs(headingDiff) > 1.1;
-            const throttleBase = turningHard ? 0.3 : 0.65;
+            // Smoother throttle/brake control during turns to prevent crashing into edges
+            const absDiff = Math.abs(headingDiff);
+            const turningHard = absDiff > AI_RECOVERY_CFG.turnHardThreshold;
+            // Interpolate throttle based on how hard we're turning
+            const turnIntensity = safeClamp(absDiff / Math.PI, 0, 1);
+            const throttleBase = AI_RECOVERY_CFG.turnThrottleHigh - turnIntensity * (AI_RECOVERY_CFG.turnThrottleHigh - AI_RECOVERY_CFG.turnThrottleLow);
             control.throttle = Math.max(throttleBase, control.throttle || 0);
-            control.brake = turningHard ? Math.max(0.14, control.brake || 0) : Math.min(0.08, control.brake || 0);
+            // More braking when turning hard to maintain control
+            const brakeAmount = turningHard ? AI_RECOVERY_CFG.turnBrakeHigh : AI_RECOVERY_CFG.turnBrakeLow;
+            control.brake = Math.max(brakeAmount, control.brake || 0);
           }
           return control;
         }
