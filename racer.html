@@ -566,6 +566,7 @@ const { useEffect, useRef, useState } = React;
           forwardExitDot: 0.86,
           stuckTime: 0.6,
           offTrackTime: 0.4,
+          backwardsTime: 0.8, // Time racing backwards before triggering recovery
           reverseSwitch: 1.0,
           reverseDuration: 1.0,
           maxDuration: 5,
@@ -625,6 +626,7 @@ const { useEffect, useRef, useState } = React;
               active: false,
               timer: 0,
               stuckTimer: 0,
+              backwardsTimer: 0, // Track how long car has been racing backwards
               cooldown: 0,
               mode: null,
               lineIdx: 0,
@@ -709,13 +711,12 @@ const { useEffect, useRef, useState } = React;
           state.active = true;
           state.mode = mode || "turn";
           state.timer = 0;
-          state.phase = mode === "reverse" ? "reverseOut" : "turn";
           state.reverseTimer = 0;
           state.cooldown = AI_RECOVERY_CFG.cooldown;
           state.stuckTimer = 0;
-          state.phase = null;
-          state.reverseTimer = 0;
           state.phaseTimer = 0;
+          // Set phase based on mode: "reverse" mode starts with reverseOut phase, others start with "turn"
+          state.phase = mode === "reverse" ? "reverseOut" : "turn";
           if (targetCar && targetCar.physics) {
             targetCar.physics.dir = 1;
           }
@@ -731,6 +732,7 @@ const { useEffect, useRef, useState } = React;
           state.phase = null;
           state.reverseTimer = 0;
           state.phaseTimer = 0;
+          state.backwardsTimer = 0;
           state.lineIdx = Number.isFinite(state.lineIdx) ? state.lineIdx : 0;
           if (car && car.physics) {
             car.physics.dir = 1;
@@ -760,11 +762,19 @@ const { useEffect, useRef, useState } = React;
           const farFromLine = headingInfo ? headingInfo.distance > AI_RECOVERY_CFG.lineAimDistance : false;
           const driftingAway = headingInfo ? headingInfo.toNodeDot < 0.1 : false;
           const stuck = speed < AI_RECOVERY_CFG.stuckSpeed;
+          // Track how long car has been racing backwards (facing opposite direction of racing line)
+          if (!state.active) {
+            state.backwardsTimer = backwards && speed > AI_RECOVERY_CFG.stuckSpeed ? (state.backwardsTimer || 0) + dt : 0;
+          } else {
+            state.backwardsTimer = 0;
+          }
           if (!state.active && state.cooldown <= 0) {
             const wrongWayTrigger = stuck && headingInfo && headingInfo.dot < AI_RECOVERY_CFG.wrongHeadingDot && state.stuckTimer > AI_RECOVERY_CFG.stuckTime;
             const offTrackTrigger = stuck && offTrack && state.stuckTimer > AI_RECOVERY_CFG.offTrackTime;
             const driftTrigger = stuck && headingInfo && headingInfo.distance > 80 && headingInfo.toNodeDot < 0.3 && state.stuckTimer > 0.5;
-            if (wrongWayTrigger || offTrackTrigger || driftTrigger) {
+            // Trigger recovery when racing backwards at speed for too long
+            const backwardsRacingTrigger = backwards && speed > AI_RECOVERY_CFG.stuckSpeed && state.backwardsTimer > AI_RECOVERY_CFG.backwardsTime;
+            if (wrongWayTrigger || offTrackTrigger || driftTrigger || backwardsRacingTrigger) {
               const preferReverse = backwards || driftingAway;
               beginAiRecovery(state, car, preferReverse ? "reverse" : "turn");
             }
@@ -809,6 +819,7 @@ const { useEffect, useRef, useState } = React;
             const reversedEnough = state.reverseTimer > AI_RECOVERY_CFG.reverseDuration || (headingInfo && headingInfo.distance > AI_RECOVERY_CFG.lineCloseDistance * 0.8 && speed > 14);
             if (reversedEnough) {
               state.phase = "turn";
+              state.mode = "turn"; // Switch to turn mode so car can accelerate forward
               state.phaseTimer = 0;
             }
             return control;
