@@ -6,8 +6,8 @@
   const DEFAULT_LINE_CFG = {
     sampleStep: 6,
     smoothingPasses: 5,
-    apexAggression: 0.10,
-    maxOffset: 0.65,
+    apexAggression: 0.70,   // 0 = conservative (60% track width), 1 = aggressive (95% track width)
+    maxOffset: 0.90,        // Maximum fraction of half-width to use
     minRadius: 12,
     roadFriction: 1.1,
     gravity: 750,        // px/s^2 to roughly match RacerPhysics defaults
@@ -119,98 +119,222 @@
     const cfg = { ...DEFAULT_LINE_CFG, ...options };
 
     // 1. Resample centerline to fixed steps for stability
-    const step = 25; 
+    const step = 20; 
     const points = resample(centerline, step);
     const n = points.length;
     if (n < 3) return points;
 
     // 2. Setup Constraints
     const halfWidth = roadWidth / 2;
-    const maxOff = (cfg.maxOffset !== undefined) ? cfg.maxOffset : 0.65;
-    // Allow getting closer to the edge if aggression is high
-    // Aggression 0 -> 0.90 safety margin
-    // Aggression 1 -> 0.98 safety margin
-    const aggression = (cfg.apexAggression !== undefined) ? cfg.apexAggression : 0.5;
-    const safetyMargin = 0.90 + (0.08 * aggression);
-    const limit = (halfWidth * maxOff) * safetyMargin;
-    const limitSq = limit * limit;
+    const maxOff = (cfg.maxOffset !== undefined) ? cfg.maxOffset : 0.85;
+    // Aggression controls how far toward the edge we can go
+    // 0.0 = conservative (use ~60% of track width)
+    // 1.0 = aggressive (use ~95% of track width)
+    const aggression = clamp((cfg.apexAggression !== undefined) ? cfg.apexAggression : 0.5, 0, 1);
+    const usableWidth = halfWidth * (0.6 + 0.35 * aggression) * maxOff;
 
-    // Initialize racing line as the centerline
-    // We will iteratively "pull" this string tight.
-    const path = points.map(p => ({ x: p.x, y: p.y }));
+    // 3. Calculate curvature at each point using wider window for stability
+    const curvatures = [];
+    const windowSize = Math.max(3, Math.floor(n / 30)); // Adaptive window
+    for (let i = 0; i < n; i++) {
+      // Use points further apart for more stable curvature estimation
+      const prevIdx = (i - windowSize + n) % n;
+      const nextIdx = (i + windowSize) % n;
+      curvatures[i] = signedCurvature(points[prevIdx], points[i], points[nextIdx]);
+    }
 
-    // 3. Iterative Optimization (Shortest Path / String Tightening)
-    // We treat the path as a string and pull it tight (minimize length)
-    // while keeping it constrained within the track width.
-    const iterations = 200; 
+    // 4. Smooth curvature to reduce noise
+    const smoothCurvatures = [];
+    const curvSmoothWindow = Math.max(2, Math.floor(n / 40));
+    for (let i = 0; i < n; i++) {
+      let sum = 0;
+      let count = 0;
+      for (let j = -curvSmoothWindow; j <= curvSmoothWindow; j++) {
+        const idx = (i + j + n) % n;
+        sum += curvatures[idx];
+        count++;
+      }
+      smoothCurvatures[i] = sum / count;
+    }
+
+    // 5. Find max absolute curvature for normalization
+    let maxAbsCurv = 0;
+    for (let i = 0; i < n; i++) {
+      maxAbsCurv = Math.max(maxAbsCurv, Math.abs(smoothCurvatures[i]));
+    }
+    if (maxAbsCurv < 1e-6) maxAbsCurv = 1e-6; // Avoid division by zero
+
+    // 6. Calculate normals at each point (perpendicular to track direction)
+    const normals = [];
+    for (let i = 0; i < n; i++) {
+      const prev = points[(i - 1 + n) % n];
+      const next = points[(i + 1) % n];
+      const dx = next.x - prev.x;
+      const dy = next.y - prev.y;
+      const len = Math.hypot(dx, dy) || 1;
+      // Normal points to the left of travel direction
+      normals[i] = { x: -dy / len, y: dx / len };
+    }
+
+    // 7. Calculate target offset for each point based on curvature
+    // Racing line principle: 
+    // - On straights: stay centered
+    // - Approaching corner: move to OUTSIDE (opposite of turn direction)
+    // - At apex: move to INSIDE (same direction as turn)
+    // - Exiting corner: move back to OUTSIDE
+    const targetOffsets = [];
     
-    // "Smoothing" factor: How much we move towards the straight line each step.
-    // Higher = faster convergence but potential instability.
-    const alpha = 0.5; 
+    // First pass: basic offset based on curvature (inside at apex)
+    for (let i = 0; i < n; i++) {
+      const curv = smoothCurvatures[i];
+      const normalizedCurv = curv / maxAbsCurv; // -1 to 1
+      // At apex, we want to be on the INSIDE of the turn
+      // Positive curvature = turning left, normal points left, so go LEFT (positive normal)
+      // Negative curvature = turning right, normal points left, so go RIGHT (negative normal)
+      // So offset = +normalizedCurv (same sign as curvature)
+      targetOffsets[i] = normalizedCurv * usableWidth;
+    }
 
-    for (let iter = 0; iter < iterations; iter++) {
+    // 8. Apply lookahead to shift the line for proper entry/exit
+    // We need to START moving to the outside BEFORE the corner
+    // and FINISH moving to the outside AFTER the corner
+    const lookaheadDist = Math.max(5, Math.floor(n / 12)); // How far ahead to look
+    const shiftedOffsets = [];
+    
+    for (let i = 0; i < n; i++) {
+      // Look ahead to see what's coming
+      let futureApexOffset = 0;
+      let maxFutureAbsCurv = 0;
+      
+      for (let j = 1; j <= lookaheadDist; j++) {
+        const futureIdx = (i + j) % n;
+        const absCurv = Math.abs(smoothCurvatures[futureIdx]);
+        if (absCurv > maxFutureAbsCurv) {
+          maxFutureAbsCurv = absCurv;
+          futureApexOffset = targetOffsets[futureIdx];
+        }
+      }
+      
+      // Current curvature influence
+      const currentAbsCurv = Math.abs(smoothCurvatures[i]);
+      
+      // If we're approaching a corner (future has more curvature than current)
+      // We should be on the OPPOSITE side (outside) to set up for the corner
+      if (maxFutureAbsCurv > currentAbsCurv * 1.5 && maxFutureAbsCurv > 0.3 * maxAbsCurv) {
+        // We're approaching a corner - go to the outside (opposite of apex)
+        const setupOffset = -futureApexOffset * (0.6 + 0.3 * aggression);
+        const blend = clamp((maxFutureAbsCurv - currentAbsCurv) / maxAbsCurv, 0, 1);
+        shiftedOffsets[i] = lerp(targetOffsets[i], setupOffset, blend * 0.8);
+      } else {
+        // At or past apex, or on straight - use base offset
+        shiftedOffsets[i] = targetOffsets[i];
+      }
+    }
+
+    // 9. Look behind to adjust exit lines
+    const lookbehindDist = Math.max(3, Math.floor(n / 16));
+    const exitOffsets = [];
+    
+    for (let i = 0; i < n; i++) {
+      let pastApexOffset = 0;
+      let maxPastAbsCurv = 0;
+      
+      for (let j = 1; j <= lookbehindDist; j++) {
+        const pastIdx = (i - j + n) % n;
+        const absCurv = Math.abs(smoothCurvatures[pastIdx]);
+        if (absCurv > maxPastAbsCurv) {
+          maxPastAbsCurv = absCurv;
+          pastApexOffset = targetOffsets[pastIdx];
+        }
+      }
+      
+      const currentAbsCurv = Math.abs(smoothCurvatures[i]);
+      
+      // If we're exiting a corner (past had more curvature)
+      // Gradually move back to outside/center
+      if (maxPastAbsCurv > currentAbsCurv * 1.5 && maxPastAbsCurv > 0.3 * maxAbsCurv) {
+        // Exiting corner - blend back toward outside
+        const exitOffset = -pastApexOffset * (0.4 + 0.2 * aggression);
+        const blend = clamp((maxPastAbsCurv - currentAbsCurv) / maxAbsCurv, 0, 1);
+        exitOffsets[i] = lerp(shiftedOffsets[i], exitOffset, blend * 0.5);
+      } else {
+        exitOffsets[i] = shiftedOffsets[i];
+      }
+    }
+
+    // 10. Apply offsets to create initial racing line
+    const path = [];
+    for (let i = 0; i < n; i++) {
+      const offset = exitOffsets[i];
+      path.push({
+        x: points[i].x + normals[i].x * offset,
+        y: points[i].y + normals[i].y * offset
+      });
+    }
+
+    // 11. Iterative smoothing while respecting constraints
+    // This smooths the path while keeping it within track bounds
+    const smoothIterations = 80;
+    const smoothAlpha = 0.35;
+    
+    for (let iter = 0; iter < smoothIterations; iter++) {
       for (let i = 0; i < n; i++) {
         const prev = path[(i - 1 + n) % n];
         const next = path[(i + 1) % n];
-        const center = points[i]; // The hard constraint center
-
-        // Calculate the "straightest" position (midpoint of neighbors)
-        // This represents the shortest path (zero curvature)
+        const center = points[i];
+        
+        // Smooth toward neighbors
         const targetX = (prev.x + next.x) / 2;
         const targetY = (prev.y + next.y) / 2;
-
-        // Move towards target
-        let newX = path[i].x + (targetX - path[i].x) * alpha;
-        let newY = path[i].y + (targetY - path[i].y) * alpha;
-
-        // Constraint: Clamp point to stay within track width
+        
+        let newX = path[i].x + (targetX - path[i].x) * smoothAlpha;
+        let newY = path[i].y + (targetY - path[i].y) * smoothAlpha;
+        
+        // Constrain to track width
         const dx = newX - center.x;
         const dy = newY - center.y;
-        const distSq = dx*dx + dy*dy;
-
-        if (distSq > limitSq) {
-          const dist = Math.sqrt(distSq);
-          const ratio = limit / dist;
+        const dist = Math.hypot(dx, dy);
+        
+        if (dist > usableWidth) {
+          const ratio = usableWidth / dist;
           newX = center.x + dx * ratio;
           newY = center.y + dy * ratio;
         }
-
+        
         path[i].x = newX;
         path[i].y = newY;
       }
     }
 
-    // 4. Post-Smoothing
-    // A few passes of Chaikin/Gaussian to remove any micro-kinks from clamping
-    for (let pass = 0; pass < 4; pass++) {
-        const smoothed = [];
-        for (let i = 0; i < n; i++) {
-            const prev = path[(i - 1 + n) % n];
-            const curr = path[i];
-            const next = path[(i + 1) % n];
-            smoothed.push({
-                x: prev.x * 0.25 + curr.x * 0.5 + next.x * 0.25,
-                y: prev.y * 0.25 + curr.y * 0.5 + next.y * 0.25
-            });
+    // 12. Final smoothing pass
+    for (let pass = 0; pass < 3; pass++) {
+      const smoothed = [];
+      for (let i = 0; i < n; i++) {
+        const prev = path[(i - 1 + n) % n];
+        const curr = path[i];
+        const next = path[(i + 1) % n];
+        smoothed.push({
+          x: prev.x * 0.2 + curr.x * 0.6 + next.x * 0.2,
+          y: prev.y * 0.2 + curr.y * 0.6 + next.y * 0.2
+        });
+      }
+      // Re-clamp after smoothing
+      for (let i = 0; i < n; i++) {
+        const p = smoothed[i];
+        const center = points[i];
+        const dx = p.x - center.x;
+        const dy = p.y - center.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > usableWidth) {
+          const ratio = usableWidth / dist;
+          p.x = center.x + dx * ratio;
+          p.y = center.y + dy * ratio;
         }
-        // Re-clamp after smoothing
-        for (let i = 0; i < n; i++) {
-            const p = smoothed[i];
-            const center = points[i];
-            const dx = p.x - center.x;
-            const dy = p.y - center.y;
-            const distSq = dx*dx + dy*dy;
-            if (distSq > limitSq) {
-                const dist = Math.sqrt(distSq);
-                const ratio = limit / dist;
-                p.x = center.x + dx * ratio;
-                p.y = center.y + dy * ratio;
-            }
-            path[i] = p;
-        }
+        path[i] = p;
+      }
     }
 
-    // 5. Calculate metadata (speed, curvature, etc.)
+    // 13. Calculate metadata (speed, curvature, etc.)
     const g = cfg.gravity;
     let arc = 0;
     return path.map((pt, idx) => {
