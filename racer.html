@@ -558,29 +558,30 @@ const { useEffect, useRef, useState } = React;
         // Recovery settings for AI cars that get stuck or face the wrong way.
         const AI_RECOVERY_CFG = {
           stuckSpeed: 32,
-          exitSpeed: 50,              // Lowered from 70: exit recovery at slower speeds when aligned
-          exitSpeedSoft: 28,          // Lowered from 34: softer exit threshold for smoother transitions
+          exitSpeed: 50,              // Exit recovery at slower speeds when aligned
+          exitSpeedSoft: 28,          // Softer exit threshold for smoother transitions
           wrongHeadingDot: 0.45,
           backwardsDot: -0.05,
-          exitDot: 0.70,              // Lowered from 0.78: less strict alignment needed to exit
-          forwardExitDot: 0.80,       // Lowered from 0.86: less strict forward alignment needed
-          facingLineThreshold: 0.55,  // Threshold for "facing line" check (lowered from 0.65)
+          exitDot: 0.70,              // Less strict alignment needed to exit
+          forwardExitDot: 0.80,       // Less strict forward alignment needed
+          facingLineThreshold: 0.55,  // Threshold for "facing line" check
           stuckTime: 0.6,
           offTrackTime: 0.4,
           backwardsTime: 0.8,         // Time racing backwards before triggering recovery
-          reverseSwitch: 0.8,         // Reduced from 1.0: switch to reverse sooner if stuck
-          reverseDuration: 0.4,       // Reduced from 1.0: shorter reverse bursts
-          maxDuration: 4,             // Reduced from 5: exit recovery faster
-          cooldown: 0.5,              // Reduced from 0.7: less cooldown after recovery
+          reverseSwitch: 0.8,         // Switch to reverse sooner if stuck
+          reverseDuration: 0.6,       // Duration for reverse phase (slightly longer for effectiveness)
+          maxDuration: 4,             // Exit recovery faster
+          cooldown: 0.5,              // Less cooldown after recovery
           searchWindow: 200,
           lineAimDistance: 140,
           lineCloseDistance: 60,
-          maxReverseSpeed: 45,        // Cap reverse speed to prevent aggressive backwards motion
-          reverseBrakeLight: 0.55,    // Lighter braking during reverse (reduced from 0.95)
-          reverseBrakeHard: 0.75,     // Harder braking only when needed (reduced from 0.88)
+          reverseBrake: 0.90,         // Strong braking for quick reverse (restored from original 0.95)
           reverseExitMultiplier: 2,   // Multiplier for forced exit timeout
           goodPositionSpeed: 15,      // Minimum speed for "good position" early exit
-          readyToGoSpeed: 10          // Minimum speed for "ready to go" early exit
+          readyToGoSpeed: 10,         // Minimum speed for "ready to go" early exit
+          edgeLookahead: 0.15,        // Seconds to look ahead for edge detection
+          edgeSafetyMargin: 25,       // Pixels of safety margin from edges
+          edgeMinSpeed: 5             // Minimum speed for edge detection to apply
         };
         const gripModeConfig = (window.RacerModes && typeof window.RacerModes.get === "function") ? window.RacerModes.get("grip") : null;
         function sanitizeDifficulty(value){
@@ -649,6 +650,24 @@ const { useEffect, useRef, useState } = React;
           const vx = (car.physics && car.physics.vx) || car.vx || 0;
           const vy = (car.physics && car.physics.vy) || car.vy || 0;
           return Math.hypot(vx, vy);
+        }
+        // Check if reversing would take the car off-track (predict position looking backwards from car's heading)
+        function wouldHitEdgeReversing(car, lookaheadTime) {
+          if (!car) return false;
+          const speed = getCarSpeed(car);
+          if (speed < AI_RECOVERY_CFG.edgeMinSpeed) return false; // Not moving fast enough to matter
+          
+          // Use car's heading angle to determine backward direction (more reliable than velocity during recovery)
+          const angle = car.angle || 0;
+          const backX = -Math.cos(angle);  // Opposite of car's forward direction
+          const backY = -Math.sin(angle);
+          
+          // Predict position if continuing to move backward
+          const predictDist = speed * lookaheadTime + AI_RECOVERY_CFG.edgeSafetyMargin;
+          const futureX = car.x + backX * predictDist;
+          const futureY = car.y + backY * predictDist;
+          // Check if predicted position is off-road (safeOnRoad returns true as fallback)
+          return !safeOnRoad(futureX, futureY);
         }
         const safeLoopIndex = (value, len) => {
           if (typeof loopIndex === "function") return loopIndex(value, len);
@@ -826,18 +845,27 @@ const { useEffect, useRef, useState } = React;
             const headingDiff = safeNormalizeAngle(headingTarget - car.angle);
             control.steer = safeClamp(headingDiff / (Math.PI * 0.25), -1, 1);
             control.throttle = 0;
-            // Use lighter braking and limit reverse speed to prevent aggressive backward motion
-            if (speed > AI_RECOVERY_CFG.maxReverseSpeed) {
-              // Already moving fast enough backwards, ease off brakes
+            
+            // Check if we would hit an edge if we continue reversing
+            const wouldHitEdge = wouldHitEdgeReversing(car, AI_RECOVERY_CFG.edgeLookahead);
+            
+            if (wouldHitEdge) {
+              // About to hit edge - stop reversing immediately and switch to forward
               control.brake = 0;
-            } else {
-              // Use lighter braking for gentler reverse
-              control.brake = Math.max(AI_RECOVERY_CFG.reverseBrakeLight, control.brake || 0);
+              state.phase = "turn";
+              state.mode = "turn";
+              state.phaseTimer = 0;
+              // Apply throttle to go forward
+              control.throttle = 0.5;
+              return control;
             }
+            
+            // Not near edge - reverse quickly with strong braking
+            control.brake = Math.max(AI_RECOVERY_CFG.reverseBrake, control.brake || 0);
+            
             state.reverseTimer = (state.reverseTimer || 0) + dt;
-            // Exit reverse phase when duration met AND speed is low enough for safe transition
-            // Use <= to handle the edge case where speed equals maxReverseSpeed exactly
-            const reversedEnough = state.reverseTimer > AI_RECOVERY_CFG.reverseDuration && speed <= AI_RECOVERY_CFG.maxReverseSpeed;
+            // Exit reverse phase when duration is met
+            const reversedEnough = state.reverseTimer > AI_RECOVERY_CFG.reverseDuration;
             // Also exit if we've been reversing too long regardless
             const forcedExit = state.reverseTimer > AI_RECOVERY_CFG.reverseDuration * AI_RECOVERY_CFG.reverseExitMultiplier;
             if (reversedEnough || forcedExit) {
@@ -855,12 +883,19 @@ const { useEffect, useRef, useState } = React;
           const steerTarget = safeClamp(headingDiff / (Math.PI * 0.35), -1, 1);
           control.steer = steerTarget;
           if (state.mode === "reverse") {
-            control.throttle = 0;
-            // Use lighter braking with speed limiting
-            if (speed > AI_RECOVERY_CFG.maxReverseSpeed) {
-              control.brake = 0; // Stop braking when reversing too fast
+            // Check if we would hit an edge if we continue reversing
+            const wouldHitEdge = wouldHitEdgeReversing(car, AI_RECOVERY_CFG.edgeLookahead);
+            
+            if (wouldHitEdge) {
+              // About to hit edge - stop reversing and go forward
+              control.throttle = 0.5;
+              control.brake = 0;
+              state.mode = "turn";
+              state.phase = "turn";
             } else {
-              control.brake = Math.max(AI_RECOVERY_CFG.reverseBrakeHard, control.brake || 0);
+              // Not near edge - reverse quickly
+              control.throttle = 0;
+              control.brake = Math.max(AI_RECOVERY_CFG.reverseBrake, control.brake || 0);
             }
           } else {
             const turningHard = Math.abs(headingDiff) > 1.1;
