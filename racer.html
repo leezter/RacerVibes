@@ -1020,6 +1020,7 @@ const { useEffect, useRef, useState } = React;
   // camera state
   const camRef = useRef({ x: 0, y: 0, scale: CAM_BASE_ZOOM, targetScale: CAM_BASE_ZOOM });
   const displayScaleRef = useRef(1);
+  const baseDisplayScaleRef = useRef(1);
   const camInitRef = useRef(false);
         const loadTrackRef = useRef(() => {});
         useEffect(() => {
@@ -1209,9 +1210,8 @@ const { useEffect, useRef, useState } = React;
           const rawMin = Math.max(ZOOM_RAW_MIN_FLOOR, rawMax - span);
           const desired = rawMax - normalized * span;
           const rawTarget = Math.max(rawMin, Math.min(rawMax, desired));
-          const displayScale = displayScaleRef.current || 1;
-          // Normalize displayScale to factor out GEO_SCALE so camera distance stays consistent
-          const baseDisplayScale = displayScale * GEO_SCALE;
+          // Use base display scale (computed with fixed BASE_WORLD_W = 1000px) for consistent camera distance
+          const baseDisplayScale = baseDisplayScaleRef.current || 1;
           const zoomFactor = cameraDistance || CAMERA_DEFAULT;
           const zoomBase = (CAM_BASE_ZOOM * zoomFactor) / ((baseDisplayScale > 0) ? baseDisplayScale : 1);
           const minZoom = rawMin * zoomBase;
@@ -1276,6 +1276,9 @@ const { useEffect, useRef, useState } = React;
             canvas.style.transform = 'translate(-50%, -50%)';
             const pixelPerWorld = W > 0 ? (canvas.width / W) : 1;
             displayScaleRef.current = pixelPerWorld > 0 ? pixelPerWorld : 1;
+            // Store base display scale (using fixed BASE_WORLD_W = 1000px) for consistent camera distance
+            const pixelPerBaseWorld = BASE_WORLD_W > 0 ? (canvas.width / BASE_WORLD_W) : 1;
+            baseDisplayScaleRef.current = pixelPerBaseWorld > 0 ? pixelPerBaseWorld : 1;
           }
 
           function adjustCanvasSize(){
