@@ -157,6 +157,43 @@ Open: `http://localhost:8080/racer_start_menu.html`
 - `planck.min.js` must load before `physics.js` (script order matters)
 - Service worker caches files - bump `CACHE_VERSION` when changing cached assets
 
+## Camera System & World Scale
+
+### World Scale (`GEO_SCALE`)
+- Controlled by slider in dev tools, stored as `displayGeoScale` in localStorage
+- Multiplies track dimensions: `applyWorldSize(baseWorldWidth * GEO_SCALE, baseWorldHeight * GEO_SCALE)`
+- Higher values = larger world `W`/`H`, same viewport = more zoomed out appearance
+
+### Camera Distance Calculation (`computeCameraZoom` in `racer.html`)
+```js
+// displayScaleRef = canvas.width / W (pixels per world unit)
+// As W increases (higher world scale), displayScale decreases
+const zoomBase = (CAM_BASE_ZOOM * zoomFactor) / displayScale;
+```
+
+**Known Issue**: Camera distance is coupled to World Scale because:
+1. `displayScaleRef.current = canvas.width / W` — set in `sizeBackbufferToViewport()`
+2. `computeCameraZoom()` divides by `displayScale`, so larger worlds → smaller displayScale → larger zoom factor → camera appears zoomed IN
+
+**To fix camera distance being affected by World Scale**:
+The camera calculation needs to normalize for world scale. Options:
+1. Multiply `displayScale` by `GEO_SCALE` before using it in zoom calculation
+2. Store and use a reference `displayScale` from default world scale (1.0)
+3. Calculate zoom based on fixed pixel distances rather than world-relative distances
+
+**Key variables**:
+- `GEO_SCALE` / `WIDTH_SCALE` — track geometry/road width multipliers
+- `displayScaleRef.current` — pixels per world unit (changes with world size)
+- `CAM_BASE_ZOOM` (1.1) — baseline zoom factor
+- `cameraDistance` — user-adjustable zoom multiplier (0.6–1.6)
+- `camRef.current.scale` — actual applied camera scale
+
+### Camera State
+```js
+camRef.current = { x, y, scale, targetScale, targetX, targetY }
+// scale lerps toward targetScale each frame for smooth zoom
+```
+
 ## Testing
 - Manual browser testing only (no automated test suite)
 - Use Dev Tools panel (top-right toggle) for real-time physics tuning
