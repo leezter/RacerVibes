@@ -560,6 +560,8 @@ const { useEffect, useRef, useState } = React;
           stuckSpeed: 32,
           exitSpeed: 70,
           exitSpeedSoft: 34,
+          exitSpeedMinimum: 20,     // Minimum speed to exit recovery when well-aligned
+          phaseTransitionSpeed: 40, // Maximum speed before allowing phase transitions
           wrongHeadingDot: 0.45,
           backwardsDot: -0.05,
           exitDot: 0.70,           // Lowered from 0.78 to exit recovery earlier when aligned
@@ -795,9 +797,10 @@ const { useEffect, useRef, useState } = React;
           const closeToLine = headingInfo ? headingInfo.distance < AI_RECOVERY_CFG.lineCloseDistance : false;
           const movingFast = speed > AI_RECOVERY_CFG.exitSpeed;
           const movingEnough = speed > AI_RECOVERY_CFG.exitSpeedSoft && safeOnRoad(car.x, car.y);
+          const movingMinimum = speed > AI_RECOVERY_CFG.exitSpeedMinimum;
           // Exit recovery more readily when well-aligned, even at lower speeds
           const goodPosition = aligned && (facingLine || closeToLine);
-          if (state.phase !== "reverseOut" && ((goodPosition && (movingFast || movingEnough || speed > 20)) || (aligned && movingFast) || state.timer > AI_RECOVERY_CFG.maxDuration)) {
+          if (state.phase !== "reverseOut" && ((goodPosition && (movingFast || movingEnough || movingMinimum)) || (aligned && movingFast) || state.timer > AI_RECOVERY_CFG.maxDuration)) {
             if (headingInfo && headingInfo.dot < AI_RECOVERY_CFG.forwardExitDot) {
               state.phase = "turn";
               state.timer = Math.max(0.1, state.timer * 0.5);
@@ -823,7 +826,7 @@ const { useEffect, useRef, useState } = React;
             state.reverseTimer = (state.reverseTimer || 0) + dt;
             // Exit reverseOut phase when reversed enough OR when well-aligned with track
             const alignedEnough = headingInfo && headingInfo.dot > AI_RECOVERY_CFG.exitDot;
-            const reversedEnough = (state.reverseTimer > AI_RECOVERY_CFG.reverseDuration && speed < 40) || 
+            const reversedEnough = (state.reverseTimer > AI_RECOVERY_CFG.reverseDuration && speed < AI_RECOVERY_CFG.phaseTransitionSpeed) || 
                                    (headingInfo && headingInfo.distance > AI_RECOVERY_CFG.lineCloseDistance * 0.8 && speed > 14) ||
                                    alignedEnough;
             if (reversedEnough) {
