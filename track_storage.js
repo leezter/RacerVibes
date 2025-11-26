@@ -10,7 +10,7 @@
   function hasIndexedDB(){
     return window.RacerStorageUtils && typeof window.RacerStorageUtils.hasIndexedDB === "function"
       ? window.RacerStorageUtils.hasIndexedDB()
-      : false;
+      : !!window.indexedDB;
   }
 
   function openDB(){
