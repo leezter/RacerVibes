@@ -1,7 +1,7 @@
 (function (global) {
   const DEFAULT_PARAMS = {
-    treeDensity: 0.55,
-    buildingDensity: 0.4,
+    treeDensity: 0.35,
+    buildingDensity: 0.25,
     kerbWidthScale: 1.0,
     shadowStrength: 0.55,
   };
@@ -10,8 +10,8 @@
     targetPxPerMeter: 6,
   };
   const BUFFER_RADIUS = 28;
-  const TREE_MIN_SPACING = 26;
-  const TREE_MAX_SPACING = 40;
+  const TREE_MIN_SPACING = 35;
+  const TREE_MAX_SPACING = 55;
   const BUILDING_SPACING = 160;
   const BARRIER_SPACING = 42;
   const BARRIER_CURVATURE_THRESHOLD = 0.35;

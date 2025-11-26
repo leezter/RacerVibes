@@ -6,7 +6,7 @@
   const DEFAULT_ROAD_WIDTH = 80;
   const DEFAULT_SCALE = 1.0;
   const ROAD_WIDTH_RANGE = [40, 180];
-  const SCALE_RANGE = [0.6, 1.6];
+  const SCALE_RANGE = [0.6, 2.5];
   const ERASE_RADIUS = 24;
   const SAMPLING_SPACING = 10;
 
