@@ -558,35 +558,41 @@ const { useEffect, useRef, useState } = React;
         // Recovery settings for AI cars that get stuck or face the wrong way.
         const AI_RECOVERY_CFG = {
           stuckSpeed: 32,
-          exitSpeed: 50,              // Exit recovery at slower speeds when aligned
-          exitSpeedSoft: 28,          // Softer exit threshold for smoother transitions
+          exitSpeed: 40,              // Exit recovery at even slower speeds when aligned
+          exitSpeedSoft: 20,          // Even softer exit threshold
           wrongHeadingDot: 0.45,
           backwardsDot: -0.05,
-          exitDot: 0.60,              // Even less strict alignment needed to exit (was 0.70)
-          forwardExitDot: 0.70,       // Less strict forward alignment needed (was 0.80)
-          facingLineThreshold: 0.45,  // Lower threshold for "facing line" check (was 0.55)
+          exitDot: 0.40,              // Much more lenient alignment for exit (was 0.60)
+          forwardExitDot: 0.50,       // More lenient forward alignment (was 0.70)
+          facingLineThreshold: 0.30,  // Much lower threshold for "facing line" (was 0.45)
           stuckTime: 0.6,
           offTrackTime: 0.4,
           backwardsTime: 0.8,         // Time racing backwards before triggering recovery
-          reverseSwitch: 0.8,         // Switch to reverse sooner if stuck
-          reverseDuration: 0.5,       // Slightly shorter reverse phase
-          maxDuration: 3,             // Exit recovery even faster (was 4)
-          cooldown: 0.4,              // Less cooldown after recovery (was 0.5)
+          reverseSwitch: 0.5,         // Switch to reverse faster if still stuck (was 0.8)
+          reverseDuration: 0.4,       // Shorter reverse phase (was 0.5)
+          maxDuration: 2.5,           // Much faster max timeout (was 3)
+          cooldown: 0.3,              // Shorter cooldown (was 0.4)
           searchWindow: 200,
           lineAimDistance: 140,
-          lineCloseDistance: 80,      // Increased close distance threshold (was 60)
-          reverseBrake: 0.90,         // Strong braking for quick reverse
-          reverseExitMultiplier: 2,   // Multiplier for forced exit timeout
-          goodPositionSpeed: 8,       // Lower speed threshold for "good position" exit (was 15)
-          readyToGoSpeed: 5,          // Lower speed threshold for "ready to go" exit (was 10)
-          edgeLookahead: 0.12,        // Slightly shorter lookahead for quicker reaction
-          edgeSafetyMargin: 20,       // Smaller safety margin (was 25)
-          edgeMinSpeed: 3,            // Lower minimum speed for edge detection (was 5)
-          quickExitDot: 0.50,         // Very lenient alignment for quick exit when on road
-          reverseSteerGain: 0.30,     // Steering sensitivity during reverse (PI * this value)
-          readyFacingDot: 0.40,       // Threshold for "facing line point" in isReadyToRace
-          readyMinSpeed: 3,           // Minimum speed for isReadyToRace exit
-          exitThrottle: 0.70          // Throttle applied when exiting recovery
+          lineCloseDistance: 100,     // Even more lenient close distance (was 80)
+          reverseBrake: 0.92,         // Slightly stronger braking for quicker reverse
+          reverseExitMultiplier: 1.5, // Faster forced exit (was 2)
+          goodPositionSpeed: 5,       // Much lower speed threshold (was 8)
+          readyToGoSpeed: 3,          // Much lower (was 5)
+          edgeLookahead: 0.10,        // Shorter lookahead for faster reaction (was 0.12)
+          edgeSafetyMargin: 15,       // Smaller margin (was 20)
+          edgeMinSpeed: 2,            // Lower minimum (was 3)
+          quickExitDot: 0.35,         // Much more lenient for quick exit (was 0.50)
+          reverseSteerGain: 0.25,     // Slightly more responsive steering (was 0.30)
+          readyFacingDot: 0.25,       // Much more lenient (was 0.40)
+          readyMinSpeed: 2,           // Lower (was 3)
+          exitThrottle: 0.85,         // Stronger throttle when exiting (was 0.70)
+          turnThrottle: 0.75,         // Strong throttle during turn phase
+          steerGainTurn: 0.40,        // Steering gain during turn phase
+          edgeHugMaxSpeed: 30,        // Max speed to consider edge hugging
+          edgeHugStuckSpeed: 20,      // Speed below which edge hugging is a problem
+          edgeCheckDist: 30,          // Distance to check for edge detection
+          edgeHugSteerGain: 0.30      // Steering gain when correcting edge hug
         };
         const gripModeConfig = (window.RacerModes && typeof window.RacerModes.get === "function") ? window.RacerModes.get("grip") : null;
         function sanitizeDifficulty(value){
@@ -688,17 +694,48 @@ const { useEffect, useRef, useState } = React;
           // Use a smooth, proportional response
           return safeClamp(angleDiff / (Math.PI * AI_RECOVERY_CFG.reverseSteerGain), -1, 1);
         }
-        // Check if car is in a reasonable position to start racing (more lenient check)
+        // Check if car is in a reasonable position to start racing (VERY lenient check)
         function isReadyToRace(car, headingInfo, speed) {
-          if (!car || !headingInfo) return false;
+          if (!car) return false;
           const onRoad = safeOnRoad(car.x, car.y);
-          // Very lenient: on road and roughly facing the right direction
-          const roughlyAligned = headingInfo.dot > AI_RECOVERY_CFG.quickExitDot;
-          // Or facing the racing line point (not necessarily the tangent direction)
-          const facingLinePoint = headingInfo.toNodeDot > AI_RECOVERY_CFG.readyFacingDot;
-          // Has any forward momentum
-          const hasMotion = speed > AI_RECOVERY_CFG.readyMinSpeed;
-          return onRoad && (roughlyAligned || facingLinePoint) && hasMotion;
+          if (!onRoad) return false;
+          
+          // If we have heading info, check alignment
+          if (headingInfo) {
+            // Very lenient: on road and roughly facing the right direction
+            const roughlyAligned = headingInfo.dot > AI_RECOVERY_CFG.quickExitDot;
+            // Or facing the racing line point (not necessarily the tangent direction)
+            const facingLinePoint = headingInfo.toNodeDot > AI_RECOVERY_CFG.readyFacingDot;
+            // Has any forward momentum
+            const hasMotion = speed > AI_RECOVERY_CFG.readyMinSpeed;
+            // Not facing backwards
+            const notBackwards = headingInfo.dot > -0.2;
+            
+            return (roughlyAligned || facingLinePoint || notBackwards) && hasMotion;
+          }
+          
+          // If no heading info but on road and moving, just go
+          return speed > AI_RECOVERY_CFG.readyMinSpeed;
+        }
+        // Determine if car is stuck hugging an edge (moving slowly near edge)
+        function isHuggingEdge(car, speed) {
+          if (!car || speed > AI_RECOVERY_CFG.edgeHugMaxSpeed) return false; // Not hugging if moving fast
+          
+          // Check multiple points around the car to detect if near edge
+          const angle = car.angle || 0;
+          const checkDist = AI_RECOVERY_CFG.edgeCheckDist;
+          
+          // Check left and right of car
+          const leftX = car.x + Math.cos(angle + Math.PI/2) * checkDist;
+          const leftY = car.y + Math.sin(angle + Math.PI/2) * checkDist;
+          const rightX = car.x + Math.cos(angle - Math.PI/2) * checkDist;
+          const rightY = car.y + Math.sin(angle - Math.PI/2) * checkDist;
+          
+          const leftOnRoad = safeOnRoad(leftX, leftY);
+          const rightOnRoad = safeOnRoad(rightX, rightY);
+          
+          // If one side is off-road and we're moving slowly, we're hugging the edge
+          return (!leftOnRoad || !rightOnRoad) && speed < AI_RECOVERY_CFG.edgeHugStuckSpeed;
         }
         const safeLoopIndex = (value, len) => {
           if (typeof loopIndex === "function") return loopIndex(value, len);
@@ -856,25 +893,50 @@ const { useEffect, useRef, useState } = React;
           const goodPosition = onRoadNow && aligned && speed > AI_RECOVERY_CFG.goodPositionSpeed;
           // Exit if facing line and close to it, even at low speed
           const readyToGo = facingLine && closeToLine && speed > AI_RECOVERY_CFG.readyToGoSpeed;
-          // NEW: Very aggressive exit check - if on road and roughly facing right way, just go!
+          // Very aggressive exit check - if on road and roughly facing right way, just go!
           const quickExit = isReadyToRace(car, headingInfo, speed);
+          // Check if car is stuck hugging the edge - if so, need to take action
+          const huggingEdge = isHuggingEdge(car, speed);
+          // Not facing backwards at all
+          const notBackwardsFacing = headingInfo ? headingInfo.dot > -0.1 : true;
           
-          // Check exit conditions - NOW also during reverseOut phase if quickExit is true
-          const shouldExit = quickExit || goodPosition || readyToGo || (aligned && (movingFast || (facingLine && (closeToLine || movingEnough)))) || state.timer > AI_RECOVERY_CFG.maxDuration;
+          // SUPER aggressive exit: if on road and not facing backwards, just GO
+          const superQuickExit = onRoadNow && notBackwardsFacing && speed > 1;
           
-          if (shouldExit) {
-            // Only require additional turn phase if really misaligned
-            if (headingInfo && headingInfo.dot < AI_RECOVERY_CFG.forwardExitDot && !quickExit) {
-              state.phase = "turn";
-              state.timer = Math.max(0.1, state.timer * 0.5);
-            } else {
-              // Exit immediately and start racing!
-              endAiRecovery(state, car);
-              control.throttle = AI_RECOVERY_CFG.exitThrottle; // Immediate forward acceleration
-              control.brake = 0;
-              return control;
+          // Check exit conditions - VERY aggressive now
+          const shouldExit = superQuickExit || quickExit || goodPosition || readyToGo || 
+                            (aligned && (movingFast || (facingLine && (closeToLine || movingEnough)))) || 
+                            state.timer > AI_RECOVERY_CFG.maxDuration;
+          
+          if (shouldExit && !huggingEdge) {
+            // Exit immediately and start racing!
+            endAiRecovery(state, car);
+            control.throttle = AI_RECOVERY_CFG.exitThrottle;
+            control.brake = 0;
+            // Steer toward racing line
+            if (headingInfo) {
+              const headingDiff = safeNormalizeAngle(headingInfo.desiredHeading - car.angle);
+              control.steer = safeClamp(headingDiff / (Math.PI * AI_RECOVERY_CFG.steerGainTurn), -1, 1);
             }
+            return control;
           }
+          
+          // If hugging edge, need to steer away from it and accelerate
+          if (huggingEdge && state.phase !== "reverseOut") {
+            // Steer toward center of track (racing line)
+            if (headingInfo) {
+              const headingDiff = safeNormalizeAngle(headingInfo.toNodeHeading - car.angle);
+              control.steer = safeClamp(headingDiff / (Math.PI * AI_RECOVERY_CFG.edgeHugSteerGain), -1, 1);
+            }
+            control.throttle = AI_RECOVERY_CFG.turnThrottle;
+            control.brake = 0;
+            // Check if we've corrected course
+            if (onRoadNow && !isHuggingEdge(car, speed) && speed > 10) {
+              endAiRecovery(state, car);
+            }
+            return control;
+          }
+          
           if (state.mode === "turn" && backwards && state.timer > AI_RECOVERY_CFG.reverseSwitch) {
             state.mode = "reverse";
             state.phase = "reverseOut";
@@ -920,7 +982,7 @@ const { useEffect, useRef, useState } = React;
             ? (aimUsingLineVector ? headingInfo.toNodeHeading : headingInfo.desiredHeading)
             : car.angle;
           const headingDiff = safeNormalizeAngle(headingTarget - car.angle);
-          const steerTarget = safeClamp(headingDiff / (Math.PI * 0.35), -1, 1);
+          const steerTarget = safeClamp(headingDiff / (Math.PI * AI_RECOVERY_CFG.steerGainTurn), -1, 1);
           control.steer = steerTarget;
           if (state.mode === "reverse") {
             // Use optimal steering direction for shortest path
@@ -941,11 +1003,10 @@ const { useEffect, useRef, useState } = React;
               control.brake = Math.max(AI_RECOVERY_CFG.reverseBrake, control.brake || 0);
             }
           } else {
-            // Turn mode - accelerate forward while steering
-            const turningHard = Math.abs(headingDiff) > 1.1;
-            const throttleBase = turningHard ? 0.4 : AI_RECOVERY_CFG.exitThrottle;
-            control.throttle = Math.max(throttleBase, control.throttle || 0);
-            control.brake = turningHard ? Math.max(0.10, control.brake || 0) : 0;
+            // Turn mode - accelerate forward aggressively while steering toward racing line
+            // Use stronger throttle regardless of turn amount
+            control.throttle = Math.max(AI_RECOVERY_CFG.turnThrottle, control.throttle || 0);
+            control.brake = 0; // No braking in turn mode - we need to get moving
           }
           return control;
         }
