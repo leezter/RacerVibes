@@ -592,12 +592,16 @@ const { useEffect, useRef, useState } = React;
           steerGainTurn: 0.35,
           // New parameters for smarter recovery
           steerCommitTime: 0.25,      // Minimum time to commit to a steering direction
+          steerCommitBoost: 0.30,     // Boost added to steering magnitude when committed
           maxReverseSpeed: 60,        // Cap reverse speed to prevent aggressive reversing
           edgeHugSpeed: 25,           // Speed threshold for edge hugging detection
           edgeHugTime: 1.2,           // Time threshold for edge hugging
           forwardExitSpeed: 20,       // Minimum forward velocity to exit recovery
-          failedRecoveryCount: 3,     // After this many failed recoveries, use teleport-style reset
-          recoveryMemoryTime: 5.0     // Time window to remember failed recoveries
+          failedRecoveryCount: 3,     // After this many failed recoveries, escalate cooldown
+          recoveryMemoryTime: 5.0,    // Time window to remember failed recoveries
+          failureCooldownMult: 3,     // Cooldown multiplier after multiple failures
+          lightBrakeForce: 0.50,      // Light braking when transitioning from fast reverse
+          moderateBrakeForce: 0.30    // Moderate braking when stopping reverse
         };
         const gripModeConfig = (window.RacerModes && typeof window.RacerModes.get === "function") ? window.RacerModes.get("grip") : null;
         function sanitizeDifficulty(value){
@@ -662,7 +666,8 @@ const { useEffect, useRef, useState } = React;
               steerCommitTimer: 0,      // Time since steering direction was committed
               edgeHugTimer: 0,          // Time spent edge hugging
               failedRecoveries: 0,      // Count of failed recovery attempts
-              lastRecoveryTime: 0,      // Timestamp of last recovery for memory window
+              lastRecoveryTime: 0,      // Timestamp of last recovery start
+              lastFailureTime: 0,       // Timestamp of last failed recovery for memory window
               totalRecoveryTime: 0      // Cumulative time in recovery for this stuck episode
             };
           }
@@ -692,6 +697,12 @@ const { useEffect, useRef, useState } = React;
           // Check if predicted position is off-road (safeOnRoad returns true as fallback)
           return !safeOnRoad(futureX, futureY);
         }
+        // Helper to check if reverse should stop due to edge proximity or excessive speed
+        function shouldStopReversing(car, forwardSpeed) {
+          const wouldHitEdge = wouldHitEdgeReversing(car, AI_RECOVERY_CFG.edgeLookahead);
+          const reversingTooFast = forwardSpeed < -AI_RECOVERY_CFG.maxReverseSpeed;
+          return { shouldStop: wouldHitEdge || reversingTooFast, wouldHitEdge, reversingTooFast };
+        }
         // Determine optimal steering direction during reverse - returns best steer value (-1 to 1)
         // Uses steering commitment to prevent oscillation
         function getOptimalReverseSteer(car, headingInfo, state) {
@@ -717,13 +728,10 @@ const { useEffect, useRef, useState } = React;
             if (currentCommit === 0 || commitTimer >= AI_RECOVERY_CFG.steerCommitTime) {
               recoveryState.committedSteerDir = idealDir;
               recoveryState.steerCommitTimer = 0;
-            } else if (idealDir !== 0 && idealDir === currentCommit) {
-              // Ideal direction matches commitment - reset timer to maintain direction
-              recoveryState.steerCommitTimer = 0;
             }
             // Use committed direction if still within commit window
             if (recoveryState.committedSteerDir !== 0 && commitTimer < AI_RECOVERY_CFG.steerCommitTime) {
-              return recoveryState.committedSteerDir * Math.min(1, Math.abs(idealSteer) + 0.3);
+              return recoveryState.committedSteerDir * Math.min(1, Math.abs(idealSteer) + AI_RECOVERY_CFG.steerCommitBoost);
             }
           }
           
@@ -809,14 +817,8 @@ const { useEffect, useRef, useState } = React;
           if (!state) return;
           const targetCar = car || null;
           
-          // Track failed recovery attempts within the memory window
+          // Store recovery start time for tracking failures
           const now = currentTime || 0;
-          if (state.lastRecoveryTime && (now - state.lastRecoveryTime) < AI_RECOVERY_CFG.recoveryMemoryTime) {
-            state.failedRecoveries = (state.failedRecoveries || 0) + 1;
-          } else {
-            // Memory window expired, reset counter
-            state.failedRecoveries = 1;
-          }
           state.lastRecoveryTime = now;
           
           state.active = true;
@@ -838,13 +840,28 @@ const { useEffect, useRef, useState } = React;
             try { targetCar.gearbox.shiftUp(); targetCar.gearbox.shiftUp(); } catch(_){ }
           }
         }
-        function endAiRecovery(state, car, success) {
+        function endAiRecovery(state, car, success, currentTime) {
           if (!state) return;
           
-          // If this was not a successful recovery, track it for failed recovery escalation
-          if (!success && state.failedRecoveries >= AI_RECOVERY_CFG.failedRecoveryCount) {
-            // Multiple failed recoveries - use longer cooldown to break the loop
-            state.cooldown = AI_RECOVERY_CFG.cooldown * 3;
+          // Track failed recoveries within memory window
+          const now = currentTime || 0;
+          if (!success) {
+            // Check if this failure is within the memory window of previous failures
+            if (state.lastFailureTime && (now - state.lastFailureTime) < AI_RECOVERY_CFG.recoveryMemoryTime) {
+              state.failedRecoveries = (state.failedRecoveries || 0) + 1;
+            } else {
+              // Memory window expired, start fresh count
+              state.failedRecoveries = 1;
+            }
+            state.lastFailureTime = now;
+            
+            // Apply escalated cooldown after multiple consecutive failures
+            if (state.failedRecoveries >= AI_RECOVERY_CFG.failedRecoveryCount) {
+              state.cooldown = AI_RECOVERY_CFG.cooldown * AI_RECOVERY_CFG.failureCooldownMult;
+            }
+          } else {
+            // Successful recovery - reset failure counter
+            state.failedRecoveries = 0;
           }
           
           state.active = false;
@@ -953,7 +970,7 @@ const { useEffect, useRef, useState } = React;
           if (readyToExit) {
             // Successful recovery - clear failed counter
             state.failedRecoveries = 0;
-            endAiRecovery(state, car, true);
+            endAiRecovery(state, car, true, gameTime);
             control.throttle = AI_RECOVERY_CFG.exitThrottle;
             control.brake = 0;
             // Steer toward racing line
@@ -966,7 +983,7 @@ const { useEffect, useRef, useState } = React;
           
           if (timedOut) {
             // Timed out - this counts as a failed recovery
-            endAiRecovery(state, car, false);
+            endAiRecovery(state, car, false, gameTime);
             control.throttle = AI_RECOVERY_CFG.exitThrottle;
             control.brake = 0;
             if (headingInfo) {
@@ -990,15 +1007,12 @@ const { useEffect, useRef, useState } = React;
             control.steer = getOptimalReverseSteer(car, headingInfo, state);
             control.throttle = 0;
             
-            // Check if we would hit an edge if we continue reversing
-            const wouldHitEdge = wouldHitEdgeReversing(car, AI_RECOVERY_CFG.edgeLookahead);
+            // Check if we should stop reversing
+            const reverseCheck = shouldStopReversing(car, forwardSpeed);
             
-            // Also check if we're reversing too fast
-            const reversingTooFast = forwardSpeed < -AI_RECOVERY_CFG.maxReverseSpeed;
-            
-            if (wouldHitEdge || reversingTooFast) {
+            if (reverseCheck.shouldStop) {
               // About to hit edge or going too fast - stop reversing immediately
-              control.brake = reversingTooFast ? 0.5 : 0; // Light brake if too fast
+              control.brake = reverseCheck.reversingTooFast ? AI_RECOVERY_CFG.lightBrakeForce : 0;
               state.phase = "turn";
               state.mode = "turn";
               state.phaseTimer = 0;
@@ -1032,15 +1046,13 @@ const { useEffect, useRef, useState } = React;
             // Use optimal steering direction for shortest path (with commitment)
             control.steer = getOptimalReverseSteer(car, headingInfo, state);
             
-            // Check if we would hit an edge if we continue reversing
-            const wouldHitEdge = wouldHitEdgeReversing(car, AI_RECOVERY_CFG.edgeLookahead);
-            // Check if reversing too fast
-            const reversingTooFast = forwardSpeed < -AI_RECOVERY_CFG.maxReverseSpeed;
+            // Check if we should stop reversing
+            const reverseCheck = shouldStopReversing(car, forwardSpeed);
             
-            if (wouldHitEdge || reversingTooFast) {
+            if (reverseCheck.shouldStop) {
               // About to hit edge or too fast - stop reversing and go forward
               control.throttle = AI_RECOVERY_CFG.exitThrottle;
-              control.brake = reversingTooFast ? 0.3 : 0;
+              control.brake = reverseCheck.reversingTooFast ? AI_RECOVERY_CFG.moderateBrakeForce : 0;
               state.mode = "turn";
               state.phase = "turn";
               state.committedSteerDir = 0;
