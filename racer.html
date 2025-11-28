@@ -560,48 +560,50 @@ const { useEffect, useRef, useState } = React;
           stuckSpeed: 32,
           exitSpeed: 40,
           exitSpeedSoft: 15,
-          wrongHeadingDot: 0.45,
-          backwardsDot: -0.05,
-          backwardsThreshold: -0.3,    // Dot product below this = facing backwards
-          exitDot: 0.20,
-          forwardExitDot: 0.30,
+          wrongHeadingDot: 0.25,       // REDUCED: Only trigger recovery when significantly off-heading
+          backwardsDot: -0.5,          // CHANGED: Must be facing mostly backwards to trigger reverse
+          backwardsThreshold: -0.5,    // CHANGED: Stricter - must be facing very backwards
+          exitDot: 0.10,               // REDUCED: Can exit recovery sooner
+          forwardExitDot: 0.20,
           facingLineThreshold: 0.20,
-          stuckTime: 0.6,
-          offTrackTime: 0.4,
-          backwardsTime: 0.8,
-          reverseSwitch: 0.4,
-          reverseDuration: 0.3,
-          maxDuration: 3.0,           // Increased timeout to allow more time to recover
-          cooldown: 0.5,              // Longer cooldown to prevent rapid re-triggering
+          stuckTime: 0.8,              // INCREASED: Wait longer before triggering recovery
+          offTrackTime: 0.6,           // INCREASED: Wait longer before off-track recovery
+          backwardsTime: 1.2,          // INCREASED: Wait longer before backwards trigger
+          reverseSwitch: 1.5,          // INCREASED: Try turning for longer before switching to reverse
+          reverseDuration: 0.5,        // INCREASED: When reversing, do it properly
+          maxDuration: 2.0,            // REDUCED: Don't stay in recovery too long
+          cooldown: 0.3,               // REDUCED: Can re-enter recovery faster if needed
           searchWindow: 200,
-          lineAimDistance: 140,
-          lineCloseDistance: 120,
-          reverseBrake: 0.65,         // Reduced to prevent aggressive reverse speed
-          reverseExitMultiplier: 1.2,
+          lineAimDistance: 180,        // INCREASED: More lenient distance check
+          lineCloseDistance: 150,      // INCREASED: More lenient
+          reverseBrake: 0.95,          // INCREASED: Faster reversing when needed
+          reverseExitMultiplier: 1.5,
           goodPositionSpeed: 3,
           readyToGoSpeed: 2,
-          edgeLookahead: 0.15,        // Increased lookahead for edge detection
-          edgeSafetyMargin: 20,       // Larger margin for edge safety
+          edgeLookahead: 0.12,
+          edgeSafetyMargin: 15,
           edgeMinSpeed: 1,
-          quickExitDot: 0.15,
-          reverseSteerGain: 0.25,
-          readyFacingDot: 0.10,
+          quickExitDot: 0.10,
+          reverseSteerGain: 0.40,      // INCREASED: More responsive steering when reversing
+          readyFacingDot: 0.05,
           readyMinSpeed: 1,
-          exitThrottle: 0.90,
-          turnThrottle: 0.80,
-          steerGainTurn: 0.35,
-          // New parameters for smarter recovery
-          steerCommitTime: 0.25,      // Minimum time to commit to a steering direction
-          steerCommitBoost: 0.30,     // Boost added to steering magnitude when committed
-          maxReverseSpeed: 60,        // Cap reverse speed to prevent aggressive reversing
-          edgeHugSpeed: 25,           // Speed threshold for edge hugging detection
-          edgeHugTime: 1.2,           // Time threshold for edge hugging
-          forwardExitSpeed: 20,       // Minimum forward velocity to exit recovery
-          failedRecoveryCount: 3,     // After this many failed recoveries, escalate cooldown
-          recoveryMemoryTime: 5.0,    // Time window to remember failed recoveries
-          failureCooldownMult: 3,     // Cooldown multiplier after multiple failures
-          lightBrakeForce: 0.50,      // Light braking when transitioning from fast reverse
-          moderateBrakeForce: 0.30    // Moderate braking when stopping reverse
+          exitThrottle: 1.0,           // INCREASED: Full throttle on exit
+          turnThrottle: 1.0,           // INCREASED: Full throttle in turn mode
+          steerGainTurn: 0.50,         // INCREASED: More aggressive steering
+          // Parameters for smarter recovery
+          steerCommitTime: 0.15,       // REDUCED: Faster steering response
+          steerCommitBoost: 0.20,
+          maxReverseSpeed: 120,        // INCREASED: Allow faster reversing
+          edgeHugSpeed: 20,            // REDUCED: Less aggressive edge hug detection
+          edgeHugTime: 2.0,            // INCREASED: Wait longer before edge hug trigger
+          forwardExitSpeed: 10,        // REDUCED: Can exit with less forward speed
+          failedRecoveryCount: 3,
+          recoveryMemoryTime: 5.0,
+          failureCooldownMult: 2,      // REDUCED: Don't penalize too much
+          lightBrakeForce: 0.40,
+          moderateBrakeForce: 0.25,
+          // New: threshold for when reverse is truly necessary
+          mustReverseDot: -0.7         // Only start in reverse mode if facing almost completely backwards
         };
         const gripModeConfig = (window.RacerModes && typeof window.RacerModes.get === "function") ? window.RacerModes.get("grip") : null;
         function sanitizeDifficulty(value){
@@ -935,8 +937,10 @@ const { useEffect, useRef, useState } = React;
             const edgeHugTrigger = state.edgeHugTimer > AI_RECOVERY_CFG.edgeHugTime;
             
             if (wrongWayTrigger || offTrackTrigger || driftTrigger || backwardsRacingTrigger || edgeHugTrigger) {
-              const preferReverse = backwards || driftingAway;
-              beginAiRecovery(state, car, preferReverse ? "reverse" : "turn", gameTime || 0);
+              // Only use reverse mode if facing almost completely backwards (mustReverseDot)
+              // Otherwise, always try "turn" mode first - it's usually sufficient
+              const mustReverse = headingInfo && headingInfo.dot < AI_RECOVERY_CFG.mustReverseDot;
+              beginAiRecovery(state, car, mustReverse ? "reverse" : "turn", gameTime || 0);
             }
           }
           const control = {
@@ -994,7 +998,14 @@ const { useEffect, useRef, useState } = React;
           }
           
           // Still in recovery - try to get into a good position
-          if (state.mode === "turn" && backwards && state.timer > AI_RECOVERY_CFG.reverseSwitch) {
+          // Only switch to reverse if:
+          // 1. We've been trying "turn" mode for long enough (reverseSwitch time)
+          // 2. We're facing almost completely backwards (mustReverseDot threshold)
+          // 3. We're making no progress (still stuck)
+          const trulyBackwards = headingInfo && headingInfo.dot < AI_RECOVERY_CFG.mustReverseDot;
+          const shouldSwitchToReverse = state.mode === "turn" && trulyBackwards && 
+                                        state.timer > AI_RECOVERY_CFG.reverseSwitch && stuck;
+          if (shouldSwitchToReverse) {
             state.mode = "reverse";
             state.phase = "reverseOut";
             state.reverseTimer = 0;
