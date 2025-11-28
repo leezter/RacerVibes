@@ -571,17 +571,17 @@ const { useEffect, useRef, useState } = React;
           backwardsTime: 0.8,
           reverseSwitch: 0.4,
           reverseDuration: 0.3,
-          maxDuration: 1.5,           // HARD timeout - exit after 1.5s no matter what
-          cooldown: 0.2,
+          maxDuration: 3.0,           // Increased timeout to allow more time to recover
+          cooldown: 0.5,              // Longer cooldown to prevent rapid re-triggering
           searchWindow: 200,
           lineAimDistance: 140,
           lineCloseDistance: 120,
-          reverseBrake: 0.92,
+          reverseBrake: 0.65,         // Reduced to prevent aggressive reverse speed
           reverseExitMultiplier: 1.2,
           goodPositionSpeed: 3,
           readyToGoSpeed: 2,
-          edgeLookahead: 0.08,
-          edgeSafetyMargin: 12,
+          edgeLookahead: 0.15,        // Increased lookahead for edge detection
+          edgeSafetyMargin: 20,       // Larger margin for edge safety
           edgeMinSpeed: 1,
           quickExitDot: 0.15,
           reverseSteerGain: 0.25,
@@ -589,7 +589,15 @@ const { useEffect, useRef, useState } = React;
           readyMinSpeed: 1,
           exitThrottle: 0.90,
           turnThrottle: 0.80,
-          steerGainTurn: 0.35
+          steerGainTurn: 0.35,
+          // New parameters for smarter recovery
+          steerCommitTime: 0.25,      // Minimum time to commit to a steering direction
+          maxReverseSpeed: 60,        // Cap reverse speed to prevent aggressive reversing
+          edgeHugSpeed: 25,           // Speed threshold for edge hugging detection
+          edgeHugTime: 1.2,           // Time threshold for edge hugging
+          forwardExitSpeed: 20,       // Minimum forward velocity to exit recovery
+          failedRecoveryCount: 3,     // After this many failed recoveries, use teleport-style reset
+          recoveryMemoryTime: 5.0     // Time window to remember failed recoveries
         };
         const gripModeConfig = (window.RacerModes && typeof window.RacerModes.get === "function") ? window.RacerModes.get("grip") : null;
         function sanitizeDifficulty(value){
@@ -648,7 +656,14 @@ const { useEffect, useRef, useState } = React;
               lineIdx: 0,
               phase: null,
               reverseTimer: 0,
-              phaseTimer: 0
+              phaseTimer: 0,
+              // New tracking for smarter recovery
+              committedSteerDir: 0,     // -1 = left, 0 = none, 1 = right
+              steerCommitTimer: 0,      // Time since steering direction was committed
+              edgeHugTimer: 0,          // Time spent edge hugging
+              failedRecoveries: 0,      // Count of failed recovery attempts
+              lastRecoveryTime: 0,      // Timestamp of last recovery for memory window
+              totalRecoveryTime: 0      // Cumulative time in recovery for this stuck episode
             };
           }
           return car.aiRecovery;
@@ -678,18 +693,41 @@ const { useEffect, useRef, useState } = React;
           return !safeOnRoad(futureX, futureY);
         }
         // Determine optimal steering direction during reverse - returns best steer value (-1 to 1)
-        // Picks the direction that requires the smallest turn to face the racing line
-        function getOptimalReverseSteer(car, headingInfo) {
+        // Uses steering commitment to prevent oscillation
+        function getOptimalReverseSteer(car, headingInfo, state) {
           if (!car || !headingInfo) return 0;
+          const recoveryState = state || ensureAiRecoveryState(car);
+          
           // Target heading we want to face (toward racing line)
           const targetHeading = headingInfo.toNodeHeading;
           const carAngle = car.angle || 0;
           // Calculate the angle difference (normalized to -PI to PI)
           const angleDiff = safeNormalizeAngle(targetHeading - carAngle);
-          // When reversing, steering works opposite to forward motion
-          // If we need to turn right (positive angleDiff), steer right while reversing
-          // Use a smooth, proportional response
-          return safeClamp(angleDiff / (Math.PI * AI_RECOVERY_CFG.reverseSteerGain), -1, 1);
+          
+          // Calculate the ideal steering direction
+          const idealSteer = safeClamp(angleDiff / (Math.PI * AI_RECOVERY_CFG.reverseSteerGain), -1, 1);
+          const idealDir = idealSteer > 0.1 ? 1 : (idealSteer < -0.1 ? -1 : 0);
+          
+          // Check if we should commit to a new direction or maintain current commitment
+          if (recoveryState) {
+            const currentCommit = recoveryState.committedSteerDir || 0;
+            const commitTimer = recoveryState.steerCommitTimer || 0;
+            
+            // If no commitment or commitment has expired, set new direction
+            if (currentCommit === 0 || commitTimer >= AI_RECOVERY_CFG.steerCommitTime) {
+              recoveryState.committedSteerDir = idealDir;
+              recoveryState.steerCommitTimer = 0;
+            } else if (idealDir !== 0 && idealDir === currentCommit) {
+              // Ideal direction matches commitment - reset timer to maintain direction
+              recoveryState.steerCommitTimer = 0;
+            }
+            // Use committed direction if still within commit window
+            if (recoveryState.committedSteerDir !== 0 && commitTimer < AI_RECOVERY_CFG.steerCommitTime) {
+              return recoveryState.committedSteerDir * Math.min(1, Math.abs(idealSteer) + 0.3);
+            }
+          }
+          
+          return idealSteer;
         }
         // Check if car is in a reasonable position to start racing - SUPER lenient
         function isReadyToRace(car, headingInfo) {
@@ -767,9 +805,20 @@ const { useEffect, useRef, useState } = React;
           const vecDiff = safeNormalizeAngle(toNodeHeading - car.angle);
           return { desiredHeading, diff, dot, toNodeHeading, toNodeDiff: vecDiff, toNodeDot: vecDot, distance: dist };
         }
-        function beginAiRecovery(state, car, mode) {
+        function beginAiRecovery(state, car, mode, currentTime) {
           if (!state) return;
           const targetCar = car || null;
+          
+          // Track failed recovery attempts within the memory window
+          const now = currentTime || 0;
+          if (state.lastRecoveryTime && (now - state.lastRecoveryTime) < AI_RECOVERY_CFG.recoveryMemoryTime) {
+            state.failedRecoveries = (state.failedRecoveries || 0) + 1;
+          } else {
+            // Memory window expired, reset counter
+            state.failedRecoveries = 1;
+          }
+          state.lastRecoveryTime = now;
+          
           state.active = true;
           state.mode = mode || "turn";
           state.timer = 0;
@@ -777,6 +826,9 @@ const { useEffect, useRef, useState } = React;
           state.cooldown = AI_RECOVERY_CFG.cooldown;
           state.stuckTimer = 0;
           state.phaseTimer = 0;
+          state.committedSteerDir = 0;
+          state.steerCommitTimer = 0;
+          state.edgeHugTimer = 0;
           // Set phase based on mode: "reverse" mode starts with reverseOut phase, others start with "turn"
           state.phase = mode === "reverse" ? "reverseOut" : "turn";
           if (targetCar && targetCar.physics) {
@@ -786,8 +838,15 @@ const { useEffect, useRef, useState } = React;
             try { targetCar.gearbox.shiftUp(); targetCar.gearbox.shiftUp(); } catch(_){ }
           }
         }
-        function endAiRecovery(state, car) {
+        function endAiRecovery(state, car, success) {
           if (!state) return;
+          
+          // If this was not a successful recovery, track it for failed recovery escalation
+          if (!success && state.failedRecoveries >= AI_RECOVERY_CFG.failedRecoveryCount) {
+            // Multiple failed recoveries - use longer cooldown to break the loop
+            state.cooldown = AI_RECOVERY_CFG.cooldown * 3;
+          }
+          
           state.active = false;
           state.mode = null;
           state.timer = 0;
@@ -795,18 +854,27 @@ const { useEffect, useRef, useState } = React;
           state.reverseTimer = 0;
           state.phaseTimer = 0;
           state.backwardsTimer = 0;
+          state.committedSteerDir = 0;
+          state.steerCommitTimer = 0;
+          state.edgeHugTimer = 0;
           state.lineIdx = Number.isFinite(state.lineIdx) ? state.lineIdx : 0;
           if (car && car.physics) {
             car.physics.dir = 1;
           }
         }
         // Override AI inputs when a car is stuck so it can perform a turn or reverse maneuver.
-        function applyAiRecoveryControl(car, baseControl, dt, line) {
+        function applyAiRecoveryControl(car, baseControl, dt, line, gameTime) {
           if (!car) return baseControl || { throttle: 0, brake: 0, steer: 0 };
           const state = ensureAiRecoveryState(car);
           if (!state) return baseControl || { throttle: 0, brake: 0, steer: 0 };
           state.cooldown = Math.max(0, (state.cooldown || 0) - dt);
           const speed = getCarSpeed(car);
+          
+          // Update steering commit timer
+          if (state.active) {
+            state.steerCommitTimer = (state.steerCommitTimer || 0) + dt;
+          }
+          
           if (!state.active) {
             state.stuckTimer = speed < AI_RECOVERY_CFG.stuckSpeed ? (state.stuckTimer + dt) : 0;
           } else {
@@ -824,6 +892,16 @@ const { useEffect, useRef, useState } = React;
           const farFromLine = headingInfo ? headingInfo.distance > AI_RECOVERY_CFG.lineAimDistance : false;
           const driftingAway = headingInfo ? headingInfo.toNodeDot < 0.1 : false;
           const stuck = speed < AI_RECOVERY_CFG.stuckSpeed;
+          
+          // Detect edge hugging - car moving slowly but not completely stuck
+          const isEdgeHugging = !state.active && speed > 0 && speed < AI_RECOVERY_CFG.edgeHugSpeed && 
+                               (offTrack || (headingInfo && headingInfo.distance > AI_RECOVERY_CFG.lineCloseDistance));
+          if (isEdgeHugging) {
+            state.edgeHugTimer = (state.edgeHugTimer || 0) + dt;
+          } else if (!state.active) {
+            state.edgeHugTimer = 0;
+          }
+          
           // Track how long car has been racing backwards (facing opposite direction of racing line)
           if (!state.active) {
             state.backwardsTimer = backwards && speed > AI_RECOVERY_CFG.stuckSpeed ? (state.backwardsTimer || 0) + dt : 0;
@@ -836,9 +914,12 @@ const { useEffect, useRef, useState } = React;
             const driftTrigger = stuck && headingInfo && headingInfo.distance > 80 && headingInfo.toNodeDot < 0.3 && state.stuckTimer > 0.5;
             // Trigger recovery when racing backwards at speed for too long
             const backwardsRacingTrigger = backwards && speed > AI_RECOVERY_CFG.stuckSpeed && state.backwardsTimer > AI_RECOVERY_CFG.backwardsTime;
-            if (wrongWayTrigger || offTrackTrigger || driftTrigger || backwardsRacingTrigger) {
+            // Trigger for edge hugging - car slowly driving along edge
+            const edgeHugTrigger = state.edgeHugTimer > AI_RECOVERY_CFG.edgeHugTime;
+            
+            if (wrongWayTrigger || offTrackTrigger || driftTrigger || backwardsRacingTrigger || edgeHugTrigger) {
               const preferReverse = backwards || driftingAway;
-              beginAiRecovery(state, car, preferReverse ? "reverse" : "turn");
+              beginAiRecovery(state, car, preferReverse ? "reverse" : "turn", gameTime || 0);
             }
           }
           const control = {
@@ -855,18 +936,39 @@ const { useEffect, useRef, useState } = React;
           const onRoadNow = safeOnRoad(car.x, car.y);
           const notBackwards = headingInfo ? headingInfo.dot > AI_RECOVERY_CFG.backwardsThreshold : true;
           
-          // SIMPLE EXIT LOGIC: 
-          // 1. If on road and not facing backwards, EXIT IMMEDIATELY
-          // 2. If timer exceeds maxDuration, EXIT NO MATTER WHAT
-          const readyToExit = onRoadNow && notBackwards;
+          // Calculate forward velocity (velocity component along car's heading direction)
+          const vx = (car.physics && car.physics.vx) || car.vx || 0;
+          const vy = (car.physics && car.physics.vy) || car.vy || 0;
+          const fwdX = Math.cos(car.angle || 0);
+          const fwdY = Math.sin(car.angle || 0);
+          const forwardSpeed = vx * fwdX + vy * fwdY;
+          
+          // EXIT CONDITIONS:
+          // 1. On road, not facing backwards, and have some forward momentum
+          // 2. Hard timeout after maxDuration
+          const hasForwardMomentum = forwardSpeed > AI_RECOVERY_CFG.forwardExitSpeed;
+          const readyToExit = onRoadNow && notBackwards && hasForwardMomentum;
           const timedOut = state.timer > AI_RECOVERY_CFG.maxDuration;
           
-          if (readyToExit || timedOut) {
-            // EXIT RECOVERY - start racing!
-            endAiRecovery(state, car);
+          if (readyToExit) {
+            // Successful recovery - clear failed counter
+            state.failedRecoveries = 0;
+            endAiRecovery(state, car, true);
             control.throttle = AI_RECOVERY_CFG.exitThrottle;
             control.brake = 0;
             // Steer toward racing line
+            if (headingInfo) {
+              const headingDiff = safeNormalizeAngle(headingInfo.desiredHeading - car.angle);
+              control.steer = safeClamp(headingDiff / (Math.PI * AI_RECOVERY_CFG.steerGainTurn), -1, 1);
+            }
+            return control;
+          }
+          
+          if (timedOut) {
+            // Timed out - this counts as a failed recovery
+            endAiRecovery(state, car, false);
+            control.throttle = AI_RECOVERY_CFG.exitThrottle;
+            control.brake = 0;
             if (headingInfo) {
               const headingDiff = safeNormalizeAngle(headingInfo.desiredHeading - car.angle);
               control.steer = safeClamp(headingDiff / (Math.PI * AI_RECOVERY_CFG.steerGainTurn), -1, 1);
@@ -880,27 +982,32 @@ const { useEffect, useRef, useState } = React;
             state.phase = "reverseOut";
             state.reverseTimer = 0;
             state.phaseTimer = 0;
+            state.committedSteerDir = 0; // Reset steering commitment on mode change
           }
           
           if (state.phase === "reverseOut") {
-            // Use optimal steering direction (shortest path)
-            control.steer = getOptimalReverseSteer(car, headingInfo);
+            // Use optimal steering direction with commitment (prevents oscillation)
+            control.steer = getOptimalReverseSteer(car, headingInfo, state);
             control.throttle = 0;
             
             // Check if we would hit an edge if we continue reversing
             const wouldHitEdge = wouldHitEdgeReversing(car, AI_RECOVERY_CFG.edgeLookahead);
             
-            if (wouldHitEdge) {
-              // About to hit edge - stop reversing immediately and switch to forward
-              control.brake = 0;
+            // Also check if we're reversing too fast
+            const reversingTooFast = forwardSpeed < -AI_RECOVERY_CFG.maxReverseSpeed;
+            
+            if (wouldHitEdge || reversingTooFast) {
+              // About to hit edge or going too fast - stop reversing immediately
+              control.brake = reversingTooFast ? 0.5 : 0; // Light brake if too fast
               state.phase = "turn";
               state.mode = "turn";
               state.phaseTimer = 0;
+              state.committedSteerDir = 0;
               control.throttle = AI_RECOVERY_CFG.exitThrottle;
               return control;
             }
             
-            // Not near edge - reverse quickly with strong braking
+            // Not near edge - reverse with controlled braking
             control.brake = Math.max(AI_RECOVERY_CFG.reverseBrake, control.brake || 0);
             
             state.reverseTimer = (state.reverseTimer || 0) + dt;
@@ -911,6 +1018,7 @@ const { useEffect, useRef, useState } = React;
               state.phase = "turn";
               state.mode = "turn";
               state.phaseTimer = 0;
+              state.committedSteerDir = 0;
             }
             return control;
           }
@@ -921,20 +1029,23 @@ const { useEffect, useRef, useState } = React;
           const steerTarget = safeClamp(headingDiff / (Math.PI * AI_RECOVERY_CFG.steerGainTurn), -1, 1);
           control.steer = steerTarget;
           if (state.mode === "reverse") {
-            // Use optimal steering direction for shortest path
-            control.steer = getOptimalReverseSteer(car, headingInfo);
+            // Use optimal steering direction for shortest path (with commitment)
+            control.steer = getOptimalReverseSteer(car, headingInfo, state);
             
             // Check if we would hit an edge if we continue reversing
             const wouldHitEdge = wouldHitEdgeReversing(car, AI_RECOVERY_CFG.edgeLookahead);
+            // Check if reversing too fast
+            const reversingTooFast = forwardSpeed < -AI_RECOVERY_CFG.maxReverseSpeed;
             
-            if (wouldHitEdge) {
-              // About to hit edge - stop reversing and go forward with strong throttle
+            if (wouldHitEdge || reversingTooFast) {
+              // About to hit edge or too fast - stop reversing and go forward
               control.throttle = AI_RECOVERY_CFG.exitThrottle;
-              control.brake = 0;
+              control.brake = reversingTooFast ? 0.3 : 0;
               state.mode = "turn";
               state.phase = "turn";
+              state.committedSteerDir = 0;
             } else {
-              // Not near edge - reverse quickly
+              // Not near edge - reverse with controlled speed
               control.throttle = 0;
               control.brake = Math.max(AI_RECOVERY_CFG.reverseBrake, control.brake || 0);
             }
@@ -3381,7 +3492,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                 };
                 fallbackDelta = { dx, dy };
               }
-              control = applyAiRecoveryControl(car, control, dt, racingLine);
+              control = applyAiRecoveryControl(car, control, dt, racingLine, performance.now() / 1000);
               updateCar(car, dt, control);
               if (!controller && fallbackDelta) {
                 const dist = Math.hypot(fallbackDelta.dx, fallbackDelta.dy);
