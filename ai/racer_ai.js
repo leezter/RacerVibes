@@ -16,6 +16,11 @@
   };
   const MAX_TARGET_SPEED = 2600; // ~190 mph with ppm ≈ 30
 
+  // Steering blend weights for following the racing line
+  const TANGENT_BLEND_WEIGHT = 0.7;     // Weight for following the racing line's tangent direction
+  const LOOKAHEAD_BLEND_WEIGHT = 0.3;   // Weight for looking ahead to anticipate turns
+  const LATERAL_CORRECTION_GAIN = 0.015; // How aggressively to correct lateral offset from the line
+
   const SKILL_PRESETS = {
     easy: {
       maxThrottle: 0.85,
@@ -478,18 +483,16 @@
         }
         
         // Blend tangent direction (following the line) with lookahead direction (anticipating turns)
-        // Use primarily tangent direction (0.7) with some lookahead (0.3) for smoother path
+        // Use primarily tangent direction with some lookahead for smoother path
         // Also add a correction factor based on lateral offset to stay on the line
         const tangentError = normalizeAngle(tangentHeading - car.angle);
         const lookaheadError = normalizeAngle(lookaheadHeading - car.angle);
         
         // Lateral correction: steer back toward the line if we're off it
-        // Gain controls how aggressively we correct lateral offset
-        const lateralCorrectionGain = 0.015;
-        const lateralCorrection = clamp(-lateralOffset * lateralCorrectionGain, -0.5, 0.5);
+        const lateralCorrection = clamp(-lateralOffset * LATERAL_CORRECTION_GAIN, -0.5, 0.5);
         
         // Blend: follow the tangent primarily, use lookahead for anticipation, correct lateral drift
-        const blendedError = tangentError * 0.7 + lookaheadError * 0.3 + lateralCorrection;
+        const blendedError = tangentError * TANGENT_BLEND_WEIGHT + lookaheadError * LOOKAHEAD_BLEND_WEIGHT + lateralCorrection;
         const error = normalizeAngle(blendedError);
         
         const steer = clamp(error * skill.steerP + ((error - prevError) / Math.max(1e-3, dt)) * skill.steerD, -1, 1);
