@@ -518,8 +518,8 @@ const { useEffect, useRef, useState } = React;
           brakeAggro: 0.62,
           steerP: 3.2,
           steerD: 0.16,
-          lookaheadBase: 140,
-          lookaheadSpeed: 0.25,
+          lookaheadBase: 30,
+          lookaheadSpeed: 0.12,
           cornerMargin: 0,
           steerCutThrottle: 0.3,
           searchWindow: 56,
@@ -530,8 +530,8 @@ const { useEffect, useRef, useState } = React;
         const AI_CONTROL_LIMITS = {
           apexAggression: { min: 0, max: 1 },
           maxOffset: { min: 0.2, max: 0.65 },
-          lookaheadBase: { min: 20, max: 140 },
-          lookaheadSpeed: { min: 0.05, max: 0.7 },
+          lookaheadBase: { min: 10, max: 60 },
+          lookaheadSpeed: { min: 0.05, max: 0.20 },
           steerP: { min: 0.8, max: 3.2 },
           maxThrottle: { min: 0.6, max: 1.2 },
           brakeAggro: { min: 0.4, max: 1.6 },
@@ -1140,8 +1140,8 @@ const { useEffect, useRef, useState } = React;
             difficulty: initialAIDifficulty,
             apexAggression: lineDefaults.apexAggression ?? 0.10,
             maxOffset: lineDefaults.maxOffset ?? 0.65,
-            lookaheadBase: skillDefaults.lookaheadBase ?? 140,
-            lookaheadSpeed: skillDefaults.lookaheadSpeed ?? 0.25,
+            lookaheadBase: skillDefaults.lookaheadBase ?? 30,
+            lookaheadSpeed: skillDefaults.lookaheadSpeed ?? 0.12,
             steerP: skillDefaults.steerP ?? 3.2,
             maxThrottle: skillDefaults.maxThrottle ?? 1.2,
             brakeAggro: skillDefaults.brakeAggro ?? 0.62,
@@ -4146,16 +4146,16 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                 <div className="field">
                   <input
                     type="range"
-                    min={20}
-                    max={140}
+                    min={10}
+                    max={60}
                     step={1}
                     value={aiControls.lookaheadBase}
                     onChange={(e) => handleAiControlChange("lookaheadBase", parseFloat(e.target.value))}
                   />
                   <input
                     type="number"
-                    min={20}
-                    max={140}
+                    min={10}
+                    max={60}
                     step={1}
                     value={Math.round(aiControls.lookaheadBase)}
                     onChange={(e) => handleAiControlChange("lookaheadBase", parseFloat(e.target.value))}
@@ -4168,7 +4168,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                   <input
                     type="range"
                     min={0.05}
-                    max={0.7}
+                    max={0.20}
                     step={0.01}
                     value={aiControls.lookaheadSpeed}
                     onChange={(e) => handleAiControlChange("lookaheadSpeed", parseFloat(e.target.value))}
@@ -4176,7 +4176,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                   <input
                     type="number"
                     min={0.05}
-                    max={0.7}
+                    max={0.20}
                     step={0.01}
                     value={aiControls.lookaheadSpeed.toFixed(2)}
                     onChange={(e) => handleAiControlChange("lookaheadSpeed", parseFloat(e.target.value))}

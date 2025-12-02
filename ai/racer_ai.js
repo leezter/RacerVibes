@@ -22,8 +22,8 @@
       brakeAggro: 0.65,
       steerP: 1.6,
       steerD: 0.06,
-      lookaheadBase: 40,
-      lookaheadSpeed: 0.22,
+      lookaheadBase: 20,
+      lookaheadSpeed: 0.08,
       cornerMargin: 32,
       steerCutThrottle: 0.45,
       searchWindow: 48,
@@ -36,8 +36,8 @@
       brakeAggro: 0.9,
       steerP: 2.1,
       steerD: 0.1,
-      lookaheadBase: 40,
-      lookaheadSpeed: 0.25,
+      lookaheadBase: 25,
+      lookaheadSpeed: 0.10,
       cornerMargin: 22,
       steerCutThrottle: 0.3,
       searchWindow: 56,
@@ -50,8 +50,8 @@
       brakeAggro: 0.62,
       steerP: 3.2,
       steerD: 0.16,
-      lookaheadBase: 140,
-      lookaheadSpeed: 0.25,
+      lookaheadBase: 30,
+      lookaheadSpeed: 0.12,
       cornerMargin: 0,
       steerCutThrottle: 0.18,
       searchWindow: 64,
@@ -451,14 +451,50 @@
         const lookahead = skill.lookaheadBase + speed * skill.lookaheadSpeed;
         const sample = sampleAlongLine(line, idx, lookahead) || { point: { x: line[idx].x, y: line[idx].y }, targetSpeed: line[idx].targetSpeed, nextIndex: idx };
         idx = sample.nextIndex || idx;
+        
+        // Get current node on the racing line
+        const currentNode = line[idx] || line[0];
+        
+        // Calculate heading toward lookahead point
         const targetX = sample.point.x - car.x;
         const targetY = sample.point.y - car.y;
-        const targetHeading = Math.atan2(targetY, targetX);
-        const error = normalizeAngle(targetHeading - car.angle);
+        const lookaheadHeading = Math.atan2(targetY, targetX);
+        
+        // Get the racing line's tangent direction at current position
+        // This tells us where the racing line is actually pointing right now
+        const tangent = currentNode.tangent;
+        let tangentHeading = car.angle; // fallback
+        if (tangent && Number.isFinite(tangent.x) && Number.isFinite(tangent.y)) {
+          tangentHeading = Math.atan2(tangent.y, tangent.x);
+        }
+        
+        // Calculate lateral offset from the racing line (for path-following correction)
+        const dx = car.x - currentNode.x;
+        const dy = car.y - currentNode.y;
+        const normal = currentNode.normal;
+        let lateralOffset = 0;
+        if (normal && Number.isFinite(normal.x) && Number.isFinite(normal.y)) {
+          lateralOffset = dx * normal.x + dy * normal.y; // positive = left of line, negative = right
+        }
+        
+        // Blend tangent direction (following the line) with lookahead direction (anticipating turns)
+        // Use primarily tangent direction (0.7) with some lookahead (0.3) for smoother path
+        // Also add a correction factor based on lateral offset to stay on the line
+        const tangentError = normalizeAngle(tangentHeading - car.angle);
+        const lookaheadError = normalizeAngle(lookaheadHeading - car.angle);
+        
+        // Lateral correction: steer back toward the line if we're off it
+        // Gain controls how aggressively we correct lateral offset
+        const lateralCorrectionGain = 0.015;
+        const lateralCorrection = clamp(-lateralOffset * lateralCorrectionGain, -0.5, 0.5);
+        
+        // Blend: follow the tangent primarily, use lookahead for anticipation, correct lateral drift
+        const blendedError = tangentError * 0.7 + lookaheadError * 0.3 + lateralCorrection;
+        const error = normalizeAngle(blendedError);
+        
         const steer = clamp(error * skill.steerP + ((error - prevError) / Math.max(1e-3, dt)) * skill.steerD, -1, 1);
         prevError = error;
 
-          const currentNode = line[idx] || line[0];
           const rawCurrent = (currentNode && Number.isFinite(currentNode.targetSpeed)) ? currentNode.targetSpeed : skill.minTargetSpeed;
           const rawFuture = Number.isFinite(sample.targetSpeed) ? sample.targetSpeed : rawCurrent;
           const speedScale = mapThrottleToSpeedScale(skill.maxThrottle);
