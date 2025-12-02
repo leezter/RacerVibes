@@ -17,9 +17,11 @@
   const MAX_TARGET_SPEED = 2600; // ~190 mph with ppm ≈ 30
 
   // Steering blend weights for following the racing line
-  const TANGENT_BLEND_WEIGHT = 0.7;     // Weight for following the racing line's tangent direction
-  const LOOKAHEAD_BLEND_WEIGHT = 0.3;   // Weight for looking ahead to anticipate turns
-  const LATERAL_CORRECTION_GAIN = 0.015; // How aggressively to correct lateral offset from the line
+  // Higher lookahead weight = smoother steering, car uses line as a guide
+  // Lower lookahead weight = stricter line following but can cause oscillation
+  const TANGENT_BLEND_WEIGHT = 0.35;    // Weight for following the racing line's tangent direction
+  const LOOKAHEAD_BLEND_WEIGHT = 0.65;  // Weight for looking ahead to anticipate turns (smoother)
+  const LATERAL_CORRECTION_GAIN = 0.003; // Very gentle correction to avoid oscillation
 
   const SKILL_PRESETS = {
     easy: {
@@ -27,8 +29,8 @@
       brakeAggro: 0.65,
       steerP: 1.6,
       steerD: 0.06,
-      lookaheadBase: 20,
-      lookaheadSpeed: 0.08,
+      lookaheadBase: 35,
+      lookaheadSpeed: 0.12,
       cornerMargin: 32,
       steerCutThrottle: 0.45,
       searchWindow: 48,
@@ -41,8 +43,8 @@
       brakeAggro: 0.9,
       steerP: 2.1,
       steerD: 0.1,
-      lookaheadBase: 25,
-      lookaheadSpeed: 0.10,
+      lookaheadBase: 40,
+      lookaheadSpeed: 0.14,
       cornerMargin: 22,
       steerCutThrottle: 0.3,
       searchWindow: 56,
@@ -55,8 +57,8 @@
       brakeAggro: 0.62,
       steerP: 3.2,
       steerD: 0.16,
-      lookaheadBase: 30,
-      lookaheadSpeed: 0.12,
+      lookaheadBase: 50,
+      lookaheadSpeed: 0.16,
       cornerMargin: 0,
       steerCutThrottle: 0.18,
       searchWindow: 64,
@@ -483,15 +485,23 @@
         }
         
         // Blend tangent direction (following the line) with lookahead direction (anticipating turns)
-        // Use primarily tangent direction with some lookahead for smoother path
-        // Also add a correction factor based on lateral offset to stay on the line
+        // Use primarily lookahead direction for smoother steering (racing line as guide, not strict path)
         const tangentError = normalizeAngle(tangentHeading - car.angle);
         const lookaheadError = normalizeAngle(lookaheadHeading - car.angle);
         
-        // Lateral correction: steer back toward the line if we're off it
-        const lateralCorrection = clamp(-lateralOffset * LATERAL_CORRECTION_GAIN, -0.5, 0.5);
+        // Lateral correction: only apply when significantly off the line (deadband)
+        // Also reduce correction at higher speeds to avoid oscillation
+        const LATERAL_DEADBAND = 15; // pixels - ignore small offsets
+        const absOffset = Math.abs(lateralOffset);
+        let lateralCorrection = 0;
+        if (absOffset > LATERAL_DEADBAND) {
+          // Apply gentle correction only for significant deviations
+          const excessOffset = absOffset - LATERAL_DEADBAND;
+          const speedFactor = clamp(1 - speed / 800, 0.2, 1); // Reduce correction at high speed
+          lateralCorrection = clamp(-Math.sign(lateralOffset) * excessOffset * LATERAL_CORRECTION_GAIN * speedFactor, -0.15, 0.15);
+        }
         
-        // Blend: follow the tangent primarily, use lookahead for anticipation, correct lateral drift
+        // Blend: use lookahead primarily for smooth steering, tangent helps follow the line shape
         const blendedError = tangentError * TANGENT_BLEND_WEIGHT + lookaheadError * LOOKAHEAD_BLEND_WEIGHT + lateralCorrection;
         const error = normalizeAngle(blendedError);
         
