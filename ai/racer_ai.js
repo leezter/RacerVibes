@@ -529,7 +529,13 @@
         const steerMag = Math.abs(steer);
         if (steerMag > skill.steerCutThrottle) {
           const cut = clamp((steerMag - skill.steerCutThrottle) / (1 - skill.steerCutThrottle), 0, 1);
-          throttle *= (1 - cut);
+          // Reduce throttle cut at low speeds so AI cars can accelerate even when steering significantly
+          // This prevents AI from sitting idle when they need to steer toward the racing line at startup
+          const LOW_SPEED_THRESHOLD = 150; // px/s - below this speed, allow more throttle while steering
+          const LOW_SPEED_CUT_REDUCTION = 0.8; // At 0 speed, only (1 - 0.8) = 20% of throttle cut applies
+          const speedCutReduction = 1 - clamp(speed / LOW_SPEED_THRESHOLD, 0, 1);
+          const effectiveCut = cut * (1 - speedCutReduction * LOW_SPEED_CUT_REDUCTION);
+          throttle *= (1 - effectiveCut);
         }
 
         const hyst = skill.speedHysteresis;
