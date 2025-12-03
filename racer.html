@@ -2635,17 +2635,25 @@ const { useEffect, useRef, useState } = React;
             if (!curvatures.length) return [];
             const n = curvatures.length;
             const smoothed = [];
+            const count = 2 * windowSize + 1;
             for (let i = 0; i < n; i++) {
               let sum = 0;
-              let count = 0;
               for (let j = -windowSize; j <= windowSize; j++) {
                 const idx = (i + j + n) % n;
                 sum += curvatures[idx];
-                count++;
               }
               smoothed.push(sum / count);
             }
             return smoothed;
+          }
+
+          // Seeded pseudo-random number generator for consistent texture patterns
+          // Uses sine-based hash for deterministic output given a seed value
+          const SEED_MULTIPLIER = 9999;
+          const SEED_SCALE = 10000;
+          function seededRandom(seed) {
+            const x = Math.sin(seed * SEED_MULTIPLIER) * SEED_SCALE;
+            return x - Math.floor(x);
           }
 
           // Draw tire mark streaks along the track
@@ -2657,11 +2665,6 @@ const { useEffect, useRef, useState } = React;
             const normalizedCurvatures = curvatures.map(c => Math.min(1, c / maxCurv));
             
             const n = centerline.length;
-            // Seeded random for consistent patterns
-            const seededRandom = (seed) => {
-              const x = Math.sin(seed * 9999) * 10000;
-              return x - Math.floor(x);
-            };
             
             // Draw multiple tire mark layers at different offsets from centerline
             const tireOffsets = [-0.35, -0.20, 0.20, 0.35]; // Relative to road width
@@ -2738,11 +2741,6 @@ const { useEffect, useRef, useState } = React;
           // Draw subtle asphalt texture noise
           function drawAsphaltNoise(ctx, centerline, roadWidth) {
             if (!centerline || centerline.length < 2) return;
-            
-            const seededRandom = (seed) => {
-              const x = Math.sin(seed * 9999) * 10000;
-              return x - Math.floor(x);
-            };
             
             const n = centerline.length;
             const step = 3; // Sample every few points
