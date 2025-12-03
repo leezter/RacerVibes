@@ -229,9 +229,11 @@
       // We should be on the OPPOSITE side (outside) to set up for the corner
       if (maxFutureAbsCurv > currentAbsCurv * 1.5 && maxFutureAbsCurv > 0.3 * maxAbsCurv) {
         // We're approaching a corner - go to the outside (opposite of apex)
-        const setupOffset = -futureApexOffset * (0.6 + 0.3 * aggression);
+        // Multiplier ranges from 0.85 (conservative) to 1.0 (aggressive) to push line far to outside
+        const setupOffset = -futureApexOffset * (0.85 + 0.15 * aggression);
         const blend = clamp((maxFutureAbsCurv - currentAbsCurv) / maxAbsCurv, 0, 1);
-        shiftedOffsets[i] = lerp(targetOffsets[i], setupOffset, blend * 0.8);
+        // Apply full blend (no dampening) to ensure line reaches the outside for proper corner entry
+        shiftedOffsets[i] = lerp(targetOffsets[i], setupOffset, blend);
       } else {
         // At or past apex, or on straight - use base offset
         shiftedOffsets[i] = targetOffsets[i];
