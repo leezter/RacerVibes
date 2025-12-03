@@ -1735,10 +1735,25 @@ const { useEffect, useRef, useState } = React;
           function sizeBackbufferToViewport() {
             const { w: vpW, h: vpH } = getViewportSize();
             const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-            const scaledW = Math.max(320, Math.round(vpW));
-            const scaledH = Math.max(240, Math.round(vpH));
             const MAXW = 1920;
             const MAXH = 1080;
+
+            // Calculate aspect ratio of the game world
+            const gameAspect = W / H;
+            const viewportAspect = vpW / vpH;
+
+            // Calculate canvas dimensions that maintain aspect ratio while fitting in viewport
+            let scaledW, scaledH;
+            if (viewportAspect > gameAspect) {
+              // Viewport is wider than game - fit to height, add pillarboxing
+              scaledH = Math.max(240, Math.round(vpH));
+              scaledW = Math.max(320, Math.round(scaledH * gameAspect));
+            } else {
+              // Viewport is taller than game - fit to width, add letterboxing
+              scaledW = Math.max(320, Math.round(vpW));
+              scaledH = Math.max(240, Math.round(scaledW / gameAspect));
+            }
+
             canvas.width = Math.min(Math.round(scaledW * dpr), MAXW);
             canvas.height = Math.min(Math.round(scaledH * dpr), MAXH);
             canvas.style.width = scaledW + 'px';
