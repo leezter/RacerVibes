@@ -241,7 +241,8 @@
     }
 
     // 9. Look behind to adjust exit lines
-    const lookbehindDist = Math.max(3, Math.floor(n / 16));
+    // Use same distance as lookahead for consistent outside-inside-outside pattern
+    const lookbehindDist = Math.max(5, Math.floor(n / 12));
     const exitOffsets = [];
     
     for (let i = 0; i < n; i++) {
@@ -260,12 +261,14 @@
       const currentAbsCurv = Math.abs(smoothCurvatures[i]);
       
       // If we're exiting a corner (past had more curvature)
-      // Gradually move back to outside/center
+      // Move to the outside (opposite of apex) - matching entry behavior
       if (maxPastAbsCurv > currentAbsCurv * 1.5 && maxPastAbsCurv > 0.3 * maxAbsCurv) {
-        // Exiting corner - blend back toward outside
-        const exitOffset = -pastApexOffset * (0.4 + 0.2 * aggression);
+        // Exiting corner - go to the outside (opposite of apex)
+        // Multiplier matches entry: 0.85 to 1.0 to push line far to outside
+        const exitOffset = -pastApexOffset * (0.85 + 0.15 * aggression);
         const blend = clamp((maxPastAbsCurv - currentAbsCurv) / maxAbsCurv, 0, 1);
-        exitOffsets[i] = lerp(shiftedOffsets[i], exitOffset, blend * 0.5);
+        // Apply full blend (no dampening) to ensure line reaches the outside for proper corner exit
+        exitOffsets[i] = lerp(shiftedOffsets[i], exitOffset, blend);
       } else {
         exitOffsets[i] = shiftedOffsets[i];
       }
