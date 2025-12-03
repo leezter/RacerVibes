@@ -32,14 +32,15 @@
     );
   }
 
-  const defaults = { width: 380, bottomOffset: 8, mphMax: 180, smoothing: 0.18 };
+  const defaults = { width: 200, bottomOffset: 4, mphMax: 180, smoothing: 0.18 };
 
   function buildGauge(root, width){
     const W = width, H = width; // square viewbox
     const svg = document.createElementNS(NS,'svg');
     svg.setAttribute('viewBox','0 0 600 600');
-    svg.style.width = `${Math.max(240, Math.min(W, 560))}px`;
-    svg.style.maxWidth = '80vw';
+    // Smaller, more responsive size
+    svg.style.width = `${Math.max(120, Math.min(W, 280))}px`;
+    svg.style.maxWidth = 'min(35vw, 200px)';
     svg.style.height = 'auto';
     svg.style.display = 'block';
 
@@ -170,9 +171,12 @@
   function addDevPanel(root, getState, setState){
     const btn = document.createElement('button');
     btn.textContent = 'SPD';
-    btn.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:51;border:1px solid #334;padding:6px 10px;border-radius:8px;background:#0f172a;color:#e2e8f0;font:12px system-ui;cursor:pointer;';
+    btn.id = 'spd-dev-toggle';
+    // Hide SPD button by default - now accessed through Dev menu
+    btn.style.cssText = 'display:none;position:fixed;right:12px;bottom:12px;z-index:51;border:1px solid #334;padding:6px 10px;border-radius:8px;background:#0f172a;color:#e2e8f0;font:12px system-ui;cursor:pointer;';
     const panel = document.createElement('div');
-    panel.style.cssText = 'position:fixed;right:12px;bottom:56px;width:240px;display:none;background:rgba(0,0,0,.85);color:#e5e7eb;border:1px solid #334;border-radius:10px;padding:10px;z-index:51;font:12px system-ui;';
+    panel.id = 'spd-dev-panel';
+    panel.style.cssText = 'position:fixed;left:12px;top:56px;width:min(200px, calc(100vw - 24px));display:none;background:rgba(15,23,42,0.94);color:#e5e7eb;border:1px solid rgba(71,85,105,0.6);border-radius:10px;padding:10px;z-index:35;font:11px system-ui;';
 
     panel.innerHTML = `
       <div style="display:grid;gap:8px;">

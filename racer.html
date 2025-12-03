@@ -25,33 +25,60 @@
       .subtitle { opacity:.9; font-size: 12px; }
       .note { opacity:.7; font-size: 11px; }
       .badge { display:inline-block; padding:4px 8px; border-radius:999px; background:#1f2937; font-size:12px; margin-left:8px; }
-      /* Mobile HUD buttons */
+      /* Mobile HUD buttons - moved further down */
       .hud { position:fixed; inset:0; pointer-events:none; }
-      .btn { position:absolute; width:72px; height:72px; border-radius:50%; background:#1f2937a6; color:#fff; display:grid; place-items:center; pointer-events:auto; user-select:none; touch-action:none; -webkit-tap-highlight-color: transparent; }
+      .btn { position:absolute; width:clamp(48px, 10vw, 72px); height:clamp(48px, 10vw, 72px); border-radius:50%; background:#1f2937a6; color:#fff; display:grid; place-items:center; pointer-events:auto; user-select:none; touch-action:none; -webkit-tap-highlight-color: transparent; font-size:clamp(14px, 4vw, 18px); }
       .btn:active { background:#374151cc; }
-      .btn.left  { left:16px; bottom:104px; }
-      .btn.right { left:104px; bottom:104px; }
-      .btn.thr   { right:16px; bottom:168px; }
-      .btn.brk   { right:16px; bottom:80px; }
-  .btn.gyro  { right:16px; top:16px; width:56px; height:40px; border-radius:8px; font-size:12px; }
+      .btn.left  { left:12px; bottom:24px; }
+      .btn.right { left:calc(12px + clamp(52px, 11vw, 76px)); bottom:24px; }
+      .btn.thr   { right:12px; bottom:calc(24px + clamp(52px, 11vw, 76px)); }
+      .btn.brk   { right:12px; bottom:24px; }
+  .btn.gyro  { right:12px; top:12px; width:44px; height:32px; border-radius:8px; font-size:11px; }
       @media (min-width: 900px) { .hud { display:none; } }
       /* Portrait orientation warning */
       .portrait-warning { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(10,10,10,0.94); color:#fff; z-index:10; text-align:center; padding:24px; }
       .portrait-warning .box { max-width:520px; border:1px solid #2a2a2a; border-radius:12px; padding:18px; background:#111; }
       @media (orientation: portrait) { .portrait-warning { display:flex; } }
-      .dev-toggle { position:fixed; top:16px; right:16px; padding:6px 12px; border-radius:999px; border:1px solid #1f2937; background:rgba(15,23,42,0.88); color:#e2e8f0; font-size:12px; cursor:pointer; z-index:30; }
-      .dev-toggle:hover { background:rgba(30,41,59,0.94); }
-      .dev-panel { position:fixed; top:56px; right:16px; width:220px; padding:12px; border-radius:12px; border:1px solid rgba(71,85,105,0.6); background:rgba(15,23,42,0.94); color:#e2e8f0; font-size:12px; display:none; gap:10px; box-shadow:0 12px 32px rgba(15,23,42,0.45); z-index:30; }
+
+      /* Dev Menu Dropdown - top left */
+      .dev-menu-container { position:fixed; top:12px; left:12px; z-index:40; }
+      .dev-menu-toggle { padding:6px 14px; border-radius:8px; border:1px solid rgba(59,130,246,0.45); background:rgba(15,23,42,0.92); color:#e2e8f0; font-size:12px; cursor:pointer; display:flex; align-items:center; gap:6px; }
+      .dev-menu-toggle:hover { background:rgba(30,41,59,0.94); }
+      .dev-menu-toggle::after { content:'▾'; font-size:10px; }
+      .dev-menu-toggle.open::after { content:'▴'; }
+      .dev-menu-dropdown { display:none; position:absolute; top:100%; left:0; margin-top:4px; min-width:160px; padding:6px; border-radius:10px; border:1px solid rgba(71,85,105,0.6); background:rgba(15,23,42,0.96); box-shadow:0 12px 32px rgba(15,23,42,0.45); }
+      .dev-menu-dropdown.open { display:flex; flex-direction:column; gap:4px; }
+      .dev-menu-item { padding:8px 12px; border-radius:6px; border:none; background:transparent; color:#e2e8f0; font-size:12px; cursor:pointer; text-align:left; display:flex; align-items:center; gap:8px; }
+      .dev-menu-item:hover { background:rgba(59,130,246,0.25); }
+      .dev-menu-item.active { background:rgba(59,130,246,0.35); }
+      .dev-menu-item::before { content:''; width:6px; height:6px; border-radius:50%; background:transparent; }
+      .dev-menu-item.active::before { background:#38bdf8; }
+
+      /* Hide old individual dev toggle buttons - now in dropdown */
+      .dev-toggle { display:none !important; }
+      .dev-toggle.ai-toggle { display:none !important; }
+
+      /* Dev panels - positioned from dev menu */
+      .dev-panel { position:fixed; top:56px; left:12px; width:min(220px, calc(100vw - 24px)); max-height:calc(100vh - 80px); overflow-y:auto; padding:12px; border-radius:12px; border:1px solid rgba(71,85,105,0.6); background:rgba(15,23,42,0.94); color:#e2e8f0; font-size:12px; display:none; gap:10px; box-shadow:0 12px 32px rgba(15,23,42,0.45); z-index:35; }
       .dev-panel.open { display:flex; flex-direction:column; }
       .dev-panel h3 { margin:0 0 4px; font-size:13px; font-weight:600; }
-      .dev-panel .field { display:grid; grid-template-columns:1fr 64px; align-items:center; gap:8px; }
-      .dev-panel label { display:flex; flex-direction:column; gap:6px; font-size:12px; color:#94a3b8; }
+      .dev-panel h4 { margin:8px 0 4px; font-size:12px; font-weight:600; }
+      .dev-panel .field { display:grid; grid-template-columns:1fr 56px; align-items:center; gap:6px; }
+      .dev-panel label { display:flex; flex-direction:column; gap:4px; font-size:11px; color:#94a3b8; }
       .dev-panel input[type="range"] { width:100%; accent-color:#38bdf8; }
       .dev-panel input[type="number"],
-      .dev-panel select { width:100%; padding:4px 6px; border-radius:6px; border:1px solid rgba(148,163,184,0.5); background:#0f172a; color:#e2e8f0; font-size:12px; }
-      .dev-toggle.ai-toggle { top:56px; }
-      .dev-panel.ai-panel { top:120px; width:260px; }
-      .hud-tip { position:fixed; top:16px; left:50%; transform:translateX(-50%); padding:6px 14px; border-radius:999px; background:rgba(15,23,42,0.92); color:#e2e8f0; font-size:12px; z-index:28; box-shadow:0 8px 20px rgba(15,23,42,0.45); pointer-events:none; }
+      .dev-panel select { width:100%; padding:3px 5px; border-radius:6px; border:1px solid rgba(148,163,184,0.5); background:#0f172a; color:#e2e8f0; font-size:11px; }
+      .dev-panel.ai-panel { width:min(240px, calc(100vw - 24px)); }
+      .hud-tip { position:fixed; top:12px; left:50%; transform:translateX(-50%); padding:5px 12px; border-radius:999px; background:rgba(15,23,42,0.92); color:#e2e8f0; font-size:11px; z-index:28; box-shadow:0 8px 20px rgba(15,23,42,0.45); pointer-events:none; }
+      
+      /* Responsive adjustments for mobile */
+      @media (max-width: 600px) {
+        .dev-panel { font-size:11px; padding:10px; width:min(200px, calc(100vw - 24px)); }
+        .dev-panel h3 { font-size:12px; }
+        .dev-panel .field { grid-template-columns:1fr 48px; gap:4px; }
+        .dev-panel input[type="number"], .dev-panel select { font-size:10px; padding:2px 4px; }
+        .dev-menu-toggle { padding:5px 10px; font-size:11px; }
+      }
     </style>
   </head>
   <body>
@@ -1314,6 +1341,8 @@ const { useEffect, useRef, useState } = React;
           }
         });
         const [aiPanelOpen, setAiPanelOpen] = useState(false);
+        const [devMenuOpen, setDevMenuOpen] = useState(false);
+        const [activeDevPanel, setActiveDevPanel] = useState(null); // 'scales', 'ai', 'devtools', 'gbx', 'tweaker'
         const [aiControls, setAIControls] = useState(() => {
           const lineDefaults = getLineDefaults();
           const skillDefaults = getAISkillDefaults(initialAIDifficulty);
@@ -4029,14 +4058,96 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
           };
         }, [trackName]);
 
+        // Helper to toggle panel from dev menu
+        const toggleDevPanel = (panelId) => {
+          if (activeDevPanel === panelId) {
+            setActiveDevPanel(null);
+          } else {
+            setActiveDevPanel(panelId);
+          }
+          setDevMenuOpen(false);
+        };
+
         return (
           <div className="wrap">
             {hudTip ? <div className="hud-tip">{hudTip}</div> : null}
+            {/* Dev Menu Dropdown */}
+            <div className="dev-menu-container">
+              <button
+                type="button"
+                className={`dev-menu-toggle ${devMenuOpen ? 'open' : ''}`}
+                onClick={() => setDevMenuOpen(open => !open)}
+              >
+                Dev
+              </button>
+              <div className={`dev-menu-dropdown ${devMenuOpen ? 'open' : ''}`}>
+                <button
+                  type="button"
+                  className={`dev-menu-item ${activeDevPanel === 'scales' ? 'active' : ''}`}
+                  onClick={() => toggleDevPanel('scales')}
+                >
+                  Scales
+                </button>
+                <button
+                  type="button"
+                  className={`dev-menu-item ${activeDevPanel === 'ai' ? 'active' : ''}`}
+                  onClick={() => toggleDevPanel('ai')}
+                >
+                  AI Controls
+                </button>
+                <button
+                  type="button"
+                  className="dev-menu-item"
+                  onClick={() => {
+                    // Toggle Dev tools panel (injected by physics.js)
+                    const devtools = document.getElementById('rv-devtools');
+                    if (devtools) {
+                      const panel = devtools.querySelector('.rv-panel');
+                      if (panel) panel.classList.toggle('open');
+                    }
+                    setDevMenuOpen(false);
+                  }}
+                >
+                  Dev Tools
+                </button>
+                <button
+                  type="button"
+                  className="dev-menu-item"
+                  onClick={() => {
+                    // Toggle GBX panel
+                    const gbxPanel = document.getElementById('gbxPanel');
+                    if (gbxPanel) {
+                      gbxPanel.style.display = gbxPanel.style.display === 'block' ? 'none' : 'block';
+                    }
+                    setDevMenuOpen(false);
+                  }}
+                >
+                  GBX
+                </button>
+                <button
+                  type="button"
+                  className="dev-menu-item"
+                  onClick={() => {
+                    // Toggle Vehicle Tweaker panel
+                    const tweaker = document.getElementById('rv-vehicle-tweaker');
+                    if (tweaker) {
+                      const panel = tweaker.querySelector('.rv-panel');
+                      if (panel) panel.classList.toggle('open');
+                    }
+                    setDevMenuOpen(false);
+                  }}
+                >
+                  Vehicle Tweaker
+                </button>
+              </div>
+            </div>
+            {/* Hidden legacy buttons for compatibility */}
             <button
               type="button"
               className="dev-toggle"
               onClick={() => setDevPanelOpen(open => !open)}
               aria-pressed={devPanelOpen}
+              style={{display: 'none'}}
             >
               {devPanelOpen ? "Hide scales" : "Scales"}
             </button>
@@ -4045,10 +4156,11 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               className="dev-toggle ai-toggle"
               onClick={() => setAiPanelOpen(open => !open)}
               aria-pressed={aiPanelOpen}
+              style={{display: 'none'}}
             >
               {aiPanelOpen ? "Hide AI Controls" : "AI Controls"}
             </button>
-            <div className={`dev-panel ${devPanelOpen ? "open" : ""}`}>
+            <div className={`dev-panel ${activeDevPanel === 'scales' ? "open" : ""}`}>
               <h3>Track scale</h3>
               <label>
                 <span>Geo scale</span>
@@ -4291,7 +4403,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                 Regenerate decor
               </button>
             </div>
-            <div className={`dev-panel ai-panel ${aiPanelOpen ? "open" : ""}`}>
+            <div className={`dev-panel ai-panel ${activeDevPanel === 'ai' ? "open" : ""}`}>
               <h3>AI Controls</h3>
               <label title={getAiControlDescription("difficulty")}>
                 <span>Difficulty</span>
@@ -4505,23 +4617,29 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
       root.render(<TopDownRacer />);
     </script>
     <style>
-  #gbxPanel { position:fixed; right:12px; top:12px; width:340px; max-height:80vh; overflow:auto; background:rgba(3,5,12,0.88); color:#e6edf6; font:12px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding:12px 20px 12px 12px; border:1px solid rgba(59,130,246,0.4); border-radius:10px; display:none; z-index:9999; backdrop-filter:blur(6px); box-sizing:border-box; }
-    #gbxPanel .gbx-header { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+  /* GBX Panel - positioned at left under Dev menu */
+  #gbxPanel { position:fixed; left:12px; top:56px; width:min(280px, calc(100vw - 24px)); max-height:calc(100vh - 80px); overflow:auto; background:rgba(3,5,12,0.92); color:#e6edf6; font:11px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding:10px 14px 10px 10px; border:1px solid rgba(59,130,246,0.4); border-radius:10px; display:none; z-index:35; backdrop-filter:blur(6px); box-sizing:border-box; }
+    #gbxPanel .gbx-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
     #gbxPanel .gbx-header button { appearance:none; border:0; background:rgba(148,163,184,0.2); color:#e2e8f0; padding:2px 8px; border-radius:6px; cursor:pointer; }
     #gbxPanel .gbx-header button:hover { background:rgba(148,163,184,0.35); }
-  #gbxPanel .gbx-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; padding-right:6px; }
-    #gbxPanel .gbx-row label { flex:0 0 130px; font-weight:600; }
+  #gbxPanel .gbx-row { display:flex; align-items:center; gap:6px; margin-bottom:6px; padding-right:4px; }
+    #gbxPanel .gbx-row label { flex:0 0 100px; font-weight:600; font-size:11px; }
     #gbxPanel .gbx-row input[type="range"] { flex:1; accent-color:#2563eb; }
-    #gbxPanel .gbx-row input[type="checkbox"] { width:18px; height:18px; }
-  #gbxPanel .gbx-value { width:52px; text-align:right; font-feature-settings:"tnum"; opacity:0.85; }
-  #gbxPanel .gbx-btns { display:flex; flex-direction:column; gap:4px; }
-  #gbxPanel .gbx-mini { appearance:none; border:1px solid rgba(148,163,184,0.35); background:rgba(23,37,84,0.68); color:#dde8ff; font-size:11px; padding:2px 6px; border-radius:4px; cursor:pointer; }
+    #gbxPanel .gbx-row input[type="checkbox"] { width:16px; height:16px; }
+  #gbxPanel .gbx-value { width:44px; text-align:right; font-feature-settings:"tnum"; opacity:0.85; font-size:10px; }
+  #gbxPanel .gbx-btns { display:flex; flex-direction:column; gap:3px; }
+  #gbxPanel .gbx-mini { appearance:none; border:1px solid rgba(148,163,184,0.35); background:rgba(23,37,84,0.68); color:#dde8ff; font-size:10px; padding:2px 5px; border-radius:4px; cursor:pointer; }
   #gbxPanel .gbx-mini:hover { background:rgba(59,130,246,0.45); }
-    #gbxPanel .gbx-actions { display:flex; gap:8px; margin-top:12px; }
-    #gbxPanel .gbx-actions button { flex:1; appearance:none; border:1px solid rgba(59,130,246,0.5); background:#1d335f; color:#e2e8f0; padding:6px 0; border-radius:6px; cursor:pointer; font-weight:600; }
+    #gbxPanel .gbx-actions { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
+    #gbxPanel .gbx-actions button { flex:1 1 auto; min-width:60px; appearance:none; border:1px solid rgba(59,130,246,0.5); background:#1d335f; color:#e2e8f0; padding:5px 4px; border-radius:6px; cursor:pointer; font-weight:600; font-size:10px; }
     #gbxPanel .gbx-actions button:hover { filter:brightness(1.1); }
-    #gbxToggle { position:fixed; right:12px; bottom:12px; z-index:9999; padding:8px 12px; border-radius:8px; border:1px solid rgba(59,130,246,0.45); background:#14203a; color:#e2e8f0; cursor:pointer; font:13px system-ui; }
-    #gbxToggle:hover { filter:brightness(1.1); }
+    /* Hide the old GBX toggle button - now accessed through Dev menu */
+    #gbxToggle { display:none !important; }
+    @media (max-width: 600px) {
+      #gbxPanel { font-size:10px; padding:8px 10px; width:min(240px, calc(100vw - 24px)); }
+      #gbxPanel .gbx-row label { flex:0 0 80px; font-size:10px; }
+      #gbxPanel .gbx-value { width:36px; font-size:9px; }
+    }
     </style>
     <div id="gbxPanel">
       <div class="gbx-header">

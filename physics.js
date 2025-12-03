@@ -1761,39 +1761,46 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     ctx.restore();
   }
   const DEVTOOLS_STYLE = `
-    .rv-devtools{position:fixed;top:12px;left:12px;z-index:40;font:12px system-ui;}
-    .rv-devtools .toggle{appearance:none;border:1px solid #334; background:#0b1322; color:#e6eef6; padding:8px 10px; border-radius:8px; cursor:pointer;}
-    .rv-panel{display:none; margin-top:8px; padding:10px; border:1px solid #334; background:#0e1729ee; color:#e6eef6; border-radius:10px; min-width:280px; max-width:340px; box-shadow:0 8px 24px rgba(0,0,0,.5); max-height:80vh; overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; -webkit-overflow-scrolling:touch}
+    .rv-devtools{position:fixed;top:56px;left:12px;z-index:35;font:11px system-ui;}
+    .rv-devtools .toggle{appearance:none;border:1px solid rgba(59,130,246,0.45); background:rgba(15,23,42,0.92); color:#e6eef6; padding:6px 10px; border-radius:8px; cursor:pointer; font-size:11px;}
+    .rv-panel{display:none; margin-top:6px; padding:10px; border:1px solid rgba(71,85,105,0.6); background:rgba(15,23,42,0.94); color:#e6eef6; border-radius:10px; width:min(260px, calc(100vw - 24px)); box-shadow:0 8px 24px rgba(0,0,0,.5); max-height:calc(100vh - 100px); overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; -webkit-overflow-scrolling:touch}
     .rv-panel.open{display:block;}
-    .rv-row{display:flex; align-items:center; gap:8px; margin:6px 0}
-    .rv-row label{width:120px; opacity:.9}
+    .rv-row{display:flex; align-items:center; gap:6px; margin:5px 0}
+    .rv-row label{width:100px; opacity:.9; font-size:11px}
     .rv-row input[type=range]{flex:1}
-    .rv-row input[type=number]{width:80px;background:#0b1322;color:#e6eef6;border:1px solid #334;border-radius:6px;padding:4px}
-    .rv-row select{flex:1;background:#0b1322;color:#e6eef6;border:1px solid #334;border-radius:6px;padding:6px 8px}
-    .rv-row .val{width:40px; text-align:right; opacity:.8}
-    .rv-row .rv-btns{display:flex;flex-direction:column;gap:4px}
-    .rv-row .rv-mini{appearance:none;border:1px solid #334;background:#18253c;color:#e6eef6;font-size:11px;padding:2px 6px;border-radius:4px;cursor:pointer}
+    .rv-row input[type=number]{width:60px;background:#0b1322;color:#e6eef6;border:1px solid #334;border-radius:6px;padding:3px;font-size:10px}
+    .rv-row select{flex:1;background:#0b1322;color:#e6eef6;border:1px solid #334;border-radius:6px;padding:4px 6px;font-size:10px}
+    .rv-row .val{width:36px; text-align:right; opacity:.8; font-size:10px}
+    .rv-row .rv-btns{display:flex;flex-direction:column;gap:3px}
+    .rv-row .rv-mini{appearance:none;border:1px solid #334;background:#18253c;color:#e6eef6;font-size:10px;padding:2px 5px;border-radius:4px;cursor:pointer}
     .rv-row .rv-mini:hover{background:#223454}
     .rv-row.preset-row{justify-content:space-between;align-items:flex-start}
-    .rv-row.preset-row .rv-mini{font-size:12px;padding:6px 10px}
+    .rv-row.preset-row .rv-mini{font-size:11px;padding:5px 8px}
     .rv-preset-chooser{position:relative;flex:1;display:flex;flex-direction:column;gap:4px}
     .rv-preset-chooser .toggle{width:100%}
-    .rv-preset-menu{position:absolute;top:100%;left:0;right:0;background:#0b1322;border:1px solid #334;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.45);margin-top:4px;max-height:240px;overflow-y:auto;display:none;z-index:60}
+    .rv-preset-menu{position:absolute;top:100%;left:0;right:0;background:#0b1322;border:1px solid #334;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.45);margin-top:4px;max-height:200px;overflow-y:auto;display:none;z-index:60}
     .rv-preset-menu.open{display:block}
-    .rv-preset-menu button{width:100%;text-align:left;padding:6px 10px;border:none;background:transparent;color:#e6eef6;font-size:12px;cursor:pointer}
+    .rv-preset-menu button{width:100%;text-align:left;padding:5px 8px;border:none;background:transparent;color:#e6eef6;font-size:11px;cursor:pointer}
     .rv-preset-menu button:hover{background:#1a2640}
-    .rv-preset-menu .rv-empty{padding:8px 10px;font-size:12px;opacity:.75}
-    .rv-row .small{opacity:.75;font-size:11px}
-    .rv-section{margin:12px 0;padding:8px 10px;border-radius:8px;border:1px solid rgba(148,163,184,0.35);background:rgba(15,23,42,0.65)}
-    .rv-section h4{margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#cbd5f5}
+    .rv-preset-menu .rv-empty{padding:6px 8px;font-size:11px;opacity:.75}
+    .rv-row .small{opacity:.75;font-size:10px}
+    .rv-section{margin:10px 0;padding:6px 8px;border-radius:8px;border:1px solid rgba(148,163,184,0.35);background:rgba(15,23,42,0.65)}
+    .rv-section h4{margin:0 0 5px;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#cbd5f5}
     .rv-section.planck{border-color:rgba(34,197,94,0.45);background:rgba(21,128,61,0.25)}
     .rv-section.planck h4{color:#34d399}
     .rv-section.legacy{border-color:rgba(251,146,60,0.45);background:rgba(180,83,9,0.25)}
     .rv-section.legacy h4{color:#fb923c}
-    .rv-section .rv-row{margin:6px 0}
-    .rv-devtools.rv-veh{left:auto;right:12px;top:104px}
-    .rv-caution{display:none;margin-left:4px;font-size:14px;cursor:help}
+    .rv-section .rv-row{margin:5px 0}
+    .rv-devtools.rv-veh{left:12px;right:auto;top:56px}
+    .rv-caution{display:none;margin-left:4px;font-size:12px;cursor:help}
     .rv-panel.clone-active .rv-row[data-no-ai-clone] .rv-caution{display:inline}
+    @media (max-width: 600px) {
+      .rv-devtools{font-size:10px}
+      .rv-panel{width:min(220px, calc(100vw - 24px));padding:8px}
+      .rv-row label{width:80px;font-size:10px}
+      .rv-row input[type=number]{width:48px;font-size:9px}
+      .rv-row .val{width:32px;font-size:9px}
+    }
   `;
 
   function ensureDevPanelStyles(){
