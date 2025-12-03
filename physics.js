@@ -1857,6 +1857,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     DESCRIPTIONS.vxHyst = "Hysteresis around 0 px/s before direction flips (prevents sign flapping).";
     DESCRIPTIONS.reverseSteer = "Steering scale when reversing (lower = calmer).";
     DESCRIPTIONS.yawReverseMul = "Yaw damping multiplier when reversing.";
+    DESCRIPTIONS.clonePhysics = "Continuously sync player physics (engine, grip, mass, etc.) to all AI cars of the same vehicle type. Each vehicle type gets its own physics from the player driving that type.";
 
     const escapeAttr = (value) => String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
     const tipAttr = (key) => {
@@ -1883,6 +1884,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
           </select>
           <label class="small" for="rv-apply-ai"><input type="checkbox" id="rv-apply-ai"> <span class="rv-name"${tipAttr('applyToAI')}>Apply to AI</span></label>
         </div>
+        <div class="rv-row"><label class="small" for="rv-clone-physics"><input type="checkbox" id="rv-clone-physics"> <span class="rv-name"${tipAttr('clonePhysics')}>Clone player physics to AI (per vehicle)</span></label></div>
         <div class="rv-row"><label for="rv-debug"><span class="rv-name"${tipAttr('debugOverlay')}>Debug overlay</span></label><input type="checkbox" id="rv-debug"></div>
         <div class="rv-section planck">
           <h4>Planck</h4>
@@ -1962,6 +1964,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     const els = {
       kind: wrap.querySelector('#rv-kind'),
       applyAI: wrap.querySelector('#rv-apply-ai'),
+      clonePhysics: wrap.querySelector('#rv-clone-physics'),
       debug: wrap.querySelector('#rv-debug'),
   planck: wrap.querySelector('#rv-planck'),
   ppm: wrap.querySelector('#rv-ppm'),
@@ -2203,6 +2206,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
         return defaults.usePlanck !== false;
       }}],
       ['rv-apply-ai', { kind: 'global', type: 'checkbox', getDefault: () => false, apply: false }],
+      ['rv-clone-physics', { kind: 'global', type: 'checkbox', getDefault: () => false, apply: false, afterSet: () => applyClonePhysicsToAI() }],
       ['rv-ppm', { kind: 'vehicle', type: 'number', format: fmtInt, getDefault: (kind) => {
         const defaults = defaultSnapshot[kind] || {};
         return defaults.pixelsPerMeter != null ? defaults.pixelsPerMeter : PLANCK_DEFAULTS.pixelsPerMeter;
@@ -2579,6 +2583,99 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       }
       setDebugEnabled(!!els.debug.checked);
       refresh(k);
+      // After applying, also sync physics to AI if clone mode is enabled
+      if (els.clonePhysics && els.clonePhysics.checked) {
+        applyClonePhysicsToAI();
+      }
+    }
+
+    // Clone player physics to all AI cars, matching by vehicle type
+    // Each AI car gets the physics params from VEHICLE_DEFAULTS for its own kind
+    function applyClonePhysicsToAI() {
+      if (!els.clonePhysics || !els.clonePhysics.checked) return;
+      const carSet = (typeof getCars === 'function') ? (getCars() || {}) : null;
+      if (!carSet) return;
+      const player = carSet.player;
+      const aiCars = carSet.ai;
+      if (!player || !Array.isArray(aiCars) || !aiCars.length) return;
+
+      // Get player's vehicle kind and physics
+      const playerKind = player.kind || 'GT';
+      const playerParams = player.physics && player.physics.params;
+      if (!playerParams) return;
+
+      // Store the player's current physics as the reference for their vehicle type
+      // This ensures AI cars of the same type as player get player's tuned physics
+      const physicsPerKind = { [playerKind]: { ...playerParams } };
+
+      // Also include current VEHICLE_DEFAULTS for other vehicle types
+      // (in case player has tuned those via the dropdown)
+      for (const kind of Object.keys(VEHICLE_DEFAULTS)) {
+        if (!physicsPerKind[kind]) {
+          physicsPerKind[kind] = { ...VEHICLE_DEFAULTS[kind] };
+        }
+      }
+
+      // Apply physics to each AI car based on its vehicle kind
+      for (const car of aiCars) {
+        if (!car) continue;
+        const carKind = car.kind || 'GT';
+        const sourceParams = physicsPerKind[carKind];
+        if (!sourceParams) continue;
+
+        if (!car.physics) initCar(car, carKind);
+
+        // Clone safe physics parameters (not steering mode stuff)
+        const safeParams = {
+          enginePowerMult: sourceParams.enginePowerMult,
+          brakeForce: sourceParams.brakeForce,
+          mass: sourceParams.mass,
+          dragK: sourceParams.dragK,
+          rollK: sourceParams.rollK,
+          muLatRoad: sourceParams.muLatRoad,
+          muLongRoad: sourceParams.muLongRoad,
+          muLatGrass: sourceParams.muLatGrass,
+          muLongGrass: sourceParams.muLongGrass,
+          maxSteer: sourceParams.maxSteer,
+          steerSpeed: sourceParams.steerSpeed,
+          downforceK: sourceParams.downforceK,
+          rearCircle: sourceParams.rearCircle,
+          frontCircle: sourceParams.frontCircle,
+          brakeFrontShare: sourceParams.brakeFrontShare,
+          longSlipPeak: sourceParams.longSlipPeak,
+          longSlipFalloff: sourceParams.longSlipFalloff,
+          loadSenseK: sourceParams.loadSenseK,
+          muLongLoadSenseK: sourceParams.muLongLoadSenseK,
+          cgHeight: sourceParams.cgHeight,
+          yawDampK: sourceParams.yawDampK,
+          reverseEntrySpeed: sourceParams.reverseEntrySpeed,
+          reverseTorqueScale: sourceParams.reverseTorqueScale,
+          // Planck params
+          linearDamp: sourceParams.linearDamp,
+          angularDamp: sourceParams.angularDamp,
+          restitution: sourceParams.restitution
+        };
+
+        // Merge into car's physics params
+        car.physics.params = { ...car.physics.params, ...safeParams };
+
+        // Also sync gearbox power multiplier
+        if (car.gearbox instanceof Gearbox && sourceParams.enginePowerMult != null) {
+          car.gearbox.c.powerMult = sourceParams.enginePowerMult;
+        }
+
+        // Update Planck body properties if present
+        if (car.physics.planckBody) {
+          const body = car.physics.planckBody;
+          try {
+            body.setLinearDamping(safeParams.linearDamp ?? 0);
+            body.setAngularDamping(safeParams.angularDamp ?? 0);
+            for (let fix = body.getFixtureList(); fix; fix = fix.getNext()) {
+              fix.setRestitution(safeParams.restitution ?? planckState.restitution);
+            }
+          } catch(_){/* ignore */}
+        }
+      }
     }
 
   for (const key of ['gravity','ldamp','adamp','rest','mass','eng','brk','steer','steers','touchMaxLow','touchMaxHigh','touchFalloff','touchBaseRate','touchRateFalloff','touchReturn','touchFilter','mulr','muor','mulg','muog','drag','roll','rearc','frontc','brkfs','lspe','lsfo','llat','llong','df','vkine','cgh','yawd','reventry','revtorque']){
@@ -2655,6 +2752,14 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     if (els.applyAI) {
       els.applyAI.addEventListener('change', ()=>{
         handleSave('rv-apply-ai');
+      });
+    }
+    if (els.clonePhysics) {
+      els.clonePhysics.addEventListener('change', ()=>{
+        handleSave('rv-clone-physics');
+        if (els.clonePhysics.checked) {
+          applyClonePhysicsToAI();
+        }
       });
     }
   }

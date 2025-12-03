@@ -508,6 +508,7 @@ const { useEffect, useRef, useState } = React;
       function TopDownRacer() {
         const AI_DIFFICULTY_KEY = "racingvibes_ai_difficulty";
         const AI_LINE_VIS_KEY = "racingvibes_ai_line_visible";
+        const AI_CLONE_GEARBOX_KEY = "racingvibes_ai_clone_gearbox";
         const AVAILABLE_AI_DIFFICULTIES = (() => {
           const skillMap = (window.RacerAI && window.RacerAI.AISkill) || null;
           const keys = skillMap ? Object.keys(skillMap) : ["easy", "medium", "hard"];
@@ -793,6 +794,15 @@ const { useEffect, useRef, useState } = React;
         function loadStoredLineVisibility(){
           try {
             const stored = localStorage.getItem(AI_LINE_VIS_KEY);
+            if (stored === null) return false;
+            return stored === "1" || stored === "true";
+          } catch(_){
+            return false;
+          }
+        }
+        function loadStoredCloneGearbox(){
+          try {
+            const stored = localStorage.getItem(AI_CLONE_GEARBOX_KEY);
             if (stored === null) return false;
             return stored === "1" || stored === "true";
           } catch(_){
@@ -1329,6 +1339,12 @@ const { useEffect, useRef, useState } = React;
           showAiLineRef.current = showAiLine;
           try { localStorage.setItem(AI_LINE_VIS_KEY, showAiLine ? "1" : "0"); } catch(_){ }
         }, [showAiLine]);
+        const [clonePlayerGearbox, setClonePlayerGearbox] = useState(() => loadStoredCloneGearbox());
+        const clonePlayerGearboxRef = useRef(clonePlayerGearbox);
+        useEffect(() => {
+          clonePlayerGearboxRef.current = clonePlayerGearbox;
+          try { localStorage.setItem(AI_CLONE_GEARBOX_KEY, clonePlayerGearbox ? "1" : "0"); } catch(_){ }
+        }, [clonePlayerGearbox]);
         function getCurrentMaxThrottle() {
           const current = aiControlsRef.current;
           if (current && Number.isFinite(current.maxThrottle)) return current.maxThrottle;
@@ -1337,6 +1353,7 @@ const { useEffect, useRef, useState } = React;
         }
         const applyAiLineOverridesRef = useRef(() => {});
         const rebuildAIControllersRef = useRef(() => {});
+        const syncAIGearboxesRef = useRef(() => {});
         const setAIDifficultyRef = useRef(() => false);
         const updateAiControlValueRef = useRef(() => {});
         useEffect(() => { runningRef.current = running; }, [running]);
@@ -1350,6 +1367,12 @@ const { useEffect, useRef, useState } = React;
         }
         function runRebuildAiControllers() {
           const fn = rebuildAIControllersRef.current;
+          if (typeof fn === "function") {
+            fn();
+          }
+        }
+        function runSyncAIGearboxes() {
+          const fn = syncAIGearboxesRef.current;
           if (typeof fn === "function") {
             fn();
           }
@@ -2202,6 +2225,20 @@ const { useEffect, useRef, useState } = React;
               car.aiController = window.RacerAI.createController(racingLine, preset);
             }
           }
+          // Sync AI car gearboxes to match player's gearbox config when "Clone Player Gearbox" is enabled
+          function syncAIGearboxes(){
+            const shouldClone = clonePlayerGearboxRef.current;
+            if (!shouldClone || !player || !player.gearbox) return;
+            const playerGbxConfig = player.gearbox.c;
+            if (!playerGbxConfig) return;
+            const GearboxClass = window.GearboxModule && window.GearboxModule.Gearbox;
+            if (!GearboxClass) return;
+            for (const car of aiCars){
+              if (!car) continue;
+              // Create a new gearbox with the player's config for this AI car
+              car.gearbox = new GearboxClass({ ...playerGbxConfig });
+            }
+          }
           function setAIDifficulty(level, persist = true, options = {}){
             const next = sanitizeDifficulty(level);
             if (!next) return false;
@@ -2276,6 +2313,7 @@ const { useEffect, useRef, useState } = React;
           }
           applyAiLineOverridesRef.current = applyAiLineOverrides;
           rebuildAIControllersRef.current = rebuildAIControllers;
+          syncAIGearboxesRef.current = syncAIGearboxes;
           setAIDifficultyRef.current = setAIDifficulty;
           updateAiControlValueRef.current = updateAiControlValue;
           (function exposeAISettings(){
@@ -2970,6 +3008,7 @@ const { useEffect, useRef, useState } = React;
               aiCars = buildLegacyAICars(DEFAULT_AI_CAR_COUNT, base, baseAngle);
             }
             rebuildAIControllers();
+            syncAIGearboxes();
             if (activeTrack && activeTrack.isCustom && gridSlots && gridSlots.length) {
               startGrid = makeStartGrid({ startLine, slots: gridSlots, roadWidth: ROAD_WIDTH, referenceAngle: player.angle });
             } else {
@@ -4269,6 +4308,22 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                     type="checkbox"
                     checked={showAiLine}
                     onChange={(e) => setShowAiLine(e.target.checked)}
+                  />
+                </div>
+              </label>
+              <label title="When enabled, AI cars use the same gearbox settings as the player for each vehicle type.">
+                <span>Clone player gearbox</span>
+                <div className="field" style={{ justifyContent: "flex-end" }}>
+                  <input
+                    type="checkbox"
+                    checked={clonePlayerGearbox}
+                    onChange={(e) => {
+                      setClonePlayerGearbox(e.target.checked);
+                      // Immediately sync gearboxes when checkbox is toggled on
+                      if (e.target.checked) {
+                        setTimeout(() => runSyncAIGearboxes(), 0);
+                      }
+                    }}
                   />
                 </div>
               </label>
