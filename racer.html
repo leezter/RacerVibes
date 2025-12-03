@@ -609,20 +609,26 @@ const { useEffect, useRef, useState } = React;
         const AI_COLLISION_AVOIDANCE_CFG = {
           // Detection ranges
           detectRange: 120,            // Max distance to detect other cars (px)
-          dangerRange: 60,             // Distance at which collision is imminent (px)
+          dangerRange: 60,             // Distance at which emergency braking may be needed (px)
+          minDetectionDistance: 1,     // Minimum distance to consider (px) - prevents divide by zero
           sideDetectAngle: 0.6,        // Radians - how wide to check for cars to the side (~35 deg)
           forwardDetectAngle: 0.35,    // Radians - narrower cone for cars directly ahead (~20 deg)
+          forwardDotThreshold: 0.1,    // Dot product threshold - car must be this much "ahead" to be a threat
+          combinedCollisionRadius: 50, // Approximate collision radius for two cars (px)
           
           // Response tuning
           steerAvoidGain: 0.6,         // How strongly to steer away (0-1)
           brakeThreshold: 0.4,         // Relative speed threshold to trigger braking
           throttleCutFactor: 0.5,      // How much to reduce throttle when avoiding
           minAvoidSpeed: 80,           // Below this speed, don't slow down for avoidance
+          emergencyBrakeFactor: 0.3,   // Brake force multiplier for emergency avoidance
+          throttleReductionFactor: 0.3, // Throttle reduction for moderate threat
           
           // Priority tuning - balance between racing and avoiding
           avoidancePriority: 0.6,      // 0 = ignore other cars, 1 = always avoid
           racingLinePriority: 0.7,     // How much to prefer staying on racing line vs avoiding
           speedCostThreshold: 0.15,    // Only avoid if speed cost is less than this fraction
+          emergencyUrgencyThreshold: 0.8, // Above this urgency, always avoid regardless of cost
           
           // Timing
           predictionTime: 0.5,         // Seconds to look ahead for collision prediction
@@ -672,12 +678,12 @@ const { useEffect, useRef, useState } = React;
             const dy = other.y - car.y;
             const dist = Math.hypot(dx, dy);
             
-            // Skip if too far away
-            if (dist > cfg.detectRange || dist < 1) continue;
+            // Skip if too far away or too close (avoid divide by zero)
+            if (dist > cfg.detectRange || dist < cfg.minDetectionDistance) continue;
             
             // Check if other car is ahead of us
             const dotForward = (dx * fwdX + dy * fwdY) / dist;
-            if (dotForward < 0.1) continue; // Behind us or beside us, not a concern
+            if (dotForward < cfg.forwardDotThreshold) continue; // Behind us or beside us, not a concern
             
             // Calculate angle to other car
             const angleToOther = Math.atan2(dy, dx);
@@ -703,8 +709,7 @@ const { useEffect, useRef, useState } = React;
             const futureDist = Math.hypot(otherFutureX - myFutureX, otherFutureY - myFutureY);
             
             // Check if collision is predicted
-            const combinedRadius = 50; // Approximate collision radius for two cars
-            const willCollide = futureDist < combinedRadius || (isDirectlyAhead && dist < cfg.dangerRange);
+            const willCollide = futureDist < cfg.combinedCollisionRadius || (isDirectlyAhead && dist < cfg.dangerRange);
             
             if (willCollide && dist < closestDist) {
               closestDist = dist;
@@ -726,8 +731,8 @@ const { useEffect, useRef, useState } = React;
           const speedCost = avoidanceStrength * cfg.throttleCutFactor;
           
           // Only apply avoidance if cost is acceptable
-          if (speedCost > cfg.speedCostThreshold && urgency < 0.8) {
-            // Collision is coming but avoiding would cost too much speed - this is an "acceptable" collision
+          // Racing takes priority - AI will not avoid if doing so would hurt lap time significantly
+          if (speedCost > cfg.speedCostThreshold && urgency < cfg.emergencyUrgencyThreshold) {
             return control;
           }
           
@@ -750,10 +755,10 @@ const { useEffect, useRef, useState } = React;
           if (relativeSpeed > carSpeed * cfg.brakeThreshold && closestDist < cfg.dangerRange) {
             // We're approaching faster than the car ahead - slow down
             newControl.throttle = Math.max(0, originalThrottle * (1 - avoidanceStrength * cfg.throttleCutFactor));
-            newControl.brake = Math.min(1, (control.brake || 0) + avoidanceStrength * 0.3);
+            newControl.brake = Math.min(1, (control.brake || 0) + avoidanceStrength * cfg.emergencyBrakeFactor);
           } else if (urgency > 0.5) {
             // Moderate threat - just ease off throttle slightly
-            newControl.throttle = originalThrottle * (1 - avoidanceStrength * 0.3);
+            newControl.throttle = originalThrottle * (1 - avoidanceStrength * cfg.throttleReductionFactor);
           }
           
           return newControl;
