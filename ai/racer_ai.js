@@ -162,11 +162,15 @@
   }
 
   // Gaussian-weighted smoothing for ultra-smooth racing lines
-  function gaussianSmooth(values, windowRadius, sigma) {
-    const n = values.length;
-    if (n < 3) return values.slice();
+  // Memoize weight calculations to avoid redundant exponential computations
+  const gaussianWeightCache = new Map();
+  
+  function getGaussianWeights(windowRadius, sigma) {
+    const cacheKey = `${windowRadius}_${sigma}`;
+    if (gaussianWeightCache.has(cacheKey)) {
+      return gaussianWeightCache.get(cacheKey);
+    }
     
-    // Pre-compute Gaussian weights
     const weights = [];
     let weightSum = 0;
     for (let j = -windowRadius; j <= windowRadius; j++) {
@@ -178,6 +182,16 @@
     for (let k = 0; k < weights.length; k++) {
       weights[k] /= weightSum;
     }
+    
+    gaussianWeightCache.set(cacheKey, weights);
+    return weights;
+  }
+
+  function gaussianSmooth(values, windowRadius, sigma) {
+    const n = values.length;
+    if (n < 3) return values.slice();
+    
+    const weights = getGaussianWeights(windowRadius, sigma);
     
     const result = [];
     for (let i = 0; i < n; i++) {
