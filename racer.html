@@ -609,7 +609,7 @@ const { useEffect, useRef, useState } = React;
         const AI_COLLISION_AVOIDANCE_CFG = {
           // Detection ranges
           detectRange: 120,            // Max distance to detect other cars (px)
-          dangerRange: 60,             // Distance at which emergency braking may be needed (px)
+          dangerRange: 60,             // Distance at which aggressive avoidance is triggered (braking + throttle cut)
           minDetectionDistance: 1,     // Minimum distance to consider (px) - prevents divide by zero
           sideDetectAngle: 0.6,        // Radians - how wide to check for cars to the side (~35 deg)
           forwardDetectAngle: 0.35,    // Radians - narrower cone for cars directly ahead (~20 deg)
@@ -618,7 +618,7 @@ const { useEffect, useRef, useState } = React;
           
           // Response tuning
           steerAvoidGain: 0.6,         // How strongly to steer away (0-1)
-          brakeThreshold: 0.4,         // Relative speed threshold to trigger braking
+          brakeThreshold: 0.4,         // Relative speed fraction threshold to trigger braking
           throttleCutFactor: 0.5,      // How much to reduce throttle when avoiding
           minAvoidSpeed: 80,           // Below this speed, don't slow down for avoidance
           emergencyBrakeFactor: 0.3,   // Brake force multiplier for emergency avoidance
@@ -645,7 +645,7 @@ const { useEffect, useRef, useState } = React;
           // Skip avoidance at very low speeds - just race
           if (carSpeed < cfg.minAvoidSpeed) return control;
           
-          // Car's forward direction
+          // Car's forward direction (used for detecting cars ahead)
           const carAngle = car.angle || 0;
           const fwdX = Math.cos(carAngle);
           const fwdY = Math.sin(carAngle);
@@ -708,14 +708,21 @@ const { useEffect, useRef, useState } = React;
             
             const futureDist = Math.hypot(otherFutureX - myFutureX, otherFutureY - myFutureY);
             
-            // Check if collision is predicted
-            const willCollide = futureDist < cfg.combinedCollisionRadius || (isDirectlyAhead && dist < cfg.dangerRange);
+            // Check if collision is predicted:
+            // 1. Predicted positions will be within collision radius (future collision)
+            // 2. OR car is directly ahead and already within danger range (imminent collision)
+            const predictedCollision = futureDist < cfg.combinedCollisionRadius;
+            const imminentCollision = isDirectlyAhead && dist < cfg.dangerRange;
+            const willCollide = predictedCollision || imminentCollision;
             
             if (willCollide && dist < closestDist) {
               closestDist = dist;
               closestThreat = other;
-              // Determine which side the other car is on
-              threatSide = angleDiff > 0 ? 1 : -1; // positive = other is to our left
+              // Determine which side the other car is on (for steering away)
+              // positive angleDiff = other is to our left, so threatSide=1
+              // negative angleDiff = other is to our right, so threatSide=-1
+              // steerAdjustment uses -threatSide, so: left threat → steer right, right threat → steer left
+              threatSide = angleDiff > 0 ? 1 : -1;
             }
           }
           
@@ -740,20 +747,26 @@ const { useEffect, useRef, useState } = React;
           const newControl = { ...control };
           
           // Steer away from threat
-          // Steer opposite to the side where the threat is
-          const steerAdjustment = -threatSide * cfg.steerAvoidGain * avoidanceStrength;
+          // steerAdjustment is negative when threatSide is positive (threat on left → steer right)
+          const steerAdjustment = -threatSide * cfg.steerAvoidGain;
           const baseSteer = control.steer || 0;
           
           // Blend between racing line steering and avoidance steering
-          const blendedSteer = baseSteer * cfg.racingLinePriority + steerAdjustment * (1 - cfg.racingLinePriority + avoidanceStrength);
+          // As avoidance strength increases, blend more toward avoidance steering
+          // racingLinePriority determines baseline preference for racing line
+          const avoidWeight = avoidanceStrength * (1 - cfg.racingLinePriority);
+          const raceWeight = 1 - avoidWeight;
+          const blendedSteer = baseSteer * raceWeight + steerAdjustment * avoidWeight;
           newControl.steer = safeClamp(blendedSteer, -1, 1);
           
           // Reduce throttle if car ahead is slower
           const threatSpeed = getCarSpeed(closestThreat);
           const relativeSpeed = carSpeed - threatSpeed;
           
+          // Only apply braking if we're moving fast enough and closing faster than threshold
+          // Note: carSpeed is already guaranteed > minAvoidSpeed from early return at function start
           if (relativeSpeed > carSpeed * cfg.brakeThreshold && closestDist < cfg.dangerRange) {
-            // We're approaching faster than the car ahead - slow down
+            // We're approaching significantly faster than the car ahead - slow down
             newControl.throttle = Math.max(0, originalThrottle * (1 - avoidanceStrength * cfg.throttleCutFactor));
             newControl.brake = Math.min(1, (control.brake || 0) + avoidanceStrength * cfg.emergencyBrakeFactor);
           } else if (urgency > 0.5) {
