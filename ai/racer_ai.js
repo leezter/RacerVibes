@@ -91,6 +91,46 @@
     return out;
   }
 
+  // Catmull-Rom spline interpolation for ultra-smooth centerline
+  function catmullRomInterpolate(points, numPoints) {
+    if (!points.length) return [];
+    const n = points.length;
+    const result = [];
+    
+    for (let i = 0; i < numPoints; i++) {
+      const t = (i / numPoints) * n;
+      const idx = Math.floor(t);
+      const frac = t - idx;
+      
+      const p0 = points[(idx - 1 + n) % n];
+      const p1 = points[idx % n];
+      const p2 = points[(idx + 1) % n];
+      const p3 = points[(idx + 2) % n];
+      
+      // Catmull-Rom spline coefficients
+      const t2 = frac * frac;
+      const t3 = t2 * frac;
+      
+      const x = 0.5 * (
+        (2 * p1.x) +
+        (-p0.x + p2.x) * frac +
+        (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+        (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3
+      );
+      
+      const y = 0.5 * (
+        (2 * p1.y) +
+        (-p0.y + p2.y) * frac +
+        (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+        (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3
+      );
+      
+      result.push({ x, y });
+    }
+    
+    return result;
+  }
+
   function smooth(points, passes) {
     let current = points.slice();
     for (let k = 0; k < passes; k++) {
@@ -121,57 +161,81 @@
     return angle / avgLen;
   }
 
+  // Gaussian-weighted smoothing for ultra-smooth racing lines
+  function gaussianSmooth(values, windowRadius, sigma) {
+    const n = values.length;
+    if (n < 3) return values.slice();
+    
+    // Pre-compute Gaussian weights
+    const weights = [];
+    let weightSum = 0;
+    for (let j = -windowRadius; j <= windowRadius; j++) {
+      const w = Math.exp(-(j * j) / (2 * sigma * sigma));
+      weights.push(w);
+      weightSum += w;
+    }
+    // Normalize weights
+    for (let k = 0; k < weights.length; k++) {
+      weights[k] /= weightSum;
+    }
+    
+    const result = [];
+    for (let i = 0; i < n; i++) {
+      let sum = 0;
+      for (let j = -windowRadius; j <= windowRadius; j++) {
+        const idx = (i + j + n) % n;
+        sum += values[idx] * weights[j + windowRadius];
+      }
+      result[i] = sum;
+    }
+    return result;
+  }
+
   function buildRacingLine(centerline, roadWidth, options = {}) {
     if (!Array.isArray(centerline) || centerline.length < 3) return [];
     const cfg = { ...DEFAULT_LINE_CFG, ...options };
 
-    // 1. Resample centerline to fixed steps for stability
-    const step = 20; 
-    const points = resample(centerline, step);
+    // 1. First, use Catmull-Rom spline to create ultra-smooth centerline
+    // This eliminates sharp corners from the input and creates natural curves
+    const targetPoints = Math.max(100, centerline.length * 8);
+    const smoothCenterline = catmullRomInterpolate(centerline, targetPoints);
+    
+    // 2. Resample the smooth centerline to consistent spacing
+    const step = 10;
+    const points = resample(smoothCenterline, step);
     const n = points.length;
     if (n < 3) return points;
 
-    // 2. Setup Constraints
+    // 3. Setup Constraints
     const halfWidth = roadWidth / 2;
     const maxOff = (cfg.maxOffset !== undefined) ? cfg.maxOffset : 0.85;
-    // Aggression controls how far toward the edge we can go
-    // 0.0 = conservative (use ~60% of track width)
-    // 1.0 = aggressive (use ~95% of track width)
     const aggression = clamp((cfg.apexAggression !== undefined) ? cfg.apexAggression : 0.5, 0, 1);
     const usableWidth = halfWidth * (0.6 + 0.35 * aggression) * maxOff;
 
-    // 3. Calculate curvature at each point using wider window for stability
+    // 4. Calculate curvature with larger window for stable estimation
     const curvatures = [];
-    const windowSize = Math.max(3, Math.floor(n / 30)); // Adaptive window
+    const windowSize = Math.max(5, Math.floor(n / 20));
     for (let i = 0; i < n; i++) {
-      // Use points further apart for more stable curvature estimation
       const prevIdx = (i - windowSize + n) % n;
       const nextIdx = (i + windowSize) % n;
       curvatures[i] = signedCurvature(points[prevIdx], points[i], points[nextIdx]);
     }
 
-    // 4. Smooth curvature to reduce noise
-    const smoothCurvatures = [];
-    const curvSmoothWindow = Math.max(2, Math.floor(n / 40));
-    for (let i = 0; i < n; i++) {
-      let sum = 0;
-      let count = 0;
-      for (let j = -curvSmoothWindow; j <= curvSmoothWindow; j++) {
-        const idx = (i + j + n) % n;
-        sum += curvatures[idx];
-        count++;
-      }
-      smoothCurvatures[i] = sum / count;
-    }
+    // 5. Multi-pass Gaussian smoothing of curvature for ultra-smooth profile
+    const curvSmoothWindow = Math.max(4, Math.floor(n / 30));
+    const curvSigma = curvSmoothWindow / 2;
+    let smoothCurvatures = gaussianSmooth(curvatures, curvSmoothWindow, curvSigma);
+    // Second pass for even smoother curvature
+    smoothCurvatures = gaussianSmooth(smoothCurvatures, curvSmoothWindow, curvSigma);
 
-    // 5. Find max absolute curvature for normalization
+    // 6. Find max absolute curvature for normalization
     let maxAbsCurv = 0;
     for (let i = 0; i < n; i++) {
       maxAbsCurv = Math.max(maxAbsCurv, Math.abs(smoothCurvatures[i]));
     }
-    if (maxAbsCurv < 1e-6) maxAbsCurv = 1e-6; // Avoid division by zero
+    if (maxAbsCurv < 1e-6) maxAbsCurv = 1e-6;
 
-    // 6. Calculate normals at each point (perpendicular to track direction)
+    // 7. Calculate normals at each point
     const normals = [];
     for (let i = 0; i < n; i++) {
       const prev = points[(i - 1 + n) % n];
@@ -179,115 +243,116 @@
       const dx = next.x - prev.x;
       const dy = next.y - prev.y;
       const len = Math.hypot(dx, dy) || 1;
-      // Normal points to the left of travel direction
       normals[i] = { x: -dy / len, y: dx / len };
     }
 
-    // 7. Calculate target offset for each point based on curvature
-    // Racing line principle: 
-    // - On straights: stay centered
-    // - Approaching corner: move to OUTSIDE (opposite of turn direction)
-    // - At apex: move to INSIDE (same direction as turn)
-    // - Exiting corner: move back to OUTSIDE
-    const targetOffsets = [];
-    
-    // First pass: basic offset based on curvature (inside at apex)
+    // 8. Create smooth offset profile using curvature integration
+    // This creates the classic outside→inside→outside pattern naturally
+    const rawOffsets = [];
     for (let i = 0; i < n; i++) {
       const curv = smoothCurvatures[i];
-      const normalizedCurv = curv / maxAbsCurv; // -1 to 1
-      // At apex, we want to be on the INSIDE of the turn
-      // Positive curvature = turning left, normal points left, so go LEFT (positive normal)
-      // Negative curvature = turning right, normal points left, so go RIGHT (negative normal)
-      // So offset = +normalizedCurv (same sign as curvature)
-      targetOffsets[i] = normalizedCurv * usableWidth;
+      const normalizedCurv = curv / maxAbsCurv;
+      // Use a softer response curve for smoother offset transitions
+      const softCurv = Math.sign(normalizedCurv) * Math.pow(Math.abs(normalizedCurv), 0.7);
+      rawOffsets[i] = softCurv * usableWidth;
     }
 
-    // 8. Apply lookahead to shift the line for proper entry/exit
-    // We need to START moving to the outside BEFORE the corner
-    // and FINISH moving to the outside AFTER the corner
-    const lookaheadDist = Math.max(5, Math.floor(n / 12)); // How far ahead to look
-    const shiftedOffsets = [];
+    // 9. Apply Gaussian smoothing to offsets for smooth transitions
+    const offsetSmoothWindow = Math.max(6, Math.floor(n / 18));
+    const offsetSigma = offsetSmoothWindow / 2;
+    let smoothOffsets = gaussianSmooth(rawOffsets, offsetSmoothWindow, offsetSigma);
+    // Second smoothing pass for tire-mark-like smoothness
+    smoothOffsets = gaussianSmooth(smoothOffsets, offsetSmoothWindow, offsetSigma);
+
+    // 10. Apply anticipation shift: move to outside BEFORE corners using smooth blending
+    const anticipationWindow = Math.max(8, Math.floor(n / 10));
+    const anticipatedOffsets = [];
     
     for (let i = 0; i < n; i++) {
-      // Look ahead to see what's coming
-      let futureApexOffset = 0;
-      let maxFutureAbsCurv = 0;
+      // Find upcoming corner intensity with distance-weighted sampling
+      let peakFutureCurv = 0;
+      let peakFutureOffset = 0;
+      let peakDistance = 0;
       
-      for (let j = 1; j <= lookaheadDist; j++) {
+      for (let j = 1; j <= anticipationWindow; j++) {
         const futureIdx = (i + j) % n;
         const absCurv = Math.abs(smoothCurvatures[futureIdx]);
-        if (absCurv > maxFutureAbsCurv) {
-          maxFutureAbsCurv = absCurv;
-          futureApexOffset = targetOffsets[futureIdx];
+        // Weight by distance (closer corners matter more)
+        const distanceWeight = 1 - (j / anticipationWindow) * 0.3;
+        const weightedCurv = absCurv * distanceWeight;
+        if (weightedCurv > peakFutureCurv) {
+          peakFutureCurv = weightedCurv;
+          peakFutureOffset = smoothOffsets[futureIdx];
+          peakDistance = j;
         }
       }
       
-      // Current curvature influence
       const currentAbsCurv = Math.abs(smoothCurvatures[i]);
       
-      // If we're approaching a corner (future has more curvature than current)
-      // We should be on the OPPOSITE side (outside) to set up for the corner
-      if (maxFutureAbsCurv > currentAbsCurv * 1.5 && maxFutureAbsCurv > 0.3 * maxAbsCurv) {
-        // We're approaching a corner - go to the outside (opposite of apex)
-        // Multiplier ranges from 0.85 (conservative) to 1.0 (aggressive) to push line far to outside
-        const setupOffset = -futureApexOffset * (0.85 + 0.15 * aggression);
-        const blend = clamp((maxFutureAbsCurv - currentAbsCurv) / maxAbsCurv, 0, 1);
-        // Apply full blend (no dampening) to ensure line reaches the outside for proper corner entry
-        shiftedOffsets[i] = lerp(targetOffsets[i], setupOffset, blend);
+      // Use smooth sine-based blend for natural corner entry
+      if (peakFutureCurv > currentAbsCurv * 1.3 && peakFutureCurv > 0.2 * maxAbsCurv) {
+        // Approaching corner - blend toward outside (opposite of apex)
+        const setupOffset = -peakFutureOffset * (0.7 + 0.2 * aggression);
+        // Smooth blend using sine curve for natural entry arc
+        const rawBlend = clamp((peakFutureCurv - currentAbsCurv) / (maxAbsCurv * 0.8), 0, 1);
+        const blend = 0.5 * (1 - Math.cos(rawBlend * Math.PI)); // Smooth S-curve
+        anticipatedOffsets[i] = lerp(smoothOffsets[i], setupOffset, blend * 0.6);
       } else {
-        // At or past apex, or on straight - use base offset
-        shiftedOffsets[i] = targetOffsets[i];
+        anticipatedOffsets[i] = smoothOffsets[i];
       }
     }
 
-    // 9. Look behind to adjust exit lines
-    // Use same distance as lookahead for consistent outside-inside-outside pattern
-    const lookbehindDist = Math.max(5, Math.floor(n / 12));
+    // 11. Apply exit shift: move to outside AFTER corners using smooth blending
+    const exitWindow = Math.max(8, Math.floor(n / 10));
     const exitOffsets = [];
     
     for (let i = 0; i < n; i++) {
-      let pastApexOffset = 0;
-      let maxPastAbsCurv = 0;
+      let peakPastCurv = 0;
+      let peakPastOffset = 0;
       
-      for (let j = 1; j <= lookbehindDist; j++) {
+      for (let j = 1; j <= exitWindow; j++) {
         const pastIdx = (i - j + n) % n;
         const absCurv = Math.abs(smoothCurvatures[pastIdx]);
-        if (absCurv > maxPastAbsCurv) {
-          maxPastAbsCurv = absCurv;
-          pastApexOffset = targetOffsets[pastIdx];
+        const distanceWeight = 1 - (j / exitWindow) * 0.3;
+        const weightedCurv = absCurv * distanceWeight;
+        if (weightedCurv > peakPastCurv) {
+          peakPastCurv = weightedCurv;
+          peakPastOffset = smoothOffsets[pastIdx];
         }
       }
       
       const currentAbsCurv = Math.abs(smoothCurvatures[i]);
       
-      // If we're exiting a corner (past had more curvature)
-      // Move to the outside (opposite of apex) - matching entry behavior
-      if (maxPastAbsCurv > currentAbsCurv * 1.5 && maxPastAbsCurv > 0.3 * maxAbsCurv) {
-        // Exiting corner - go to the outside (opposite of apex)
-        // Multiplier matches entry: 0.85 to 1.0 to push line far to outside
-        const exitOffset = -pastApexOffset * (0.85 + 0.15 * aggression);
-        const blend = clamp((maxPastAbsCurv - currentAbsCurv) / maxAbsCurv, 0, 1);
-        // Apply full blend (no dampening) to ensure line reaches the outside for proper corner exit
-        exitOffsets[i] = lerp(shiftedOffsets[i], exitOffset, blend);
+      if (peakPastCurv > currentAbsCurv * 1.3 && peakPastCurv > 0.2 * maxAbsCurv) {
+        const exitOffset = -peakPastOffset * (0.7 + 0.2 * aggression);
+        const rawBlend = clamp((peakPastCurv - currentAbsCurv) / (maxAbsCurv * 0.8), 0, 1);
+        const blend = 0.5 * (1 - Math.cos(rawBlend * Math.PI));
+        exitOffsets[i] = lerp(anticipatedOffsets[i], exitOffset, blend * 0.6);
       } else {
-        exitOffsets[i] = shiftedOffsets[i];
+        exitOffsets[i] = anticipatedOffsets[i];
       }
     }
 
-    // 10. Apply offsets to create initial racing line
+    // 12. Final Gaussian smoothing of offsets for silky-smooth result
+    const finalSmoothWindow = Math.max(5, Math.floor(n / 20));
+    const finalSigma = finalSmoothWindow / 2;
+    let finalOffsets = gaussianSmooth(exitOffsets, finalSmoothWindow, finalSigma);
+    finalOffsets = gaussianSmooth(finalOffsets, finalSmoothWindow, finalSigma);
+
+    // 13. Apply offsets to create racing line path
     const path = [];
     for (let i = 0; i < n; i++) {
-      const offset = exitOffsets[i];
+      const offset = clamp(finalOffsets[i], -usableWidth, usableWidth);
       path.push({
         x: points[i].x + normals[i].x * offset,
         y: points[i].y + normals[i].y * offset
       });
     }
 
-    // 11. Iterative smoothing while respecting constraints
-    // This smooths the path while keeping it within track bounds
-    const smoothIterations = 80;
-    const smoothAlpha = 0.35;
+    // 14. Path optimization: iterative smoothing with constraint enforcement
+    // Use more iterations with smaller alpha for smoother convergence
+    const smoothIterations = 200;
+    const smoothAlpha = 0.20;
     
     for (let iter = 0; iter < smoothIterations; iter++) {
       for (let i = 0; i < n; i++) {
@@ -295,14 +360,14 @@
         const next = path[(i + 1) % n];
         const center = points[i];
         
-        // Smooth toward neighbors
+        // Move toward midpoint of neighbors
         const targetX = (prev.x + next.x) / 2;
         const targetY = (prev.y + next.y) / 2;
         
         let newX = path[i].x + (targetX - path[i].x) * smoothAlpha;
         let newY = path[i].y + (targetY - path[i].y) * smoothAlpha;
         
-        // Constrain to track width
+        // Enforce track width constraint
         const dx = newX - center.x;
         const dy = newY - center.y;
         const dist = Math.hypot(dx, dy);
@@ -318,16 +383,21 @@
       }
     }
 
-    // 12. Final smoothing pass
-    for (let pass = 0; pass < 3; pass++) {
+    // 15. Final polish: 7-point weighted average smoothing for tire-mark smoothness
+    for (let pass = 0; pass < 8; pass++) {
       const smoothed = [];
       for (let i = 0; i < n; i++) {
-        const prev = path[(i - 1 + n) % n];
-        const curr = path[i];
-        const next = path[(i + 1) % n];
+        const p3 = path[(i - 3 + n) % n];
+        const p2 = path[(i - 2 + n) % n];
+        const p1 = path[(i - 1 + n) % n];
+        const p0 = path[i];
+        const n1 = path[(i + 1) % n];
+        const n2 = path[(i + 2) % n];
+        const n3 = path[(i + 3) % n];
+        // 7-point Gaussian-like weighted average for ultra-smooth curves
         smoothed.push({
-          x: prev.x * 0.2 + curr.x * 0.6 + next.x * 0.2,
-          y: prev.y * 0.2 + curr.y * 0.6 + next.y * 0.2
+          x: p3.x * 0.03 + p2.x * 0.09 + p1.x * 0.19 + p0.x * 0.38 + n1.x * 0.19 + n2.x * 0.09 + n3.x * 0.03,
+          y: p3.y * 0.03 + p2.y * 0.09 + p1.y * 0.19 + p0.y * 0.38 + n1.y * 0.19 + n2.y * 0.09 + n3.y * 0.03
         });
       }
       // Re-clamp after smoothing
@@ -346,7 +416,7 @@
       }
     }
 
-    // 13. Calculate metadata (speed, curvature, etc.)
+    // 16. Calculate metadata (speed, curvature, etc.)
     const g = cfg.gravity;
     let arc = 0;
     return path.map((pt, idx) => {
