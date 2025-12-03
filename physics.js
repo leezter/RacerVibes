@@ -1792,6 +1792,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     .rv-section.legacy h4{color:#fb923c}
     .rv-section .rv-row{margin:6px 0}
     .rv-devtools.rv-veh{left:auto;right:12px;top:104px}
+    .rv-caution{display:none;margin-left:4px;font-size:14px;cursor:help}
+    .rv-panel.clone-active .rv-row[data-no-ai-clone] .rv-caution{display:inline}
   `;
 
   function ensureDevPanelStyles(){
@@ -1888,14 +1890,14 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
         <div class="rv-row"><label for="rv-debug"><span class="rv-name"${tipAttr('debugOverlay')}>Debug overlay</span></label><input type="checkbox" id="rv-debug"></div>
         <div class="rv-section planck">
           <h4>Planck</h4>
-          <div class="rv-row"><label for="rv-planck"><span class="rv-name"${tipAttr('usePlanck')}>Use Planck</span></label><input type="checkbox" id="rv-planck"></div>
-          <div class="rv-row"><label for="rv-ppm"><span class="rv-name"${tipAttr('pixelsPerMeter')}>Pixels / m</span></label><input id="rv-ppm" type="number" min="5" max="200" step="1"></div>
+          <div class="rv-row" data-no-ai-clone><label for="rv-planck"><span class="rv-name"${tipAttr('usePlanck')}>Use Planck</span><span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label><input type="checkbox" id="rv-planck"></div>
+          <div class="rv-row" data-no-ai-clone><label for="rv-ppm"><span class="rv-name"${tipAttr('pixelsPerMeter')}>Pixels / m</span><span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label><input id="rv-ppm" type="number" min="5" max="200" step="1"></div>
           <div class="rv-row"><label for="rv-gravity"><span class="rv-name"${tipAttr('gravity')}>Gravity</span></label><input id="rv-gravity" type="range" min="${GRAVITY_MIN}" max="${GRAVITY_MAX}" step="10"><div class="val" id="rv-gravity-v"></div></div>
           <div class="rv-row"><label for="rv-ldamp"><span class="rv-name"${tipAttr('linearDamp')}>Linear damp</span></label><input id="rv-ldamp" type="range" min="0" max="5" step="0.05"><div class="val" id="rv-ldamp-v"></div></div>
           <div class="rv-row"><label for="rv-adamp"><span class="rv-name"${tipAttr('angularDamp')}>Angular damp</span></label><input id="rv-adamp" type="range" min="0" max="8" step="0.05"><div class="val" id="rv-adamp-v"></div></div>
           <div class="rv-row"><label for="rv-rest"><span class="rv-name"${tipAttr('restitution')}>Restitution</span></label><input id="rv-rest" type="range" min="0" max="1" step="0.02"><div class="val" id="rv-rest-v"></div></div>
-          <div class="rv-row"><label for="rv-veliters"><span class="rv-name"${tipAttr('velIters')}>Vel iters</span></label><input id="rv-veliters" type="number" min="1" max="50" step="1"></div>
-          <div class="rv-row"><label for="rv-positers"><span class="rv-name"${tipAttr('posIters')}>Pos iters</span></label><input id="rv-positers" type="number" min="1" max="50" step="1"></div>
+          <div class="rv-row" data-no-ai-clone><label for="rv-veliters"><span class="rv-name"${tipAttr('velIters')}>Vel iters</span><span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label><input id="rv-veliters" type="number" min="1" max="50" step="1"></div>
+          <div class="rv-row" data-no-ai-clone><label for="rv-positers"><span class="rv-name"${tipAttr('posIters')}>Pos iters</span><span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label><input id="rv-positers" type="number" min="1" max="50" step="1"></div>
           <div class="rv-row"><button id="rv-planck-rebuild"${tipAttr('rebuildWorld')}>Rebuild physics world</button></div>
         </div>
         <div class="rv-row"><label for="rv-mass"><span class="rv-name"${tipAttr('mass')}>Mass</span></label><input id="rv-mass" type="range" min="0.6" max="2.2" step="0.05"><div class="val" id="rv-mass-v"></div></div>
@@ -1905,19 +1907,19 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
         <div class="rv-row"><label for="rv-steers"><span class="rv-name"${tipAttr('steerSpeed')}>Steer speed</span></label><input id="rv-steers" type="range" min="2" max="10" step="0.1"><div class="val" id="rv-steers-v"></div></div>
         <div class="rv-section">
           <h4>Steering</h4>
-          <div class="rv-row"><label for="rv-steerMode"><span class="rv-name"${tipAttr('steerMode')}>Steering mode</span></label>
+          <div class="rv-row" data-no-ai-clone><label for="rv-steerMode"><span class="rv-name"${tipAttr('steerMode')}>Steering mode</span><span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label>
             <select id="rv-steerMode">
               <option value="manual">Manual</option>
               <option value="touch">Touch</option>
             </select>
           </div>
-          <div class="rv-row"><label for="rv-touchMaxLow"><span class="rv-name"${tipAttr('touchMaxLow')}>Touch max (low)</span></label><input id="rv-touchMaxLow" type="range" min="0.30" max="0.90" step="0.01"><div class="val" id="rv-touchMaxLow-v"></div></div>
-          <div class="rv-row"><label for="rv-touchMaxHigh"><span class="rv-name"${tipAttr('touchMaxHigh')}>Touch max (high)</span></label><input id="rv-touchMaxHigh" type="range" min="0.10" max="0.60" step="0.01"><div class="val" id="rv-touchMaxHigh-v"></div></div>
-          <div class="rv-row"><label for="rv-touchFalloff"><span class="rv-name"${tipAttr('touchFalloff')}>Falloff speed</span></label><input id="rv-touchFalloff" type="range" min="80" max="460" step="5"><div class="val" id="rv-touchFalloff-v"></div></div>
-          <div class="rv-row"><label for="rv-touchBaseRate"><span class="rv-name"${tipAttr('touchBaseRate')}>Base steer rate</span></label><input id="rv-touchBaseRate" type="range" min="2" max="12" step="0.1"><div class="val" id="rv-touchBaseRate-v"></div></div>
-          <div class="rv-row"><label for="rv-touchRateFalloff"><span class="rv-name"${tipAttr('touchRateFalloff')}>Rate falloff</span></label><input id="rv-touchRateFalloff" type="range" min="0" max="0.0100" step="0.0001"><div class="val" id="rv-touchRateFalloff-v"></div></div>
-          <div class="rv-row"><label for="rv-touchReturn"><span class="rv-name"${tipAttr('touchReturn')}>Return gain</span></label><input id="rv-touchReturn" type="range" min="0" max="6" step="0.1"><div class="val" id="rv-touchReturn-v"></div></div>
-          <div class="rv-row"><label for="rv-touchFilter"><span class="rv-name"${tipAttr('touchFilter')}>Filter tau</span></label><input id="rv-touchFilter" type="range" min="0.05" max="0.40" step="0.01"><div class="val" id="rv-touchFilter-v"></div></div>
+          <div class="rv-row" data-no-ai-clone><label for="rv-touchMaxLow"><span class="rv-name"${tipAttr('touchMaxLow')}>Touch max (low)</span><span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label><input id="rv-touchMaxLow" type="range" min="0.30" max="0.90" step="0.01"><div class="val" id="rv-touchMaxLow-v"></div></div>
+          <div class="rv-row" data-no-ai-clone><label for="rv-touchMaxHigh"><span class="rv-name"${tipAttr('touchMaxHigh')}>Touch max (high)</span><span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label><input id="rv-touchMaxHigh" type="range" min="0.10" max="0.60" step="0.01"><div class="val" id="rv-touchMaxHigh-v"></div></div>
+          <div class="rv-row" data-no-ai-clone><label for="rv-touchFalloff"><span class="rv-name"${tipAttr('touchFalloff')}>Falloff speed</span><span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label><input id="rv-touchFalloff" type="range" min="80" max="460" step="5"><div class="val" id="rv-touchFalloff-v"></div></div>
+          <div class="rv-row" data-no-ai-clone><label for="rv-touchBaseRate"><span class="rv-name"${tipAttr('touchBaseRate')}>Base steer rate</span><span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label><input id="rv-touchBaseRate" type="range" min="2" max="12" step="0.1"><div class="val" id="rv-touchBaseRate-v"></div></div>
+          <div class="rv-row" data-no-ai-clone><label for="rv-touchRateFalloff"><span class="rv-name"${tipAttr('touchRateFalloff')}>Rate falloff</span><span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label><input id="rv-touchRateFalloff" type="range" min="0" max="0.0100" step="0.0001"><div class="val" id="rv-touchRateFalloff-v"></div></div>
+          <div class="rv-row" data-no-ai-clone><label for="rv-touchReturn"><span class="rv-name"${tipAttr('touchReturn')}>Return gain</span><span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label><input id="rv-touchReturn" type="range" min="0" max="6" step="0.1"><div class="val" id="rv-touchReturn-v"></div></div>
+          <div class="rv-row" data-no-ai-clone><label for="rv-touchFilter"><span class="rv-name"${tipAttr('touchFilter')}>Filter tau</span><span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label><input id="rv-touchFilter" type="range" min="0.05" max="0.40" step="0.01"><div class="val" id="rv-touchFilter-v"></div></div>
         </div>
         <div class="rv-row"><label for="rv-mulr"><span class="rv-name"${tipAttr('muLatRoad')}>Grip lat (road)</span></label><input id="rv-mulr" type="range" min="0.8" max="2.2" step="0.05"><div class="val" id="rv-mulr-v"></div></div>
         <div class="rv-row"><label for="rv-muor"><span class="rv-name"${tipAttr('muLongRoad')}>Grip long (road)</span></label><input id="rv-muor" type="range" min="0.6" max="1.8" step="0.05"><div class="val" id="rv-muor-v"></div></div>
@@ -1937,17 +1939,17 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
         <div class="rv-row"><label for="rv-yawd"><span class="rv-name"${tipAttr('yawDampK')}>Yaw damp</span></label><input id="rv-yawd" type="range" min="0" max="0.30" step="0.02"><div class="val" id="rv-yawd-v"></div></div>
         <div class="rv-section legacy">
           <h4>Legacy</h4>
-          <div class="rv-row"><label for="rv-vkine"><span class="rv-name"${tipAttr('vKineBlend')}>vKineBlend</span></label><input id="rv-vkine" type="range" min="0.0" max="5.0" step="0.1"><div class="val" id="rv-vkine-v"></div></div>
-          <div class="rv-row">
-            <label for="rv-vxhyst" title="Hysteresis band around 0 px/s before direction flips">VX hysteresis</label>
+          <div class="rv-row" data-no-ai-clone><label for="rv-vkine"><span class="rv-name"${tipAttr('vKineBlend')}>vKineBlend</span><span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label><input id="rv-vkine" type="range" min="0.0" max="5.0" step="0.1"><div class="val" id="rv-vkine-v"></div></div>
+          <div class="rv-row" data-no-ai-clone>
+            <label for="rv-vxhyst" title="Hysteresis band around 0 px/s before direction flips">VX hysteresis<span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label>
             <input id="rv-vxhyst" type="range" min="6" max="40" step="1"><div class="val" id="rv-vxhyst-v"></div>
           </div>
-          <div class="rv-row">
-            <label for="rv-rsteer" title="Steering scale when reversing (lower = calmer)">Reverse steer</label>
+          <div class="rv-row" data-no-ai-clone>
+            <label for="rv-rsteer" title="Steering scale when reversing (lower = calmer)">Reverse steer<span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label>
             <input id="rv-rsteer" type="range" min="0.30" max="1.00" step="0.01"><div class="val" id="rv-rsteer-v"></div>
           </div>
-          <div class="rv-row">
-            <label for="rv-yawmul" title="Yaw damping multiplier when reversing">Yaw reverse×</label>
+          <div class="rv-row" data-no-ai-clone>
+            <label for="rv-yawmul" title="Yaw damping multiplier when reversing">Yaw reverse×<span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label>
             <input id="rv-yawmul" type="range" min="1.00" max="2.00" step="0.05"><div class="val" id="rv-yawmul-v"></div>
           </div>
           <div class="rv-row"><label for="rv-reventry"><span class="rv-name"${tipAttr('reverseEntry')}>Reverse entry</span></label><input id="rv-reventry" type="range" min="0" max="120" step="5"><div class="val" id="rv-reventry-v"></div></div>
@@ -2757,10 +2759,18 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     if (els.clonePhysics) {
       els.clonePhysics.addEventListener('change', ()=>{
         handleSave('rv-clone-physics');
+        // Toggle caution icons visibility
         if (els.clonePhysics.checked) {
+          panel.classList.add('clone-active');
           applyClonePhysicsToAI();
+        } else {
+          panel.classList.remove('clone-active');
         }
       });
+      // Initialize clone-active class on load if checkbox is already checked
+      if (els.clonePhysics.checked) {
+        panel.classList.add('clone-active');
+      }
     }
   }
 
