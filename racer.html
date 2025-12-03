@@ -2607,6 +2607,185 @@ const { useEffect, useRef, useState } = React;
             ctx.restore();
           }
 
+          // Calculate track curvature at each point for tire mark intensity
+          function calculateTrackCurvature(centerline) {
+            if (!centerline || centerline.length < 3) return [];
+            const n = centerline.length;
+            const curvatures = [];
+            for (let i = 0; i < n; i++) {
+              const prev = centerline[(i - 1 + n) % n];
+              const curr = centerline[i];
+              const next = centerline[(i + 1) % n];
+              // Calculate signed curvature using cross product
+              const dx1 = curr.x - prev.x;
+              const dy1 = curr.y - prev.y;
+              const dx2 = next.x - curr.x;
+              const dy2 = next.y - curr.y;
+              const cross = dx1 * dy2 - dy1 * dx2;
+              const len1 = Math.hypot(dx1, dy1) || 1;
+              const len2 = Math.hypot(dx2, dy2) || 1;
+              const curvature = Math.abs(cross / (len1 * len2 * Math.max(len1, len2)));
+              curvatures.push(curvature);
+            }
+            return curvatures;
+          }
+
+          // Smooth curvature values for more natural tire marks
+          function smoothCurvatures(curvatures, windowSize = 8) {
+            if (!curvatures.length) return [];
+            const n = curvatures.length;
+            const smoothed = [];
+            for (let i = 0; i < n; i++) {
+              let sum = 0;
+              let count = 0;
+              for (let j = -windowSize; j <= windowSize; j++) {
+                const idx = (i + j + n) % n;
+                sum += curvatures[idx];
+                count++;
+              }
+              smoothed.push(sum / count);
+            }
+            return smoothed;
+          }
+
+          // Draw tire mark streaks along the track
+          function drawTireMarks(ctx, centerline, curvatures, roadWidth) {
+            if (!centerline || centerline.length < 2 || !curvatures.length) return;
+            
+            // Normalize curvatures to 0-1 range
+            const maxCurv = Math.max(...curvatures, 0.001);
+            const normalizedCurvatures = curvatures.map(c => Math.min(1, c / maxCurv));
+            
+            const n = centerline.length;
+            // Seeded random for consistent patterns
+            const seededRandom = (seed) => {
+              const x = Math.sin(seed * 9999) * 10000;
+              return x - Math.floor(x);
+            };
+            
+            // Draw multiple tire mark layers at different offsets from centerline
+            const tireOffsets = [-0.35, -0.20, 0.20, 0.35]; // Relative to road width
+            const tireWidths = [3, 4, 4, 3]; // Pixel widths
+            
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            
+            for (let tireIdx = 0; tireIdx < tireOffsets.length; tireIdx++) {
+              const offset = tireOffsets[tireIdx] * roadWidth;
+              const tireWidth = tireWidths[tireIdx];
+              
+              // Draw tire marks in segments for varied appearance
+              let segmentStart = 0;
+              while (segmentStart < n) {
+                // Segment length varies based on curvature
+                const baseCurv = normalizedCurvatures[segmentStart] || 0;
+                const segLength = Math.max(3, Math.floor(8 + seededRandom(segmentStart + tireIdx * 1000) * 15));
+                const segmentEnd = Math.min(segmentStart + segLength, n);
+                
+                // Calculate intensity based on curvature (more marks at corners)
+                const avgCurvature = normalizedCurvatures.slice(segmentStart, segmentEnd)
+                  .reduce((a, b) => a + b, 0) / (segmentEnd - segmentStart);
+                
+                // Base intensity + curvature boost
+                const baseIntensity = 0.05;
+                const curvatureBoost = avgCurvature * 0.25;
+                const randomVariation = seededRandom(segmentStart * 7 + tireIdx * 13) * 0.08;
+                const intensity = Math.min(0.35, baseIntensity + curvatureBoost + randomVariation);
+                
+                // Skip some segments randomly for varied appearance
+                if (seededRandom(segmentStart * 3 + tireIdx * 5) > 0.3 + avgCurvature * 0.5) {
+                  segmentStart = segmentEnd;
+                  continue;
+                }
+                
+                // Darker shade of grey for tire marks
+                const shade = Math.floor(40 + seededRandom(segmentStart * 11 + tireIdx) * 25);
+                ctx.strokeStyle = `rgba(${shade}, ${shade}, ${shade}, ${intensity})`;
+                ctx.lineWidth = tireWidth + seededRandom(segmentStart) * 2;
+                
+                ctx.beginPath();
+                for (let i = segmentStart; i < segmentEnd && i < n; i++) {
+                  const p = centerline[i];
+                  const prevIdx = (i - 1 + n) % n;
+                  const nextIdx = (i + 1) % n;
+                  const prev = centerline[prevIdx];
+                  const next = centerline[nextIdx];
+                  
+                  // Calculate normal direction
+                  const dx = next.x - prev.x;
+                  const dy = next.y - prev.y;
+                  const len = Math.hypot(dx, dy) || 1;
+                  const nx = -dy / len;
+                  const ny = dx / len;
+                  
+                  // Add slight waviness to tire marks
+                  const waveOffset = Math.sin(i * 0.3 + tireIdx * 2) * 3;
+                  const finalOffset = offset + waveOffset;
+                  
+                  const tx = p.x + nx * finalOffset;
+                  const ty = p.y + ny * finalOffset;
+                  
+                  if (i === segmentStart) ctx.moveTo(tx, ty);
+                  else ctx.lineTo(tx, ty);
+                }
+                ctx.stroke();
+                
+                segmentStart = segmentEnd;
+              }
+            }
+          }
+
+          // Draw subtle asphalt texture noise
+          function drawAsphaltNoise(ctx, centerline, roadWidth) {
+            if (!centerline || centerline.length < 2) return;
+            
+            const seededRandom = (seed) => {
+              const x = Math.sin(seed * 9999) * 10000;
+              return x - Math.floor(x);
+            };
+            
+            const n = centerline.length;
+            const step = 3; // Sample every few points
+            
+            // Draw random speckles across the track surface
+            for (let i = 0; i < n; i += step) {
+              const p = centerline[i];
+              const prevIdx = (i - 1 + n) % n;
+              const nextIdx = (i + 1) % n;
+              const prev = centerline[prevIdx];
+              const next = centerline[nextIdx];
+              
+              // Calculate normal direction
+              const dx = next.x - prev.x;
+              const dy = next.y - prev.y;
+              const len = Math.hypot(dx, dy) || 1;
+              const nx = -dy / len;
+              const ny = dx / len;
+              
+              // Add multiple small speckles at each sample point
+              const numSpeckles = Math.floor(4 + seededRandom(i * 7) * 4);
+              for (let j = 0; j < numSpeckles; j++) {
+                const offsetDist = (seededRandom(i * 13 + j * 17) - 0.5) * roadWidth * 0.85;
+                const alongDist = (seededRandom(i * 19 + j * 23) - 0.5) * 15;
+                
+                const tangentX = dx / len;
+                const tangentY = dy / len;
+                
+                const sx = p.x + nx * offsetDist + tangentX * alongDist;
+                const sy = p.y + ny * offsetDist + tangentY * alongDist;
+                
+                const shade = Math.floor(55 + seededRandom(i * 29 + j * 31) * 35);
+                const alpha = 0.12 + seededRandom(i * 37 + j * 41) * 0.15;
+                const size = 1 + seededRandom(i * 43 + j * 47) * 2.5;
+                
+                ctx.fillStyle = `rgba(${shade}, ${shade}, ${shade}, ${alpha})`;
+                ctx.beginPath();
+                ctx.arc(sx, sy, size, 0, Math.PI * 2);
+                ctx.fill();
+              }
+            }
+          }
+
           function buildTrackSurfaceCanvas() {
             const LIMIT = 4096;
             const TARGET_PPM = 4;
@@ -2667,7 +2846,8 @@ const { useEffect, useRef, useState } = React;
               }
               sctx.lineJoin = 'round';
               sctx.lineCap = 'round';
-              sctx.strokeStyle = '#5f6368';
+              // Base asphalt color - slightly varied grey
+              sctx.strokeStyle = '#505558';
               sctx.lineWidth = ROAD_WIDTH;
               if (path) sctx.stroke(path);
               else {
@@ -2679,6 +2859,18 @@ const { useEffect, useRef, useState } = React;
                 }
                 sctx.stroke();
               }
+              
+              // Calculate curvature for tire mark intensity
+              const rawCurvatures = calculateTrackCurvature(centerline);
+              const curvatures = smoothCurvatures(rawCurvatures, 12);
+              
+              // Add asphalt texture noise
+              drawAsphaltNoise(sctx, centerline, ROAD_WIDTH);
+              
+              // Draw tire marks with curvature-based intensity
+              drawTireMarks(sctx, centerline, curvatures, ROAD_WIDTH);
+              
+              // Center line marking
               sctx.strokeStyle = '#cfd8dc';
               sctx.lineWidth = 2;
               if (path) sctx.stroke(path);
