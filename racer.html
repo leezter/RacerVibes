@@ -18,6 +18,7 @@
     <script src="track_storage.js"></script>
     <script src="ui/speedometer.js"></script>
     <style>
+      :root { --dev-panel-top: 56px; } /* Top offset for dev panels below the Dev menu button */
       html, body, #root { height: 100%; margin: 0; }
   body { background: #0a0a0a; color: #eee; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; overflow:hidden; overscroll-behavior:none; }
       .wrap { display:flex; flex-direction:column; align-items:center; gap:12px; padding:16px; }
@@ -59,7 +60,7 @@
       .dev-toggle.ai-toggle { display:none !important; }
 
       /* Dev panels - positioned from dev menu */
-      .dev-panel { position:fixed; top:56px; left:12px; width:min(220px, calc(100vw - 24px)); max-height:calc(100vh - 80px); overflow-y:auto; padding:12px; border-radius:12px; border:1px solid rgba(71,85,105,0.6); background:rgba(15,23,42,0.94); color:#e2e8f0; font-size:12px; display:none; gap:10px; box-shadow:0 12px 32px rgba(15,23,42,0.45); z-index:35; }
+      .dev-panel { position:fixed; top:var(--dev-panel-top); left:12px; width:min(220px, calc(100vw - 24px)); max-height:calc(100vh - 80px); overflow-y:auto; padding:12px; border-radius:12px; border:1px solid rgba(71,85,105,0.6); background:rgba(15,23,42,0.94); color:#e2e8f0; font-size:12px; display:none; gap:10px; box-shadow:0 12px 32px rgba(15,23,42,0.45); z-index:35; }
       .dev-panel.open { display:flex; flex-direction:column; }
       .dev-panel h3 { margin:0 0 4px; font-size:13px; font-weight:600; }
       .dev-panel h4 { margin:8px 0 4px; font-size:12px; font-weight:600; }
@@ -4141,13 +4142,12 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                 </button>
               </div>
             </div>
-            {/* Hidden legacy buttons for compatibility */}
+            {/* Hidden legacy buttons for compatibility - hidden via CSS class .dev-toggle */}
             <button
               type="button"
               className="dev-toggle"
               onClick={() => setDevPanelOpen(open => !open)}
               aria-pressed={devPanelOpen}
-              style={{display: 'none'}}
             >
               {devPanelOpen ? "Hide scales" : "Scales"}
             </button>
@@ -4156,7 +4156,6 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               className="dev-toggle ai-toggle"
               onClick={() => setAiPanelOpen(open => !open)}
               aria-pressed={aiPanelOpen}
-              style={{display: 'none'}}
             >
               {aiPanelOpen ? "Hide AI Controls" : "AI Controls"}
             </button>
@@ -4618,7 +4617,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
     </script>
     <style>
   /* GBX Panel - positioned at left under Dev menu */
-  #gbxPanel { position:fixed; left:12px; top:56px; width:min(280px, calc(100vw - 24px)); max-height:calc(100vh - 80px); overflow:auto; background:rgba(3,5,12,0.92); color:#e6edf6; font:11px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding:10px 14px 10px 10px; border:1px solid rgba(59,130,246,0.4); border-radius:10px; display:none; z-index:35; backdrop-filter:blur(6px); box-sizing:border-box; }
+  #gbxPanel { position:fixed; left:12px; top:var(--dev-panel-top, 56px); width:min(280px, calc(100vw - 24px)); max-height:calc(100vh - 80px); overflow:auto; background:rgba(3,5,12,0.92); color:#e6edf6; font:11px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding:10px 14px 10px 10px; border:1px solid rgba(59,130,246,0.4); border-radius:10px; display:none; z-index:35; backdrop-filter:blur(6px); box-sizing:border-box; }
     #gbxPanel .gbx-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
     #gbxPanel .gbx-header button { appearance:none; border:0; background:rgba(148,163,184,0.2); color:#e2e8f0; padding:2px 8px; border-radius:6px; cursor:pointer; }
     #gbxPanel .gbx-header button:hover { background:rgba(148,163,184,0.35); }

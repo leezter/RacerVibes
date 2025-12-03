@@ -1761,7 +1761,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     ctx.restore();
   }
   const DEVTOOLS_STYLE = `
-    .rv-devtools{position:fixed;top:56px;left:12px;z-index:35;font:11px system-ui;}
+    .rv-devtools{position:fixed;top:var(--dev-panel-top, 56px);left:12px;z-index:35;font:11px system-ui;}
     .rv-devtools .toggle{appearance:none;border:1px solid rgba(59,130,246,0.45); background:rgba(15,23,42,0.92); color:#e6eef6; padding:6px 10px; border-radius:8px; cursor:pointer; font-size:11px;}
     .rv-panel{display:none; margin-top:6px; padding:10px; border:1px solid rgba(71,85,105,0.6); background:rgba(15,23,42,0.94); color:#e6eef6; border-radius:10px; width:min(260px, calc(100vw - 24px)); box-shadow:0 8px 24px rgba(0,0,0,.5); max-height:calc(100vh - 100px); overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; -webkit-overflow-scrolling:touch}
     .rv-panel.open{display:block;}
@@ -1791,7 +1791,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     .rv-section.legacy{border-color:rgba(251,146,60,0.45);background:rgba(180,83,9,0.25)}
     .rv-section.legacy h4{color:#fb923c}
     .rv-section .rv-row{margin:5px 0}
-    .rv-devtools.rv-veh{left:12px;right:auto;top:56px}
+    .rv-devtools.rv-veh{left:12px;right:auto;top:var(--dev-panel-top, 56px)}
     .rv-caution{display:none;margin-left:4px;font-size:12px;cursor:help}
     .rv-panel.clone-active .rv-row[data-no-ai-clone] .rv-caution{display:inline}
     @media (max-width: 600px) {

@@ -32,6 +32,7 @@
     );
   }
 
+  // Reduced size and offset for mobile: smaller speedometer (200px vs 380px), less bottom padding (4px vs 8px)
   const defaults = { width: 200, bottomOffset: 4, mphMax: 180, smoothing: 0.18 };
 
   function buildGauge(root, width){
@@ -176,7 +177,8 @@
     btn.style.cssText = 'display:none;position:fixed;right:12px;bottom:12px;z-index:51;border:1px solid #334;padding:6px 10px;border-radius:8px;background:#0f172a;color:#e2e8f0;font:12px system-ui;cursor:pointer;';
     const panel = document.createElement('div');
     panel.id = 'spd-dev-panel';
-    panel.style.cssText = 'position:fixed;left:12px;top:56px;width:min(200px, calc(100vw - 24px));display:none;background:rgba(15,23,42,0.94);color:#e5e7eb;border:1px solid rgba(71,85,105,0.6);border-radius:10px;padding:10px;z-index:35;font:11px system-ui;';
+    // Uses CSS variable --dev-panel-top for consistent positioning with other dev panels
+    panel.style.cssText = 'position:fixed;left:12px;top:var(--dev-panel-top, 56px);width:min(200px, calc(100vw - 24px));display:none;background:rgba(15,23,42,0.94);color:#e5e7eb;border:1px solid rgba(71,85,105,0.6);border-radius:10px;padding:10px;z-index:35;font:11px system-ui;';
 
     panel.innerHTML = `
       <div style="display:grid;gap:8px;">
