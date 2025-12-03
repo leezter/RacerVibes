@@ -16,6 +16,11 @@
   };
   const MAX_TARGET_SPEED = 2600; // ~190 mph with ppm ≈ 30
 
+  // Racing line smoothing constants
+  // Note: The racing line is computed once when track loads, not per-frame, so
+  // these higher iteration counts are acceptable for silky smooth results.
+  const CORNER_BLEND_FACTOR = 0.7; // How aggressively to blend toward entry/exit positions
+
   // Steering blend weights for following the racing line
   // Higher lookahead weight = smoother steering, car uses line as a guide
   // Lower lookahead weight = stricter line following but can cause oscillation
@@ -278,26 +283,26 @@
       
       // Approaching a corner - position on the outside
       if (maxFutureCurv > currentAbsCurv * 1.3 && maxFutureCurv > 0.25 * maxAbsCurv) {
-        const setupOffset = -futureApexOffset * (0.7 + 0.25 * aggression);
+        const setupOffset = -futureApexOffset * (CORNER_BLEND_FACTOR + 0.25 * aggression);
         const blend = clamp((maxFutureCurv - currentAbsCurv) / maxAbsCurv, 0, 0.85);
-        offset = lerp(offset, setupOffset, blend * 0.7);
+        offset = lerp(offset, setupOffset, blend * CORNER_BLEND_FACTOR);
       }
       
       // Exiting a corner - track out to the outside
       if (maxPastCurv > currentAbsCurv * 1.3 && maxPastCurv > 0.25 * maxAbsCurv) {
-        const exitOffset = -pastApexOffset * (0.7 + 0.25 * aggression);
+        const exitOffset = -pastApexOffset * (CORNER_BLEND_FACTOR + 0.25 * aggression);
         const blend = clamp((maxPastCurv - currentAbsCurv) / maxAbsCurv, 0, 0.85);
-        offset = lerp(offset, exitOffset, blend * 0.7);
+        offset = lerp(offset, exitOffset, blend * CORNER_BLEND_FACTOR);
       }
       
       adjustedOffsets[i] = offset;
     }
 
     // 9. Heavy smoothing of offsets for very smooth transitions
-    // This is the key to creating a professional-looking racing line
-    let finalOffsets = smoothValues(adjustedOffsets, 15, 0.5); // 15 passes!
-    finalOffsets = smoothValues(finalOffsets, 10, 0.4);        // Even more smoothing
-    finalOffsets = smoothValues(finalOffsets, 5, 0.3);         // Final light polish
+    // The racing line is computed once at track load, so this is not a per-frame cost
+    let finalOffsets = smoothValues(adjustedOffsets, 12, 0.5);
+    finalOffsets = smoothValues(finalOffsets, 8, 0.4);
+    finalOffsets = smoothValues(finalOffsets, 4, 0.3);
 
     // 10. Apply offsets to create initial racing line path
     let path = [];
@@ -311,13 +316,13 @@
 
     // 11. Apply Laplacian relaxation for path smoothing
     // This creates naturally flowing curves without ripple effects
-    path = relaxPath(path, 30, 0.4);
+    path = relaxPath(path, 20, 0.4);
 
     // 12. Apply Gaussian smoothing for extra smoothness
-    path = gaussianSmooth(path, 8);
+    path = gaussianSmooth(path, 6);
 
     // 13. Constrained relaxation - smooth while respecting track bounds
-    for (let iter = 0; iter < 20; iter++) {
+    for (let iter = 0; iter < 15; iter++) {
       const next = new Array(n);
       for (let i = 0; i < n; i++) {
         const prev = path[(i - 1 + n) % n];
@@ -347,7 +352,7 @@
     }
 
     // 14. Final Gaussian smoothing pass for silky smooth result
-    path = gaussianSmooth(path, 4);
+    path = gaussianSmooth(path, 3);
 
     // 15. Calculate metadata (speed, curvature, etc.)
     const g = cfg.gravity;
