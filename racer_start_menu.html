@@ -136,6 +136,24 @@
         const vehicleSel = $("vehicleSel");
         const createTrackBtn = $("createTrackBtn");
 
+        // Request fullscreen politely (same pattern as racer.html)
+        function requestFullscreen(el){
+          if (!el) return;
+          try {
+            if (el.requestFullscreen) return el.requestFullscreen();
+            if (el.webkitRequestFullscreen) return el.webkitRequestFullscreen();
+            if (el.msRequestFullscreen) return el.msRequestFullscreen();
+          } catch(e) { /* ignore */ }
+        }
+
+        // Attempt fullscreen upon first user interaction
+        const fsOnce = function(){
+          requestFullscreen(document.documentElement);
+        };
+        window.addEventListener("pointerdown", fsOnce, { once: true, passive: true });
+        window.addEventListener("click", fsOnce, { once: true, passive: true });
+        window.addEventListener("touchstart", fsOnce, { once: true, passive: true });
+
         const START_PAYLOAD_KEY = "RacingVibesStartPayload";
         const START_PAYLOAD_NAME_PREFIX = "RacingVibesStart:";
         function saveStartPayload(payload){
