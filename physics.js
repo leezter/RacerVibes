@@ -1762,7 +1762,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
   }
   const DEVTOOLS_STYLE = `
     .rv-devtools{position:fixed;top:var(--dev-panel-top, 56px);left:12px;z-index:35;font:11px system-ui;}
-    .rv-devtools .toggle{appearance:none;border:1px solid rgba(59,130,246,0.45); background:rgba(15,23,42,0.92); color:#e6eef6; padding:6px 10px; border-radius:8px; cursor:pointer; font-size:11px;}
+    .rv-devtools .toggle{display:none !important;} /* Hidden - now accessed through Dev dropdown menu */
     .rv-panel{display:none; margin-top:6px; padding:10px; border:1px solid rgba(71,85,105,0.6); background:rgba(15,23,42,0.94); color:#e6eef6; border-radius:10px; width:min(260px, calc(100vw - 24px)); box-shadow:0 8px 24px rgba(0,0,0,.5); max-height:calc(100vh - 100px); overflow-y:auto; overscroll-behavior:contain; touch-action:pan-y; -webkit-overflow-scrolling:touch}
     .rv-panel.open{display:block;}
     .rv-row{display:flex; align-items:center; gap:6px; margin:5px 0}
