@@ -1738,20 +1738,21 @@ const { useEffect, useRef, useState } = React;
             const MAXW = 1920;
             const MAXH = 1080;
 
-            // Calculate aspect ratio of the game world
-            const gameAspect = W / H;
+            // Target aspect ratio is 16:9 (1.78) which works well on desktop
+            const TARGET_ASPECT = 16 / 9;
             const viewportAspect = vpW / vpH;
 
-            // Calculate canvas dimensions that maintain aspect ratio while fitting in viewport
             let scaledW, scaledH;
-            if (viewportAspect > gameAspect) {
-              // Viewport is wider than game - fit to height, add pillarboxing
+            // Only apply aspect ratio correction for very wide screens (mobile landscape with notch, etc.)
+            // Screens wider than 18:9 (2.0) get constrained to prevent stretching
+            if (viewportAspect > 2.0) {
+              // Viewport is much wider than 16:9 - fit to height with 16:9 aspect ratio
               scaledH = Math.max(240, Math.round(vpH));
-              scaledW = Math.max(320, Math.round(scaledH * gameAspect));
+              scaledW = Math.max(320, Math.round(scaledH * TARGET_ASPECT));
             } else {
-              // Viewport is taller than game - fit to width, add letterboxing
+              // Normal desktop/tablet aspect ratios - fill viewport as before
               scaledW = Math.max(320, Math.round(vpW));
-              scaledH = Math.max(240, Math.round(scaledW / gameAspect));
+              scaledH = Math.max(240, Math.round(vpH));
             }
 
             canvas.width = Math.min(Math.round(scaledW * dpr), MAXW);
