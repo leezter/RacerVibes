@@ -2772,6 +2772,13 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
         panel.classList.add('clone-active');
       }
     }
+
+    // Apply the initial slider values to the cars so physics match dev tools on race start
+    try {
+      apply();
+    } catch (e) {
+      console.warn('[RacerPhysics] Failed to apply initial dev tools settings:', e);
+    }
   }
 
   // Snapshot factory defaults for reset
