@@ -32,14 +32,14 @@
     );
   }
 
-  const defaults = { width: 380, bottomOffset: 8, mphMax: 180, smoothing: 0.18 };
+  const defaults = { width: 180, bottomOffset: 8, mphMax: 180, smoothing: 0.18 };
 
   function buildGauge(root, width){
     const W = width, H = width; // square viewbox
     const svg = document.createElementNS(NS,'svg');
     svg.setAttribute('viewBox','0 0 600 600');
-    svg.style.width = `${Math.max(240, Math.min(W, 560))}px`;
-    svg.style.maxWidth = '80vw';
+    svg.style.width = `min(${Math.max(120, Math.min(W, 280))}px, 35vw)`;
+    svg.style.maxWidth = '40vw';
     svg.style.height = 'auto';
     svg.style.display = 'block';
 
@@ -169,10 +169,12 @@
 
   function addDevPanel(root, getState, setState){
     const btn = document.createElement('button');
+    btn.id = 'spd-toggle-btn';
     btn.textContent = 'SPD';
-    btn.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:51;border:1px solid #334;padding:6px 10px;border-radius:8px;background:#0f172a;color:#e2e8f0;font:12px system-ui;cursor:pointer;';
+    btn.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:51;border:1px solid #334;padding:6px 10px;border-radius:8px;background:#0f172a;color:#e2e8f0;font:12px system-ui;cursor:pointer;display:none;';
     const panel = document.createElement('div');
-    panel.style.cssText = 'position:fixed;right:12px;bottom:56px;width:240px;display:none;background:rgba(0,0,0,.85);color:#e5e7eb;border:1px solid #334;border-radius:10px;padding:10px;z-index:51;font:12px system-ui;';
+    panel.id = 'spd-panel';
+    panel.style.cssText = 'position:fixed;left:clamp(8px, 2vw, 16px);top:calc(clamp(8px, 2vh, 16px) + 76px);width:clamp(180px, 45vw, 240px);display:none;background:rgba(0,0,0,.85);color:#e5e7eb;border:1px solid #334;border-radius:10px;padding:10px;z-index:51;font:clamp(10px, 2.5vw, 12px) system-ui;';
 
     panel.innerHTML = `
       <div style="display:grid;gap:8px;">
