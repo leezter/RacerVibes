@@ -2667,6 +2667,7 @@ const { useEffect, useRef, useState } = React;
               centerLineColor: '#cfd8dc',
               tireMarkIntensityBase: 0.05,
               tireMarkIntensityBoost: 0.25,
+              tireMarkIntensityMax: 0.35,
               tireMarkSkipThreshold: 0.3,
               tireMarkShadeMin: 40,
               tireMarkShadeRange: 25,
@@ -2686,6 +2687,7 @@ const { useEffect, useRef, useState } = React;
               centerLineColor: '#b8c0c5',  // Faded center line
               tireMarkIntensityBase: 0.12,  // More tire marks
               tireMarkIntensityBoost: 0.35,
+              tireMarkIntensityMax: 0.55,  // Higher max for vintage worn appearance
               tireMarkSkipThreshold: 0.15,  // Fewer skips = more marks
               tireMarkShadeMin: 25,  // Darker tire marks (more worn in)
               tireMarkShadeRange: 20,
@@ -2710,6 +2712,7 @@ const { useEffect, useRef, useState } = React;
               centerLineColor: '#ffffff',  // Crisp white center line
               tireMarkIntensityBase: 0.02,  // Fewer tire marks
               tireMarkIntensityBoost: 0.15,
+              tireMarkIntensityMax: 0.25,  // Lower max for clean appearance
               tireMarkSkipThreshold: 0.55,  // More skips = fewer marks
               tireMarkShadeMin: 35,
               tireMarkShadeRange: 15,
@@ -2732,6 +2735,7 @@ const { useEffect, useRef, useState } = React;
               centerLineColor: '#ffeb3b',  // Glowing yellow center line
               tireMarkIntensityBase: 0.08,
               tireMarkIntensityBoost: 0.30,
+              tireMarkIntensityMax: 0.45,
               tireMarkSkipThreshold: 0.25,
               tireMarkShadeMin: 15,  // Very dark marks
               tireMarkShadeRange: 18,
@@ -2798,7 +2802,8 @@ const { useEffect, useRef, useState } = React;
                 const baseIntensity = tex.tireMarkIntensityBase;
                 const curvatureBoost = avgCurvature * tex.tireMarkIntensityBoost;
                 const randomVariation = seededRandom(segmentStart * 7 + tireIdx * 13) * 0.08;
-                const intensity = Math.min(0.45, baseIntensity + curvatureBoost + randomVariation);
+                const maxIntensity = tex.tireMarkIntensityMax || 0.45;
+                const intensity = Math.min(maxIntensity, baseIntensity + curvatureBoost + randomVariation);
                 
                 // Skip some segments randomly for varied appearance (use texture-specific threshold)
                 if (seededRandom(segmentStart * 3 + tireIdx * 5) > tex.tireMarkSkipThreshold + avgCurvature * 0.5) {
@@ -3001,6 +3006,22 @@ const { useEffect, useRef, useState } = React;
           function drawReflectiveMarkers(ctx, centerline, roadWidth, markerColor) {
             if (!centerline || centerline.length < 2) return;
             
+            // Helper function to convert hex color to rgba
+            function hexToRgba(hex, alpha) {
+              const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+              if (result) {
+                const r = parseInt(result[1], 16);
+                const g = parseInt(result[2], 16);
+                const b = parseInt(result[3], 16);
+                return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+              }
+              // Fallback for rgb/rgba format
+              if (hex.startsWith('rgb')) {
+                return hex.replace('rgb', 'rgba').replace(')', `, ${alpha})`);
+              }
+              return hex;
+            }
+            
             const n = centerline.length;
             const markerSpacing = 25; // pixels between markers
             
@@ -3032,7 +3053,7 @@ const { useEffect, useRef, useState } = React;
               const glowSize = 3;
               const gradient1 = ctx.createRadialGradient(lx, ly, 0, lx, ly, glowSize * 2);
               gradient1.addColorStop(0, markerColor);
-              gradient1.addColorStop(0.5, markerColor.replace(')', ', 0.5)').replace('rgb', 'rgba'));
+              gradient1.addColorStop(0.5, hexToRgba(markerColor, 0.5));
               gradient1.addColorStop(1, 'rgba(0, 0, 0, 0)');
               
               ctx.fillStyle = gradient1;
@@ -3042,7 +3063,7 @@ const { useEffect, useRef, useState } = React;
               
               const gradient2 = ctx.createRadialGradient(rx, ry, 0, rx, ry, glowSize * 2);
               gradient2.addColorStop(0, markerColor);
-              gradient2.addColorStop(0.5, markerColor.replace(')', ', 0.5)').replace('rgb', 'rgba'));
+              gradient2.addColorStop(0.5, hexToRgba(markerColor, 0.5));
               gradient2.addColorStop(1, 'rgba(0, 0, 0, 0)');
               
               ctx.fillStyle = gradient2;
