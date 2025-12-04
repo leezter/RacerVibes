@@ -3,47 +3,753 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-  <meta name="theme-color" content="#0b0f14" />
+  <meta name="theme-color" content="#0a0e17" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <title>Top‑Down Racer — Start Menu</title>
+  <title>Racing Vibes — Start Menu</title>
   <script src="utils/utils.js" defer></script>
   <script src="ai/racer_ai.js" defer></script>
   <script src="utils/storage-utils.js" defer></script>
   <script src="track_storage.js" defer></script>
   <script src="track_editor.js" defer></script>
   <style>
-    :root{ --sat:env(safe-area-inset-top); --sab:env(safe-area-inset-bottom); --sal:env(safe-area-inset-left); --sar:env(safe-area-inset-right); }
-    html, body { height:100%; margin:0; background:#0b0f14; color:#e8eef5; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; -webkit-text-size-adjust:100%; }
-    body { overflow:hidden; }
-    .wrap { min-height:100svh; display:grid; place-items:center; padding:16px; padding-top:calc(12px + var(--sat)); padding-bottom:calc(16px + var(--sab)); padding-left:calc(16px + var(--sal)); padding-right:calc(16px + var(--sar)); }
-    .panel { width:min(720px,100%); max-height:calc(100svh - 32px - var(--sat) - var(--sab)); overflow:auto; background:#0f172a; border:1px solid #1f2a44; border-radius:16px; box-shadow:0 12px 32px rgba(0,0,0,.5); padding:20px; }
-    h1 { margin:0 0 8px; font-size:28px; letter-spacing:.2px; }
-    p.sub { margin:0 0 18px; opacity:.8; }
-    fieldset { border:0; margin:0 0 18px; padding:0; }
-    legend { font-weight:700; margin-bottom:8px; }
-  .row { display:flex; gap:12px; flex-wrap:wrap; }
-    .track-row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
-    .track-row select { flex:1 1 260px; min-width:240px; }
-    .btn { appearance:none; border:1px solid #31456b; background:#132035; color:#e6edf6; padding:12px 16px; border-radius:12px; font-size:16px; cursor:pointer; }
-    .btn.small { padding:10px 14px; font-size:14px; }
-    .btn:hover { background:#172a4a; }
-    .btn.primary { background:#2563eb; border-color:#2563eb; }
-    .btn.primary:hover { filter:brightness(1.1); }
-    .card { flex:1; min-width:240px; border:1px solid #223453; border-radius:12px; padding:14px; background:#0e1a2c; }
-    .choice { display:flex; align-items:center; gap:10px; margin:8px 0; }
-  select { background:#0e1a2c; border:1px solid #223453; color:#e6edf6; border-radius:10px; padding:12px 12px; font-size:16px; width:100%; }
-    .footer { display:flex; justify-content:space-between; align-items:center; margin-top:16px; }
-    .muted { opacity:.7; font-size:12px; }
+    :root {
+      --sat: env(safe-area-inset-top);
+      --sab: env(safe-area-inset-bottom);
+      --sal: env(safe-area-inset-left);
+      --sar: env(safe-area-inset-right);
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --primary-glow: rgba(59, 130, 246, 0.4);
+      --accent: #f59e0b;
+      --accent-glow: rgba(245, 158, 11, 0.3);
+      --bg-dark: #0a0e17;
+      --bg-card: #111827;
+      --bg-card-hover: #1f2937;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-hover: rgba(255, 255, 255, 0.15);
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --success: #10b981;
+      --danger: #ef4444;
+    }
+    
+    *, *::before, *::after { box-sizing: border-box; }
+    
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: var(--bg-dark);
+      color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      -webkit-text-size-adjust: 100%;
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    body {
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+    
+    /* Animated background */
+    .bg-container {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+      z-index: 0;
+      background: linear-gradient(135deg, #0a0e17 0%, #1a1f35 50%, #0f172a 100%);
+    }
+    
+    .bg-grid {
+      position: absolute;
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      animation: grid-move 20s linear infinite;
+    }
+    
+    @keyframes grid-move {
+      0% { transform: translate(0, 0); }
+      100% { transform: translate(60px, 60px); }
+    }
+    
+    .bg-glow {
+      position: absolute;
+      width: 600px;
+      height: 600px;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.15;
+      animation: glow-pulse 8s ease-in-out infinite;
+    }
+    
+    .bg-glow.glow-1 {
+      top: -200px;
+      right: -100px;
+      background: var(--primary);
+    }
+    
+    .bg-glow.glow-2 {
+      bottom: -200px;
+      left: -100px;
+      background: var(--accent);
+      animation-delay: -4s;
+    }
+    
+    @keyframes glow-pulse {
+      0%, 100% { opacity: 0.1; transform: scale(1); }
+      50% { opacity: 0.2; transform: scale(1.1); }
+    }
+    
+    /* Main layout */
+    .app {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      min-height: 100svh;
+      display: flex;
+      flex-direction: column;
+      padding: calc(24px + var(--sat)) calc(24px + var(--sar)) calc(24px + var(--sab)) calc(24px + var(--sal));
+    }
+    
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+    }
+    
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    
+    .logo-icon {
+      width: 56px;
+      height: 56px;
+      background: linear-gradient(135deg, var(--primary) 0%, #1d4ed8 100%);
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      font-size: 28px;
+      box-shadow: 0 8px 32px var(--primary-glow);
+    }
+    
+    .logo-text h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #fff 0%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .logo-text span {
+      font-size: 13px;
+      color: var(--text-muted);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    
+    .header-actions {
+      display: flex;
+      gap: 12px;
+    }
+    
+    .icon-btn {
+      width: 48px;
+      height: 48px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      border-radius: 14px;
+      color: var(--text);
+      font-size: 20px;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: all 0.2s ease;
+    }
+    
+    .icon-btn:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-hover);
+      transform: translateY(-2px);
+    }
+    
+    /* Main content */
+    .main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 24px;
+      max-width: 1400px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    
+    .content {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    
+    /* Section cards */
+    .section {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 24px;
+      transition: border-color 0.2s ease;
+    }
+    
+    .section:hover {
+      border-color: var(--border-hover);
+    }
+    
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .section-title h2 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    
+    .section-icon {
+      width: 40px;
+      height: 40px;
+      background: rgba(59, 130, 246, 0.1);
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      font-size: 20px;
+    }
+    
+    /* Vehicle selection */
+    .vehicle-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+    }
+    
+    .vehicle-card {
+      position: relative;
+      background: var(--bg-dark);
+      border: 2px solid transparent;
+      border-radius: 16px;
+      padding: 16px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      text-align: center;
+    }
+    
+    .vehicle-card:hover {
+      background: rgba(59, 130, 246, 0.05);
+      border-color: rgba(59, 130, 246, 0.3);
+      transform: translateY(-4px);
+    }
+    
+    .vehicle-card.selected {
+      background: rgba(59, 130, 246, 0.1);
+      border-color: var(--primary);
+      box-shadow: 0 0 24px var(--primary-glow);
+    }
+    
+    .vehicle-card.selected::before {
+      content: '✓';
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 24px;
+      height: 24px;
+      background: var(--primary);
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+      font-weight: bold;
+    }
+    
+    .vehicle-image {
+      width: 80px;
+      height: 50px;
+      margin: 0 auto 12px;
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(59, 130, 246, 0.05) 100%);
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      font-size: 28px;
+    }
+    
+    .vehicle-name {
+      font-weight: 700;
+      font-size: 15px;
+      margin-bottom: 4px;
+    }
+    
+    .vehicle-stats {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    
+    /* Track selection */
+    .track-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+    
+    .track-card {
+      position: relative;
+      background: var(--bg-dark);
+      border: 2px solid transparent;
+      border-radius: 16px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.25s ease;
+    }
+    
+    .track-card:hover {
+      border-color: rgba(59, 130, 246, 0.3);
+      transform: translateY(-4px);
+    }
+    
+    .track-card.selected {
+      border-color: var(--primary);
+      box-shadow: 0 0 24px var(--primary-glow);
+    }
+    
+    .track-card.selected::before {
+      content: '✓';
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 24px;
+      height: 24px;
+      background: var(--primary);
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+      font-weight: bold;
+      z-index: 2;
+    }
+    
+    .track-preview {
+      height: 100px;
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(16, 185, 129, 0.1) 100%);
+      display: grid;
+      place-items: center;
+      font-size: 32px;
+    }
+    
+    .track-info {
+      padding: 14px;
+    }
+    
+    .track-name {
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 4px;
+    }
+    
+    .track-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    
+    .track-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--accent);
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 600;
+      margin-top: 6px;
+    }
+    
+    .track-badge.custom {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--success);
+    }
+    
+    /* Sidebar */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    
+    /* Start button */
+    .start-card {
+      background: linear-gradient(135deg, var(--bg-card) 0%, rgba(59, 130, 246, 0.1) 100%);
+      border: 1px solid rgba(59, 130, 246, 0.2);
+      border-radius: 20px;
+      padding: 24px;
+      text-align: center;
+    }
+    
+    .start-btn {
+      width: 100%;
+      padding: 18px 32px;
+      background: linear-gradient(135deg, var(--primary) 0%, #1d4ed8 100%);
+      border: none;
+      border-radius: 14px;
+      color: white;
+      font-size: 18px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 8px 32px var(--primary-glow);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    
+    .start-btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 12px 40px var(--primary-glow);
+    }
+    
+    .start-btn:active {
+      transform: translateY(-1px);
+    }
+    
+    .start-info {
+      margin-top: 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    
+    .selection-summary {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+    
+    .summary-item {
+      text-align: center;
+    }
+    
+    .summary-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    
+    .summary-value {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--primary);
+    }
+    
+    /* Quick actions */
+    .quick-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    
+    .action-btn {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 16px 18px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-decoration: none;
+    }
+    
+    .action-btn:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-hover);
+      transform: translateX(4px);
+    }
+    
+    .action-btn .icon {
+      width: 40px;
+      height: 40px;
+      background: rgba(59, 130, 246, 0.1);
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      font-size: 18px;
+    }
+    
+    .action-btn.accent .icon {
+      background: rgba(245, 158, 11, 0.15);
+    }
+    
+    .action-btn .text {
+      flex: 1;
+    }
+    
+    .action-btn .arrow {
+      color: var(--text-muted);
+      font-size: 18px;
+    }
+    
+    /* Controls hint */
+    .controls-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px;
+    }
+    
+    .controls-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 14px;
+    }
+    
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+    
+    .control-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+    }
+    
+    .key {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 32px;
+      height: 28px;
+      padding: 0 8px;
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    
+    /* Settings modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s ease;
+    }
+    
+    .modal-overlay.active {
+      opacity: 1;
+      visibility: visible;
+    }
+    
+    .modal {
+      width: 100%;
+      max-width: 480px;
+      max-height: calc(100vh - 48px);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      overflow: hidden;
+      transform: scale(0.95) translateY(20px);
+      transition: transform 0.3s ease;
+    }
+    
+    .modal-overlay.active .modal {
+      transform: scale(1) translateY(0);
+    }
+    
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .modal-header h2 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+    }
+    
+    .modal-close {
+      width: 36px;
+      height: 36px;
+      background: var(--bg-dark);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 18px;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: all 0.2s ease;
+    }
+    
+    .modal-close:hover {
+      background: var(--danger);
+      border-color: var(--danger);
+    }
+    
+    .modal-body {
+      padding: 24px;
+      overflow-y: auto;
+      max-height: calc(100vh - 200px);
+    }
+    
+    .setting-group {
+      margin-bottom: 24px;
+    }
+    
+    .setting-group:last-child {
+      margin-bottom: 0;
+    }
+    
+    .setting-group h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin: 0 0 14px 0;
+    }
+    
+    .setting-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .setting-item:last-child {
+      border-bottom: none;
+    }
+    
+    .setting-label {
+      font-size: 15px;
+      font-weight: 500;
+    }
+    
+    .setting-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    
+    /* Toggle switch */
+    .toggle {
+      position: relative;
+      width: 52px;
+      height: 28px;
+      background: var(--bg-dark);
+      border-radius: 14px;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+    
+    .toggle.active {
+      background: var(--primary);
+    }
+    
+    .toggle::after {
+      content: '';
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 22px;
+      height: 22px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.3s ease;
+    }
+    
+    .toggle.active::after {
+      transform: translateX(24px);
+    }
+    
+    /* Slider */
+    .slider-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .slider {
+      flex: 1;
+      height: 6px;
+      background: var(--bg-dark);
+      border-radius: 3px;
+      appearance: none;
+      cursor: pointer;
+    }
+    
+    .slider::-webkit-slider-thumb {
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      background: var(--primary);
+      border-radius: 50%;
+      cursor: pointer;
+    }
+    
+    .slider-value {
+      min-width: 40px;
+      text-align: right;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--primary);
+    }
+    
+    /* Track editor styles (preserved from original) */
     .track-editor-overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:32px; background:rgba(2,8,23,0.86); backdrop-filter:blur(16px); z-index:80; }
     .track-editor-overlay.hidden { display:none; }
     .track-editor-panel { width:min(1120px,100%); max-height:100%; display:flex; flex-direction:column; background:#0f172a; border-radius:18px; border:1px solid rgba(59,130,246,0.35); box-shadow:0 24px 64px rgba(2,6,23,0.75); }
     .track-editor-header { display:flex; align-items:center; gap:12px; padding:18px 20px; border-bottom:1px solid rgba(148,163,184,0.15); }
-    .track-editor-header h2 { margin:0; font-size:20px; letter-spacing:.3px; }
+    .track-editor-header h2 { margin:0; font-size:20px; letter-spacing:.3px; color: #e2e8f0; }
     .track-editor-header .spacer { flex:1; }
     .track-editor-body { flex:1; display:flex; gap:20px; padding:20px; overflow:auto; flex-wrap:wrap; }
     .track-editor-canvas-wrap { flex:1 1 620px; display:flex; flex-direction:column; align-items:center; gap:12px; }
     .track-editor-canvas { width:100%; max-width:960px; background:#050914; border-radius:16px; box-shadow:0 16px 36px rgba(3,7,18,0.65); touch-action:none; }
-    .track-editor-instructions { font-size:12px; opacity:.7; text-align:center; max-width:760px; }
+    .track-editor-instructions { font-size:12px; opacity:.7; text-align:center; max-width:760px; color: #94a3b8; }
     .track-editor-controls { flex:0 0 260px; min-width:240px; display:flex; flex-direction:column; gap:16px; }
     .te-btn { appearance:none; border-radius:12px; border:1px solid rgba(148,163,184,0.25); background:#1d2a42; color:#e2e8f0; padding:10px 14px; font-size:14px; cursor:pointer; transition:background .18s ease, transform .18s ease; }
     .te-btn:hover { background:#253556; }
@@ -69,78 +775,407 @@
     .te-test { display:flex; flex-direction:column; gap:8px; font-size:12px; color:#e2e8f0; }
     .te-test.hidden { display:none; }
     .te-test-buttons { display:flex; gap:10px; }
+    
+    /* Responsive */
     @media (max-width: 1024px) {
+      .main {
+        grid-template-columns: 1fr;
+      }
+      
+      .sidebar {
+        order: -1;
+      }
+      
+      .start-card {
+        display: none;
+      }
+      
       .track-editor-body { flex-direction:column; align-items:stretch; }
       .track-editor-controls { width:100%; }
     }
-    @media (max-width: 600px) {
-      .track-row { flex-direction:column; align-items:stretch; }
+    
+    @media (max-width: 768px) {
+      .app {
+        padding: calc(16px + var(--sat)) calc(16px + var(--sar)) calc(16px + var(--sab)) calc(16px + var(--sal));
+      }
+      
+      .header {
+        flex-direction: column;
+        gap: 16px;
+        align-items: flex-start;
+      }
+      
+      .logo-icon {
+        width: 48px;
+        height: 48px;
+        font-size: 24px;
+      }
+      
+      .logo-text h1 {
+        font-size: 24px;
+      }
+      
+      .header-actions {
+        width: 100%;
+        justify-content: flex-end;
+      }
+      
+      .section {
+        padding: 18px;
+      }
+      
+      .vehicle-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      
+      .track-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .vehicle-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+      
+      .vehicle-card {
+        padding: 12px;
+      }
+      
+      .vehicle-image {
+        width: 60px;
+        height: 40px;
+        font-size: 22px;
+      }
+      
+      .controls-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    
+    /* Mobile start button */
+    .mobile-start {
+      display: none;
+      position: fixed;
+      bottom: calc(24px + var(--sab));
+      left: 24px;
+      right: 24px;
+      z-index: 50;
+    }
+    
+    .mobile-start .start-btn {
+      box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.5), 0 8px 32px var(--primary-glow);
+    }
+    
+    @media (max-width: 1024px) {
+      .mobile-start {
+        display: block;
+      }
+      
+      .app {
+        padding-bottom: calc(100px + var(--sab));
+      }
     }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="panel">
-  <h1>Top‑Down Racer</h1>
-  <p class="sub">Pick a vehicle and track — then hit Start.</p>
+  <!-- Animated background -->
+  <div class="bg-container">
+    <div class="bg-grid"></div>
+    <div class="bg-glow glow-1"></div>
+    <div class="bg-glow glow-2"></div>
+  </div>
 
-      <fieldset>
-        <legend>Mode</legend>
-        <div class="row">
-          <label class="card choice">
-            <input type="radio" name="mode" value="grip" checked />
-            <div><strong>Grip</strong><br><span class="muted">Tight grip, classic feel</span></div>
-          </label>
+  <div class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <div class="logo-icon">🏎️</div>
+        <div class="logo-text">
+          <h1>Racing Vibes</h1>
+          <span>Top-Down Racing</span>
         </div>
-      </fieldset>
+      </div>
+      <div class="header-actions">
+        <button class="icon-btn" id="settingsBtn" title="Settings">⚙️</button>
+        <button class="icon-btn" id="quitBtn" title="Quit">✕</button>
+      </div>
+    </header>
 
-      <fieldset>
-        <legend>Vehicle</legend>
-        <select id="vehicleSel">
-          <option value="GT" selected>GT</option>
-          <option value="F1">F1</option>
-          <option value="Rally">Rally</option>
-          <option value="Truck">Truck</option>
-        </select>
-      </fieldset>
+    <!-- Main content -->
+    <main class="main">
+      <div class="content">
+        <!-- Vehicle selection -->
+        <section class="section">
+          <div class="section-header">
+            <div class="section-title">
+              <div class="section-icon">🚗</div>
+              <h2>Choose Your Ride</h2>
+            </div>
+          </div>
+          <div class="vehicle-grid" id="vehicleGrid">
+            <div class="vehicle-card selected" data-vehicle="GT">
+              <div class="vehicle-image">🏎️</div>
+              <div class="vehicle-name">GT</div>
+              <div class="vehicle-stats">Balanced • All-rounder</div>
+            </div>
+            <div class="vehicle-card" data-vehicle="F1">
+              <div class="vehicle-image">🏁</div>
+              <div class="vehicle-name">F1</div>
+              <div class="vehicle-stats">Fast • Precision</div>
+            </div>
+            <div class="vehicle-card" data-vehicle="Rally">
+              <div class="vehicle-image">🚙</div>
+              <div class="vehicle-name">Rally</div>
+              <div class="vehicle-stats">Agile • Drift-friendly</div>
+            </div>
+            <div class="vehicle-card" data-vehicle="Truck">
+              <div class="vehicle-image">🚚</div>
+              <div class="vehicle-name">Truck</div>
+              <div class="vehicle-stats">Heavy • Powerful</div>
+            </div>
+          </div>
+        </section>
 
-      <fieldset>
-        <legend>Track</legend>
-        <div class="track-row">
-          <select id="trackSel">
-            <option value="Le Mans" selected>Le Mans (Bugatti layout)</option>
-            <option value="Silverstone">Silverstone</option>
-            <option value="Kart Park">Kart Park</option>
-            <option value="Windey">Windey (Aerial clone)</option>
-            <option value="Windey Clone">Windey Clone (Exact)</option>
-            <option value="Windey Circuit">Windey Circuit (Photo)</option>
-            <option value="Night Loop">Night Loop</option>
-          </select>
-          <button type="button" class="btn small" id="createTrackBtn">Create Track</button>
+        <!-- Track selection -->
+        <section class="section">
+          <div class="section-header">
+            <div class="section-title">
+              <div class="section-icon">🛤️</div>
+              <h2>Select Track</h2>
+            </div>
+            <button class="action-btn" id="createTrackBtn" style="padding: 10px 14px; font-size: 13px;">
+              <span class="icon">✏️</span>
+              <span>Create Track</span>
+            </button>
+          </div>
+          <div class="track-grid" id="trackGrid">
+            <div class="track-card selected" data-track="Le Mans">
+              <div class="track-preview">🏟️</div>
+              <div class="track-info">
+                <div class="track-name">Le Mans</div>
+                <div class="track-meta">Bugatti layout</div>
+                <span class="track-badge">Classic</span>
+              </div>
+            </div>
+            <div class="track-card" data-track="Silverstone">
+              <div class="track-preview">🏁</div>
+              <div class="track-info">
+                <div class="track-name">Silverstone</div>
+                <div class="track-meta">British GP circuit</div>
+                <span class="track-badge">Technical</span>
+              </div>
+            </div>
+            <div class="track-card" data-track="Kart Park">
+              <div class="track-preview">🎢</div>
+              <div class="track-info">
+                <div class="track-name">Kart Park</div>
+                <div class="track-meta">Fun karting track</div>
+                <span class="track-badge">Beginner</span>
+              </div>
+            </div>
+            <div class="track-card" data-track="Windey">
+              <div class="track-preview">🌀</div>
+              <div class="track-info">
+                <div class="track-name">Windey</div>
+                <div class="track-meta">Aerial clone</div>
+              </div>
+            </div>
+            <div class="track-card" data-track="Windey Clone">
+              <div class="track-preview">🔄</div>
+              <div class="track-info">
+                <div class="track-name">Windey Clone</div>
+                <div class="track-meta">Exact replica</div>
+              </div>
+            </div>
+            <div class="track-card" data-track="Windey Circuit">
+              <div class="track-preview">📷</div>
+              <div class="track-info">
+                <div class="track-name">Windey Circuit</div>
+                <div class="track-meta">Photo reference</div>
+              </div>
+            </div>
+            <div class="track-card" data-track="Night Loop">
+              <div class="track-preview">🌙</div>
+              <div class="track-info">
+                <div class="track-name">Night Loop</div>
+                <div class="track-meta">Night racing</div>
+                <span class="track-badge">Challenge</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <!-- Start race card -->
+        <div class="start-card">
+          <button class="start-btn" id="startBtn">🏁 Start Race</button>
+          <div class="start-info">Press to begin racing</div>
+          <div class="selection-summary">
+            <div class="summary-item">
+              <div class="summary-label">Vehicle</div>
+              <div class="summary-value" id="summaryVehicle">GT</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Track</div>
+              <div class="summary-value" id="summaryTrack">Le Mans</div>
+            </div>
+          </div>
         </div>
-      </fieldset>
-      <div class="footer">
-        <div class="muted">W/S/A/D drive • R restart • Space pause</div>
-        <div class="row">
-          <button class="btn" id="quitBtn">Quit</button>
-          <button class="btn primary" id="startBtn">Start</button>
+
+        <!-- Quick actions -->
+        <div class="quick-actions">
+          <button class="action-btn accent" id="trackBuilderBtn">
+            <span class="icon">🔧</span>
+            <span class="text">Track Builder</span>
+            <span class="arrow">→</span>
+          </button>
+        </div>
+
+        <!-- Controls hint -->
+        <div class="controls-card">
+          <div class="controls-title">Controls</div>
+          <div class="controls-grid">
+            <div class="control-item">
+              <span class="key">W</span>
+              <span>Accelerate</span>
+            </div>
+            <div class="control-item">
+              <span class="key">S</span>
+              <span>Brake</span>
+            </div>
+            <div class="control-item">
+              <span class="key">A</span>
+              <span>Turn Left</span>
+            </div>
+            <div class="control-item">
+              <span class="key">D</span>
+              <span>Turn Right</span>
+            </div>
+            <div class="control-item">
+              <span class="key">R</span>
+              <span>Restart</span>
+            </div>
+            <div class="control-item">
+              <span class="key">Space</span>
+              <span>Pause</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- Mobile start button -->
+  <div class="mobile-start">
+    <button class="start-btn" id="mobileStartBtn">🏁 Start Race</button>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settingsModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>⚙️ Settings</h2>
+        <button class="modal-close" id="closeSettings">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="setting-group">
+          <h3>Audio</h3>
+          <div class="setting-item">
+            <div>
+              <div class="setting-label">Sound Effects</div>
+              <div class="setting-desc">Engine, collision sounds</div>
+            </div>
+            <div class="toggle active" id="toggleSfx"></div>
+          </div>
+          <div class="setting-item">
+            <div>
+              <div class="setting-label">Music</div>
+              <div class="setting-desc">Background music</div>
+            </div>
+            <div class="toggle active" id="toggleMusic"></div>
+          </div>
+          <div class="setting-item">
+            <div>
+              <div class="setting-label">Volume</div>
+            </div>
+            <div class="slider-container">
+              <input type="range" class="slider" id="volumeSlider" min="0" max="100" value="80" />
+              <span class="slider-value" id="volumeValue">80%</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="setting-group">
+          <h3>Controls</h3>
+          <div class="setting-item">
+            <div>
+              <div class="setting-label">Touch Controls</div>
+              <div class="setting-desc">On-screen buttons for mobile</div>
+            </div>
+            <div class="toggle active" id="toggleTouch"></div>
+          </div>
+          <div class="setting-item">
+            <div>
+              <div class="setting-label">Gyro Steering</div>
+              <div class="setting-desc">Tilt device to steer</div>
+            </div>
+            <div class="toggle" id="toggleGyro"></div>
+          </div>
+        </div>
+        
+        <div class="setting-group">
+          <h3>Graphics</h3>
+          <div class="setting-item">
+            <div>
+              <div class="setting-label">Skid Marks</div>
+              <div class="setting-desc">Show tire marks on track</div>
+            </div>
+            <div class="toggle active" id="toggleSkidMarks"></div>
+          </div>
+          <div class="setting-item">
+            <div>
+              <div class="setting-label">Camera Smoothing</div>
+            </div>
+            <div class="slider-container">
+              <input type="range" class="slider" id="cameraSlider" min="0" max="100" value="70" />
+              <span class="slider-value" id="cameraValue">70%</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </div>
 
   <script>
-    window.addEventListener('DOMContentLoaded', function(){
-      (function(){
-        function $(id){ return document.getElementById(id); }
-        const startBtn = $("startBtn");
-        const quitBtn = $("quitBtn");
-        const trackSel = $("trackSel");
-        const vehicleSel = $("vehicleSel");
-        const createTrackBtn = $("createTrackBtn");
+    window.addEventListener('DOMContentLoaded', function() {
+      (function() {
+        function $(id) { return document.getElementById(id); }
+        function $$(selector) { return document.querySelectorAll(selector); }
 
-        // Request fullscreen politely (same pattern as racer.html)
-        function requestFullscreen(el){
+        // State
+        let selectedVehicle = 'GT';
+        let selectedTrack = 'Le Mans';
+
+        // Elements
+        const startBtn = $('startBtn');
+        const mobileStartBtn = $('mobileStartBtn');
+        const quitBtn = $('quitBtn');
+        const settingsBtn = $('settingsBtn');
+        const settingsModal = $('settingsModal');
+        const closeSettings = $('closeSettings');
+        const createTrackBtn = $('createTrackBtn');
+        const trackBuilderBtn = $('trackBuilderBtn');
+        const vehicleGrid = $('vehicleGrid');
+        const trackGrid = $('trackGrid');
+        const summaryVehicle = $('summaryVehicle');
+        const summaryTrack = $('summaryTrack');
+
+        // Fullscreen request
+        function requestFullscreen(el) {
           if (!el) return;
           try {
             if (el.requestFullscreen) return el.requestFullscreen();
@@ -149,125 +1184,272 @@
           } catch(e) { /* ignore */ }
         }
 
-        // Attempt fullscreen upon first user interaction
-        const fsOnce = function(){
+        const fsOnce = function() {
           requestFullscreen(document.documentElement);
         };
-        window.addEventListener("pointerdown", fsOnce, { once: true, passive: true });
-        window.addEventListener("click", fsOnce, { once: true, passive: true });
-        window.addEventListener("touchstart", fsOnce, { once: true, passive: true });
+        window.addEventListener('pointerdown', fsOnce, { once: true, passive: true });
+        window.addEventListener('click', fsOnce, { once: true, passive: true });
+        window.addEventListener('touchstart', fsOnce, { once: true, passive: true });
 
-        const START_PAYLOAD_KEY = "RacingVibesStartPayload";
-        const START_PAYLOAD_NAME_PREFIX = "RacingVibesStart:";
-        function saveStartPayload(payload){
+        // Payload handling
+        const START_PAYLOAD_KEY = 'RacingVibesStartPayload';
+        const START_PAYLOAD_NAME_PREFIX = 'RacingVibesStart:';
+
+        function saveStartPayload(payload) {
           if (!payload) return;
           let json;
           try {
             json = JSON.stringify(payload);
-          } catch(_){ return; }
+          } catch(_) { return; }
           try {
             sessionStorage.setItem(START_PAYLOAD_KEY, json);
-          } catch(_){ }
+          } catch(_) { }
           try {
             window.name = START_PAYLOAD_NAME_PREFIX + json;
-          } catch(_){ }
+          } catch(_) { }
         }
 
-        let customGroup = null;
-        if (trackSel) {
-          customGroup = document.createElement("optgroup");
-          customGroup.label = "Custom Tracks";
-          customGroup.disabled = true;
-          trackSel.appendChild(customGroup);
-        }
+        // Vehicle selection
+        vehicleGrid.addEventListener('click', function(e) {
+          const card = e.target.closest('.vehicle-card');
+          if (!card) return;
+          
+          $$('.vehicle-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+          selectedVehicle = card.dataset.vehicle;
+          summaryVehicle.textContent = selectedVehicle;
+        });
 
-        async function refreshCustomTracks(selectId){
-          if (!trackSel || !window.TrackStore || typeof TrackStore.listTracks !== "function") return;
+        // Track selection
+        trackGrid.addEventListener('click', function(e) {
+          const card = e.target.closest('.track-card');
+          if (!card) return;
+          
+          $$('.track-card').forEach(c => c.classList.remove('selected'));
+          card.classList.add('selected');
+          selectedTrack = card.dataset.track;
+          // Truncate long track names for summary
+          var MAX_SUMMARY_LENGTH = 12;
+          summaryTrack.textContent = selectedTrack.length > MAX_SUMMARY_LENGTH 
+            ? selectedTrack.substring(0, MAX_SUMMARY_LENGTH) + '…' 
+            : selectedTrack;
+        });
+
+        // Custom tracks from IndexedDB
+        async function refreshCustomTracks(selectId) {
+          if (!window.TrackStore || typeof TrackStore.listTracks !== 'function') return;
           try {
             const tracks = await TrackStore.listTracks();
-            if (!customGroup) return;
-            customGroup.innerHTML = "";
-            if (!tracks.length) {
-              customGroup.disabled = true;
-              return;
-            }
-            customGroup.disabled = false;
-            tracks.forEach((track) => {
-              const opt = document.createElement("option");
-              opt.value = "custom:" + track.id;
-              opt.textContent = "★ " + track.name;
-              customGroup.appendChild(opt);
+            if (!tracks.length) return;
+
+            // Remove existing custom track cards
+            $$('.track-card[data-custom="true"]').forEach(c => c.remove());
+
+            tracks.forEach(track => {
+              const card = document.createElement('div');
+              card.className = 'track-card';
+              card.dataset.track = 'custom:' + track.id;
+              card.dataset.custom = 'true';
+              card.innerHTML = `
+                <div class="track-preview">⭐</div>
+                <div class="track-info">
+                  <div class="track-name">${escapeHtml(track.name)}</div>
+                  <div class="track-meta">Custom track</div>
+                  <span class="track-badge custom">Custom</span>
+                </div>
+              `;
+              trackGrid.appendChild(card);
             });
+
             if (selectId) {
-              trackSel.value = "custom:" + selectId;
+              const targetCard = trackGrid.querySelector(`[data-track="custom:${selectId}"]`);
+              if (targetCard) {
+                $$('.track-card').forEach(c => c.classList.remove('selected'));
+                targetCard.classList.add('selected');
+                selectedTrack = 'custom:' + selectId;
+                summaryTrack.textContent = '★ Custom';
+              }
             }
           } catch (err) {
-            console.warn("Failed to load custom tracks", err);
+            console.warn('Failed to load custom tracks', err);
           }
         }
 
+        const HTML_ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+        function escapeHtml(text) {
+          return String(text).replace(/[&<>"']/g, function(char) { return HTML_ENTITIES[char]; });
+        }
+
+        // Track editor integration
         let trackEditor = null;
-        if (createTrackBtn && window.TrackEditor && window.TrackStore) {
+        function openTrackEditor() {
+          if (trackEditor) {
+            trackEditor.reset();
+            trackEditor.open();
+          }
+        }
+
+        if (window.TrackEditor && window.TrackStore) {
           trackEditor = TrackEditor.create({
             onSaved: async (entry) => {
               await refreshCustomTracks(entry && entry.id);
-              if (trackSel && entry && entry.id) {
-                trackSel.value = "custom:" + entry.id;
-              }
             },
             onTestDrive: (_mode, entry) => {
               if (!entry || !entry.id) return;
-              const value = "custom:" + entry.id;
-              if (trackSel) trackSel.value = value;
-              const carValue = vehicleSel ? vehicleSel.value : "GT";
-              saveStartPayload({ track: value, car: carValue });
-              window.location.href = "racer.html";
+              saveStartPayload({ track: 'custom:' + entry.id, car: selectedVehicle });
+              window.location.href = 'racer.html';
             }
           });
-          createTrackBtn.addEventListener("click", function(){
-            trackEditor.reset();
-            trackEditor.open();
-          });
-        } else if (createTrackBtn) {
-          createTrackBtn.disabled = true;
-          createTrackBtn.title = "Track editor unavailable";
         }
 
-        if (window.TrackStore && trackSel) {
-          refreshCustomTracks().catch((err) => console.warn("Track load failed", err));
+        if (createTrackBtn) {
+          createTrackBtn.addEventListener('click', openTrackEditor);
+        }
+        if (trackBuilderBtn) {
+          trackBuilderBtn.addEventListener('click', openTrackEditor);
         }
 
-        const validSteeringModes = new Set(["manual", "touch"]);
-        (function ensureSteeringModePref(){
+        // Load custom tracks on init
+        if (window.TrackStore) {
+          refreshCustomTracks().catch(err => console.warn('Track load failed', err));
+        }
+
+        // Steering mode preference
+        const validSteeringModes = new Set(['manual', 'touch']);
+        (function ensureSteeringModePref() {
           try {
-            const stored = localStorage.getItem("steeringMode");
+            const stored = localStorage.getItem('steeringMode');
             if (!stored || !validSteeringModes.has(stored)) {
-              localStorage.setItem("steeringMode", "touch");
+              localStorage.setItem('steeringMode', 'touch');
             }
-          } catch(_){ }
+          } catch(_) { }
         })();
 
-        if (startBtn) {
-          startBtn.addEventListener("click", function(){
-            const trackValue = trackSel ? trackSel.value : "Le Mans";
-            const carValue = vehicleSel ? vehicleSel.value : "GT";
-            saveStartPayload({ track: trackValue, car: carValue });
-            window.location.href = "racer.html";
-          });
+        // Start game
+        function startGame() {
+          saveStartPayload({ track: selectedTrack, car: selectedVehicle });
+          window.location.href = 'racer.html';
         }
 
+        if (startBtn) startBtn.addEventListener('click', startGame);
+        if (mobileStartBtn) mobileStartBtn.addEventListener('click', startGame);
+
+        // Quit
+        var QUIT_FALLBACK_DELAY = 50;
         if (quitBtn) {
-          quitBtn.addEventListener("click", function(){
+          quitBtn.addEventListener('click', function() {
             window.close();
-            setTimeout(function(){ window.location.href = "about:blank"; }, 50);
+            setTimeout(function() { window.location.href = 'about:blank'; }, QUIT_FALLBACK_DELAY);
           });
         }
 
-        if ("serviceWorker" in navigator && /^https?:$/i.test(location.protocol)) {
-          window.addEventListener("load", function(){
-            navigator.serviceWorker.register("service-worker.js").catch(function(e){ console.warn("SW reg failed", e); });
+        // Settings modal
+        if (settingsBtn) {
+          settingsBtn.addEventListener('click', function() {
+            settingsModal.classList.add('active');
           });
         }
+
+        if (closeSettings) {
+          closeSettings.addEventListener('click', function() {
+            settingsModal.classList.remove('active');
+          });
+        }
+
+        settingsModal.addEventListener('click', function(e) {
+          if (e.target === settingsModal) {
+            settingsModal.classList.remove('active');
+          }
+        });
+
+        // Toggle switches
+        $$('.toggle').forEach(toggle => {
+          toggle.addEventListener('click', function() {
+            this.classList.toggle('active');
+            // Save preference to localStorage
+            const id = this.id;
+            if (id) {
+              try {
+                localStorage.setItem(id, this.classList.contains('active') ? 'true' : 'false');
+              } catch(_) { }
+            }
+          });
+        });
+
+        // Load saved toggle states
+        $$('.toggle').forEach(toggle => {
+          const id = toggle.id;
+          if (id) {
+            try {
+              const saved = localStorage.getItem(id);
+              if (saved === 'false') {
+                toggle.classList.remove('active');
+              } else if (saved === 'true') {
+                toggle.classList.add('active');
+              }
+            } catch(_) { }
+          }
+        });
+
+        // Volume slider
+        const volumeSlider = $('volumeSlider');
+        const volumeValue = $('volumeValue');
+        if (volumeSlider && volumeValue) {
+          volumeSlider.addEventListener('input', function() {
+            volumeValue.textContent = this.value + '%';
+            try {
+              localStorage.setItem('volume', this.value);
+            } catch(_) { }
+          });
+          // Load saved value
+          try {
+            const saved = localStorage.getItem('volume');
+            if (saved) {
+              volumeSlider.value = saved;
+              volumeValue.textContent = saved + '%';
+            }
+          } catch(_) { }
+        }
+
+        // Camera slider
+        const cameraSlider = $('cameraSlider');
+        const cameraValue = $('cameraValue');
+        if (cameraSlider && cameraValue) {
+          cameraSlider.addEventListener('input', function() {
+            cameraValue.textContent = this.value + '%';
+            try {
+              localStorage.setItem('cameraSmoothing', this.value);
+            } catch(_) { }
+          });
+          // Load saved value
+          try {
+            const saved = localStorage.getItem('cameraSmoothing');
+            if (saved) {
+              cameraSlider.value = saved;
+              cameraValue.textContent = saved + '%';
+            }
+          } catch(_) { }
+        }
+
+        // Service worker
+        if ('serviceWorker' in navigator && /^https?:$/i.test(location.protocol)) {
+          window.addEventListener('load', function() {
+            navigator.serviceWorker.register('service-worker.js').catch(function(e) {
+              console.warn('SW reg failed', e);
+            });
+          });
+        }
+
+        // Keyboard shortcut to start
+        document.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter' && !settingsModal.classList.contains('active')) {
+            startGame();
+          }
+          if (e.key === 'Escape' && settingsModal.classList.contains('active')) {
+            settingsModal.classList.remove('active');
+          }
+        });
+
       })();
     });
   </script>
