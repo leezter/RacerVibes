@@ -10,6 +10,7 @@
   <script src="ai/racer_ai.js" defer></script>
   <script src="utils/storage-utils.js" defer></script>
   <script src="track_storage.js" defer></script>
+  <script src="track_textures.js" defer></script>
   <script src="track_editor.js" defer></script>
   <style>
     :root{ --sat:env(safe-area-inset-top); --sab:env(safe-area-inset-bottom); --sal:env(safe-area-inset-left); --sar:env(safe-area-inset-right); }
@@ -55,6 +56,9 @@
     .te-field { display:flex; flex-direction:column; gap:6px; font-size:13px; color:#cbd5f5; }
     .te-field.slider span { display:flex; justify-content:space-between; gap:12px; align-items:center; }
     .te-input { border-radius:10px; border:1px solid rgba(148,163,184,0.35); background:#0d1626; padding:10px 12px; font-size:14px; color:#e2e8f0; }
+    .te-select { border-radius:10px; border:1px solid rgba(148,163,184,0.35); background:#0d1626; padding:10px 12px; font-size:14px; color:#e2e8f0; cursor:pointer; appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M2 4l4 4 4-4'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 12px center; padding-right:32px; }
+    .te-select:hover { border-color:rgba(59,130,246,0.5); }
+    .te-select:focus { outline:none; border-color:#3b82f6; box-shadow:0 0 0 2px rgba(59,130,246,0.25); }
     .te-tools { display:flex; flex-wrap:wrap; gap:8px; }
     .te-status { min-height:20px; font-size:12px; color:#e2e8f0; opacity:.85; }
     .te-status[data-tone="error"] { color:#f87171; }

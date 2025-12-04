@@ -9,6 +9,9 @@
   const SCALE_RANGE = [0.6, 2.5];
   const ERASE_RADIUS = 24;
   const SAMPLING_SPACING = 10;
+  
+  // Get default texture style from TrackTextures module if available
+  const DEFAULT_TEXTURE_STYLE = (global.TrackTextures && global.TrackTextures.DEFAULT_STYLE) || 'modern';
 
   function clamp(v, min, max){ return Math.min(max, Math.max(min, v)); }
 
@@ -417,6 +420,7 @@
       points: [],
       roadWidth: DEFAULT_ROAD_WIDTH,
       scale: DEFAULT_SCALE,
+      textureStyle: DEFAULT_TEXTURE_STYLE,
       isDrawing: false,
       pointerId: null,
       history: [],
@@ -432,6 +436,27 @@
     this.attachEvents();
     this.pushHistory();
     this.render();
+  };
+
+  // Helper to build texture style dropdown options
+  TrackEditor.prototype._buildTextureOptions = function(){
+    const TexturesAPI = global.TrackTextures;
+    if (!TexturesAPI || typeof TexturesAPI.getStyleOptions !== 'function') {
+      // Fallback if module not loaded
+      return `
+        <option value="modern" selected>Modern Circuit</option>
+        <option value="classic">Classic Raceway</option>
+        <option value="weathered">Weathered Tarmac</option>
+        <option value="night">Night Circuit</option>
+        <option value="street">Street Circuit</option>
+      `;
+    }
+    const options = TexturesAPI.getStyleOptions();
+    const defaultId = TexturesAPI.getDefaultStyleId() || 'modern';
+    return options.map(opt => {
+      const selected = opt.id === defaultId ? ' selected' : '';
+      return `<option value="${opt.id}"${selected} title="${opt.description || ''}">${opt.name}</option>`;
+    }).join('\n                ');
   };
 
   TrackEditor.prototype.buildUI = function(){
@@ -471,6 +496,12 @@
               <span>World Scale <strong data-label="scale">${DEFAULT_SCALE.toFixed(2)}</strong>x</span>
               <input type="range" min="${SCALE_RANGE[0]}" max="${SCALE_RANGE[1]}" value="${DEFAULT_SCALE}" step="0.01" data-field="scale" />
             </label>
+            <label class="te-field">
+              <span>Track Texture</span>
+              <select data-field="textureStyle" class="te-select">
+                ${this._buildTextureOptions()}
+              </select>
+            </label>
             <div class="te-status" aria-live="polite"></div>
             <div class="te-actions">
               <button type="button" class="te-btn te-secondary" data-action="export">Export Bundle</button>
@@ -494,6 +525,7 @@
     this.nameInput = overlay.querySelector('[data-field="name"]');
     this.roadWidthInput = overlay.querySelector('[data-field="roadWidth"]');
     this.scaleInput = overlay.querySelector('[data-field="scale"]');
+    this.textureStyleSelect = overlay.querySelector('[data-field="textureStyle"]');
     this.roadWidthLabel = overlay.querySelector('[data-label="roadWidth"]');
     this.scaleLabel = overlay.querySelector('[data-label="scale"]');
     this.testActions = overlay.querySelector("[data-test-actions]");
@@ -535,6 +567,13 @@
       this.state.scale = value;
       this.scaleLabel.textContent = value.toFixed(2);
     });
+
+    // Texture style selection
+    if (this.textureStyleSelect) {
+      this.textureStyleSelect.addEventListener("change", () => {
+        this.state.textureStyle = this.textureStyleSelect.value || DEFAULT_TEXTURE_STYLE;
+      });
+    }
 
     this.canvas.addEventListener("pointerdown", (e) => this.onPointerDown(e));
     this.canvas.addEventListener("pointermove", (e) => this.onPointerMove(e));
@@ -583,6 +622,10 @@
     this.scaleLabel.textContent = DEFAULT_SCALE.toFixed(2);
     this.state.roadWidth = DEFAULT_ROAD_WIDTH;
     this.state.scale = DEFAULT_SCALE;
+    this.state.textureStyle = DEFAULT_TEXTURE_STYLE;
+    if (this.textureStyleSelect) {
+      this.textureStyleSelect.value = DEFAULT_TEXTURE_STYLE;
+    }
     this.nameInput.value = "";
     this.pushHistory();
     this.render();
@@ -840,11 +883,13 @@
     const racingLine = (window.RacerAI && typeof window.RacerAI.buildRacingLine === "function")
       ? window.RacerAI.buildRacingLine(scaled, roadWidth)
       : [];
+    const textureStyle = this.state.textureStyle || DEFAULT_TEXTURE_STYLE;
     const data = {
       name,
       world: { width: worldWidth, height: worldHeight, scale: this.state.scale },
       points: scaled,
       roadWidth,
+      textureStyle,
       racingLine,
       startLine: meta.startLine,
       spawn: meta.spawn,

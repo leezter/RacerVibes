@@ -16,6 +16,7 @@
   <script type="module" src="physics.js"></script>
     <script src="decor_generator.js"></script>
     <script src="track_storage.js"></script>
+    <script src="track_textures.js"></script>
     <script src="ui/speedometer.js"></script>
     <style>
       :root { --dev-panel-top: 56px; } /* Top offset for dev panels below the Dev menu button */
@@ -2657,8 +2658,16 @@ const { useEffect, useRef, useState } = React;
           }
 
           // Draw tire mark streaks along the track
-          function drawTireMarks(ctx, centerline, curvatures, roadWidth) {
+          function drawTireMarks(ctx, centerline, curvatures, roadWidth, textureStyle) {
             if (!centerline || centerline.length < 2 || !curvatures.length) return;
+            
+            // Get texture style config (fallback to defaults if not available)
+            const style = textureStyle || {};
+            const tireMarkBaseShade = style.tireMarkBaseShade ?? 40;
+            const tireMarkVariation = style.tireMarkVariation ?? 25;
+            const tireMarkIntensity = style.tireMarkIntensity ?? 0.35;
+            const tireMarkBaseIntensity = style.tireMarkBaseIntensity ?? 0.05;
+            const tireMarkCurvatureBoost = style.tireMarkCurvatureBoost ?? 0.25;
             
             // Normalize curvatures to 0-1 range
             const maxCurv = Math.max(...curvatures, 0.001);
@@ -2689,11 +2698,9 @@ const { useEffect, useRef, useState } = React;
                 const avgCurvature = normalizedCurvatures.slice(segmentStart, segmentEnd)
                   .reduce((a, b) => a + b, 0) / (segmentEnd - segmentStart);
                 
-                // Base intensity + curvature boost
-                const baseIntensity = 0.05;
-                const curvatureBoost = avgCurvature * 0.25;
+                // Base intensity + curvature boost (using style parameters)
                 const randomVariation = seededRandom(segmentStart * 7 + tireIdx * 13) * 0.08;
-                const intensity = Math.min(0.35, baseIntensity + curvatureBoost + randomVariation);
+                const intensity = Math.min(tireMarkIntensity, tireMarkBaseIntensity + avgCurvature * tireMarkCurvatureBoost + randomVariation);
                 
                 // Skip some segments randomly for varied appearance
                 if (seededRandom(segmentStart * 3 + tireIdx * 5) > 0.3 + avgCurvature * 0.5) {
@@ -2701,8 +2708,8 @@ const { useEffect, useRef, useState } = React;
                   continue;
                 }
                 
-                // Darker shade of grey for tire marks
-                const shade = Math.floor(40 + seededRandom(segmentStart * 11 + tireIdx) * 25);
+                // Darker shade of grey for tire marks (using style parameters)
+                const shade = Math.floor(tireMarkBaseShade + seededRandom(segmentStart * 11 + tireIdx) * tireMarkVariation);
                 ctx.strokeStyle = `rgba(${shade}, ${shade}, ${shade}, ${intensity})`;
                 ctx.lineWidth = tireWidth + seededRandom(segmentStart) * 2;
                 
@@ -2739,8 +2746,15 @@ const { useEffect, useRef, useState } = React;
           }
 
           // Draw subtle asphalt texture noise
-          function drawAsphaltNoise(ctx, centerline, roadWidth) {
+          function drawAsphaltNoise(ctx, centerline, roadWidth, textureStyle) {
             if (!centerline || centerline.length < 2) return;
+            
+            // Get texture style config (fallback to defaults if not available)
+            const style = textureStyle || {};
+            const noiseBaseShade = style.noiseBaseShade ?? 55;
+            const noiseVariation = style.noiseVariation ?? 35;
+            const noiseBaseAlpha = style.noiseBaseAlpha ?? 0.12;
+            const noiseAlphaVariation = style.noiseAlphaVariation ?? 0.15;
             
             const n = centerline.length;
             const step = 3; // Sample every few points
@@ -2772,8 +2786,9 @@ const { useEffect, useRef, useState } = React;
                 const sx = p.x + nx * offsetDist + tangentX * alongDist;
                 const sy = p.y + ny * offsetDist + tangentY * alongDist;
                 
-                const shade = Math.floor(55 + seededRandom(i * 29 + j * 31) * 35);
-                const alpha = 0.12 + seededRandom(i * 37 + j * 41) * 0.15;
+                // Use style parameters for shade and alpha
+                const shade = Math.floor(noiseBaseShade + seededRandom(i * 29 + j * 31) * noiseVariation);
+                const alpha = noiseBaseAlpha + seededRandom(i * 37 + j * 41) * noiseAlphaVariation;
                 const size = 1 + seededRandom(i * 43 + j * 47) * 2.5;
                 
                 ctx.fillStyle = `rgba(${shade}, ${shade}, ${shade}, ${alpha})`;
@@ -2844,8 +2859,13 @@ const { useEffect, useRef, useState } = React;
               }
               sctx.lineJoin = 'round';
               sctx.lineCap = 'round';
-              // Base asphalt color - slightly varied grey
-              sctx.strokeStyle = '#505558';
+              // Get texture style from activeTrack (uses modern as default)
+              const textureStyle = (activeTrack && activeTrack.textureStyle) || null;
+              const baseColor = textureStyle && textureStyle.baseColor ? textureStyle.baseColor : '#505558';
+              const centerLineColor = textureStyle && textureStyle.centerLineColor ? textureStyle.centerLineColor : '#cfd8dc';
+              
+              // Base asphalt color - use texture style
+              sctx.strokeStyle = baseColor;
               sctx.lineWidth = ROAD_WIDTH;
               if (path) sctx.stroke(path);
               else {
@@ -2862,14 +2882,14 @@ const { useEffect, useRef, useState } = React;
               const rawCurvatures = calculateTrackCurvature(centerline);
               const curvatures = smoothCurvatures(rawCurvatures, 12);
               
-              // Add asphalt texture noise
-              drawAsphaltNoise(sctx, centerline, ROAD_WIDTH);
+              // Add asphalt texture noise (pass texture style)
+              drawAsphaltNoise(sctx, centerline, ROAD_WIDTH, textureStyle);
               
-              // Draw tire marks with curvature-based intensity
-              drawTireMarks(sctx, centerline, curvatures, ROAD_WIDTH);
+              // Draw tire marks with curvature-based intensity (pass texture style)
+              drawTireMarks(sctx, centerline, curvatures, ROAD_WIDTH, textureStyle);
               
-              // Center line marking
-              sctx.strokeStyle = '#cfd8dc';
+              // Center line marking - use texture style color
+              sctx.strokeStyle = centerLineColor;
               sctx.lineWidth = 2;
               if (path) sctx.stroke(path);
               else {
@@ -3126,7 +3146,12 @@ const { useEffect, useRef, useState } = React;
             const baseWorldWidth = (T.world && T.world.width) || BASE_WORLD_W;
             const baseWorldHeight = (T.world && T.world.height) || BASE_WORLD_H;
             applyWorldSize(baseWorldWidth * GEO_SCALE, baseWorldHeight * GEO_SCALE);
-            activeTrack = { ...T, name: displayName, key: name, world: { width: W, height: H }, baseWorld: { width: baseWorldWidth, height: baseWorldHeight }, isCustom: isCustomTrack, roadWidth: (T.roadWidth || 80) * WIDTH_SCALE };
+            // Get texture style from track data (default to 'modern' for built-in tracks)
+            const textureStyleId = T.textureStyle || 'modern';
+            const textureStyle = (window.TrackTextures && typeof window.TrackTextures.getStyle === 'function')
+              ? window.TrackTextures.getStyle(textureStyleId)
+              : null;
+            activeTrack = { ...T, name: displayName, key: name, world: { width: W, height: H }, baseWorld: { width: baseWorldWidth, height: baseWorldHeight }, isCustom: isCustomTrack, roadWidth: (T.roadWidth || 80) * WIDTH_SCALE, textureStyle, textureStyleId };
             activeTrackRef.current = activeTrack;
             startGrid = null;
             decorLayerRef.current = { decorCanvas: null, shadowCanvas: null, metadata: null };
