@@ -2508,6 +2508,7 @@ const { useEffect, useRef, useState } = React;
               startLine: { a: startA, b: startB },
               spawn: { player: spawnPlayer, ai: spawnAi },
               roadWidth: data.roadWidth || 80,
+              textureId: data.textureId || 'default',
               world,
               mask: data.mask || entry.mask || null,
               speedZones,
@@ -2656,9 +2657,113 @@ const { useEffect, useRef, useState } = React;
             return x - Math.floor(x);
           }
 
+          // Track texture configurations
+          // Each texture defines appearance characteristics for different track surface styles
+          const TRACK_TEXTURES = {
+            default: {
+              id: 'default',
+              name: 'Standard',
+              baseColor: '#505558',
+              centerLineColor: '#cfd8dc',
+              tireMarkIntensityBase: 0.05,
+              tireMarkIntensityBoost: 0.25,
+              tireMarkSkipThreshold: 0.3,
+              tireMarkShadeMin: 40,
+              tireMarkShadeRange: 25,
+              noiseShadeMin: 55,
+              noiseShadeRange: 35,
+              noiseAlphaBase: 0.12,
+              noiseAlphaRange: 0.15,
+              noiseSizeBase: 1,
+              noiseSizeRange: 2.5,
+              noiseSpecklesMin: 4,
+              noiseSpecklesRange: 4
+            },
+            vintage: {
+              id: 'vintage',
+              name: 'Vintage Circuit',
+              baseColor: '#6e7075',  // Light grey - weathered asphalt
+              centerLineColor: '#b8c0c5',  // Faded center line
+              tireMarkIntensityBase: 0.12,  // More tire marks
+              tireMarkIntensityBoost: 0.35,
+              tireMarkSkipThreshold: 0.15,  // Fewer skips = more marks
+              tireMarkShadeMin: 25,  // Darker tire marks (more worn in)
+              tireMarkShadeRange: 20,
+              noiseShadeMin: 70,  // Lighter noise patches (weathered)
+              noiseShadeRange: 50,
+              noiseAlphaBase: 0.18,  // More visible texture
+              noiseAlphaRange: 0.20,
+              noiseSizeBase: 1.5,  // Larger patches
+              noiseSizeRange: 3.5,
+              noiseSpecklesMin: 6,  // More weathering marks
+              noiseSpecklesRange: 6,
+              // Additional vintage-specific effects
+              hasCracks: true,
+              crackDensity: 0.15,
+              hasOilStains: true,
+              oilStainDensity: 0.08
+            },
+            modern: {
+              id: 'modern',
+              name: 'Modern GP',
+              baseColor: '#454850',  // Medium grey - fresh tarmac
+              centerLineColor: '#ffffff',  // Crisp white center line
+              tireMarkIntensityBase: 0.02,  // Fewer tire marks
+              tireMarkIntensityBoost: 0.15,
+              tireMarkSkipThreshold: 0.55,  // More skips = fewer marks
+              tireMarkShadeMin: 35,
+              tireMarkShadeRange: 15,
+              noiseShadeMin: 45,  // Subtle noise
+              noiseShadeRange: 20,
+              noiseAlphaBase: 0.06,  // Less visible
+              noiseAlphaRange: 0.08,
+              noiseSizeBase: 0.8,
+              noiseSizeRange: 1.5,
+              noiseSpecklesMin: 2,
+              noiseSpecklesRange: 3,
+              // Modern track features
+              hasRunoffZone: true,
+              centerLineWidth: 3
+            },
+            night: {
+              id: 'night',
+              name: 'Night Race',
+              baseColor: '#2a2d32',  // Dark asphalt
+              centerLineColor: '#ffeb3b',  // Glowing yellow center line
+              tireMarkIntensityBase: 0.08,
+              tireMarkIntensityBoost: 0.30,
+              tireMarkSkipThreshold: 0.25,
+              tireMarkShadeMin: 15,  // Very dark marks
+              tireMarkShadeRange: 18,
+              noiseShadeMin: 35,
+              noiseShadeRange: 25,
+              noiseAlphaBase: 0.10,
+              noiseAlphaRange: 0.12,
+              noiseSizeBase: 1.2,
+              noiseSizeRange: 2.0,
+              noiseSpecklesMin: 3,
+              noiseSpecklesRange: 4,
+              // Night-specific lighting effects
+              hasReflectiveMarkers: true,
+              markerColor: '#00e5ff',
+              hasGlowEffect: true,
+              glowColor: 'rgba(255,200,50,0.15)'
+            }
+          };
+
+          // Get texture configuration by ID, falling back to default
+          function getTextureConfig(textureId) {
+            if (textureId && TRACK_TEXTURES[textureId]) {
+              return TRACK_TEXTURES[textureId];
+            }
+            return TRACK_TEXTURES.default;
+          }
+
           // Draw tire mark streaks along the track
-          function drawTireMarks(ctx, centerline, curvatures, roadWidth) {
+          function drawTireMarks(ctx, centerline, curvatures, roadWidth, textureConfig) {
             if (!centerline || centerline.length < 2 || !curvatures.length) return;
+            
+            const tex = textureConfig || TRACK_TEXTURES.default;
             
             // Normalize curvatures to 0-1 range
             const maxCurv = Math.max(...curvatures, 0.001);
@@ -2689,20 +2794,20 @@ const { useEffect, useRef, useState } = React;
                 const avgCurvature = normalizedCurvatures.slice(segmentStart, segmentEnd)
                   .reduce((a, b) => a + b, 0) / (segmentEnd - segmentStart);
                 
-                // Base intensity + curvature boost
-                const baseIntensity = 0.05;
-                const curvatureBoost = avgCurvature * 0.25;
+                // Base intensity + curvature boost (use texture-specific values)
+                const baseIntensity = tex.tireMarkIntensityBase;
+                const curvatureBoost = avgCurvature * tex.tireMarkIntensityBoost;
                 const randomVariation = seededRandom(segmentStart * 7 + tireIdx * 13) * 0.08;
-                const intensity = Math.min(0.35, baseIntensity + curvatureBoost + randomVariation);
+                const intensity = Math.min(0.45, baseIntensity + curvatureBoost + randomVariation);
                 
-                // Skip some segments randomly for varied appearance
-                if (seededRandom(segmentStart * 3 + tireIdx * 5) > 0.3 + avgCurvature * 0.5) {
+                // Skip some segments randomly for varied appearance (use texture-specific threshold)
+                if (seededRandom(segmentStart * 3 + tireIdx * 5) > tex.tireMarkSkipThreshold + avgCurvature * 0.5) {
                   segmentStart = segmentEnd;
                   continue;
                 }
                 
-                // Darker shade of grey for tire marks
-                const shade = Math.floor(40 + seededRandom(segmentStart * 11 + tireIdx) * 25);
+                // Darker shade of grey for tire marks (use texture-specific values)
+                const shade = Math.floor(tex.tireMarkShadeMin + seededRandom(segmentStart * 11 + tireIdx) * tex.tireMarkShadeRange);
                 ctx.strokeStyle = `rgba(${shade}, ${shade}, ${shade}, ${intensity})`;
                 ctx.lineWidth = tireWidth + seededRandom(segmentStart) * 2;
                 
@@ -2739,9 +2844,10 @@ const { useEffect, useRef, useState } = React;
           }
 
           // Draw subtle asphalt texture noise
-          function drawAsphaltNoise(ctx, centerline, roadWidth) {
+          function drawAsphaltNoise(ctx, centerline, roadWidth, textureConfig) {
             if (!centerline || centerline.length < 2) return;
             
+            const tex = textureConfig || TRACK_TEXTURES.default;
             const n = centerline.length;
             const step = 3; // Sample every few points
             
@@ -2760,8 +2866,8 @@ const { useEffect, useRef, useState } = React;
               const nx = -dy / len;
               const ny = dx / len;
               
-              // Add multiple small speckles at each sample point
-              const numSpeckles = Math.floor(4 + seededRandom(i * 7) * 4);
+              // Add multiple small speckles at each sample point (use texture-specific values)
+              const numSpeckles = Math.floor(tex.noiseSpecklesMin + seededRandom(i * 7) * tex.noiseSpecklesRange);
               for (let j = 0; j < numSpeckles; j++) {
                 const offsetDist = (seededRandom(i * 13 + j * 17) - 0.5) * roadWidth * 0.85;
                 const alongDist = (seededRandom(i * 19 + j * 23) - 0.5) * 15;
@@ -2772,15 +2878,177 @@ const { useEffect, useRef, useState } = React;
                 const sx = p.x + nx * offsetDist + tangentX * alongDist;
                 const sy = p.y + ny * offsetDist + tangentY * alongDist;
                 
-                const shade = Math.floor(55 + seededRandom(i * 29 + j * 31) * 35);
-                const alpha = 0.12 + seededRandom(i * 37 + j * 41) * 0.15;
-                const size = 1 + seededRandom(i * 43 + j * 47) * 2.5;
+                const shade = Math.floor(tex.noiseShadeMin + seededRandom(i * 29 + j * 31) * tex.noiseShadeRange);
+                const alpha = tex.noiseAlphaBase + seededRandom(i * 37 + j * 41) * tex.noiseAlphaRange;
+                const size = tex.noiseSizeBase + seededRandom(i * 43 + j * 47) * tex.noiseSizeRange;
                 
                 ctx.fillStyle = `rgba(${shade}, ${shade}, ${shade}, ${alpha})`;
                 ctx.beginPath();
                 ctx.arc(sx, sy, size, 0, Math.PI * 2);
                 ctx.fill();
               }
+            }
+            
+            // Vintage texture: add cracks
+            if (tex.hasCracks) {
+              drawVintageCracks(ctx, centerline, roadWidth, tex.crackDensity || 0.15);
+            }
+            
+            // Vintage texture: add oil stains
+            if (tex.hasOilStains) {
+              drawOilStains(ctx, centerline, roadWidth, tex.oilStainDensity || 0.08);
+            }
+            
+            // Night texture: add reflective markers
+            if (tex.hasReflectiveMarkers) {
+              drawReflectiveMarkers(ctx, centerline, roadWidth, tex.markerColor || '#00e5ff');
+            }
+          }
+
+          // Draw weathered cracks for vintage texture
+          function drawVintageCracks(ctx, centerline, roadWidth, density) {
+            if (!centerline || centerline.length < 2) return;
+            
+            const n = centerline.length;
+            const step = Math.max(1, Math.floor(30 / density));
+            
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            
+            for (let i = 0; i < n; i += step) {
+              if (seededRandom(i * 97) > density * 2) continue;
+              
+              const p = centerline[i];
+              const prevIdx = (i - 1 + n) % n;
+              const nextIdx = (i + 1) % n;
+              const prev = centerline[prevIdx];
+              const next = centerline[nextIdx];
+              
+              const dx = next.x - prev.x;
+              const dy = next.y - prev.y;
+              const len = Math.hypot(dx, dy) || 1;
+              const nx = -dy / len;
+              const ny = dx / len;
+              
+              // Random offset across road width
+              const offsetDist = (seededRandom(i * 53) - 0.5) * roadWidth * 0.7;
+              const startX = p.x + nx * offsetDist;
+              const startY = p.y + ny * offsetDist;
+              
+              // Crack length and direction
+              const crackLen = 8 + seededRandom(i * 61) * 25;
+              const crackAngle = seededRandom(i * 67) * Math.PI * 2;
+              const endX = startX + Math.cos(crackAngle) * crackLen;
+              const endY = startY + Math.sin(crackAngle) * crackLen;
+              
+              ctx.strokeStyle = `rgba(25, 25, 25, ${0.15 + seededRandom(i * 71) * 0.2})`;
+              ctx.lineWidth = 0.5 + seededRandom(i * 73) * 1.5;
+              
+              ctx.beginPath();
+              ctx.moveTo(startX, startY);
+              // Add some jaggedness
+              const midX = (startX + endX) / 2 + (seededRandom(i * 79) - 0.5) * 6;
+              const midY = (startY + endY) / 2 + (seededRandom(i * 83) - 0.5) * 6;
+              ctx.quadraticCurveTo(midX, midY, endX, endY);
+              ctx.stroke();
+            }
+          }
+
+          // Draw oil stains for vintage texture
+          function drawOilStains(ctx, centerline, roadWidth, density) {
+            if (!centerline || centerline.length < 2) return;
+            
+            const n = centerline.length;
+            const step = Math.max(1, Math.floor(50 / density));
+            
+            for (let i = 0; i < n; i += step) {
+              if (seededRandom(i * 103) > density * 3) continue;
+              
+              const p = centerline[i];
+              const prevIdx = (i - 1 + n) % n;
+              const nextIdx = (i + 1) % n;
+              const prev = centerline[prevIdx];
+              const next = centerline[nextIdx];
+              
+              const dx = next.x - prev.x;
+              const dy = next.y - prev.y;
+              const len = Math.hypot(dx, dy) || 1;
+              const nx = -dy / len;
+              const ny = dx / len;
+              
+              // Random offset across road width
+              const offsetDist = (seededRandom(i * 107) - 0.5) * roadWidth * 0.6;
+              const stainX = p.x + nx * offsetDist;
+              const stainY = p.y + ny * offsetDist;
+              
+              const stainSize = 4 + seededRandom(i * 109) * 12;
+              
+              // Dark, slightly iridescent oil stain
+              const gradient = ctx.createRadialGradient(stainX, stainY, 0, stainX, stainY, stainSize);
+              gradient.addColorStop(0, `rgba(15, 18, 20, ${0.25 + seededRandom(i * 113) * 0.15})`);
+              gradient.addColorStop(0.5, `rgba(25, 30, 35, ${0.15 + seededRandom(i * 117) * 0.1})`);
+              gradient.addColorStop(1, 'rgba(30, 35, 40, 0)');
+              
+              ctx.fillStyle = gradient;
+              ctx.beginPath();
+              // Irregular shape
+              ctx.ellipse(stainX, stainY, stainSize, stainSize * (0.6 + seededRandom(i * 121) * 0.4), seededRandom(i * 127) * Math.PI, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+
+          // Draw reflective markers for night texture
+          function drawReflectiveMarkers(ctx, centerline, roadWidth, markerColor) {
+            if (!centerline || centerline.length < 2) return;
+            
+            const n = centerline.length;
+            const markerSpacing = 25; // pixels between markers
+            
+            for (let i = 0; i < n; i += markerSpacing) {
+              const p = centerline[i];
+              const prevIdx = (i - 1 + n) % n;
+              const nextIdx = (i + 1) % n;
+              const prev = centerline[prevIdx];
+              const next = centerline[nextIdx];
+              
+              const dx = next.x - prev.x;
+              const dy = next.y - prev.y;
+              const len = Math.hypot(dx, dy) || 1;
+              const nx = -dy / len;
+              const ny = dx / len;
+              
+              // Draw markers on both edges of the road
+              const edgeOffset = roadWidth * 0.45;
+              
+              // Left edge marker
+              const lx = p.x + nx * edgeOffset;
+              const ly = p.y + ny * edgeOffset;
+              
+              // Right edge marker
+              const rx = p.x - nx * edgeOffset;
+              const ry = p.y - ny * edgeOffset;
+              
+              // Glowing marker effect
+              const glowSize = 3;
+              const gradient1 = ctx.createRadialGradient(lx, ly, 0, lx, ly, glowSize * 2);
+              gradient1.addColorStop(0, markerColor);
+              gradient1.addColorStop(0.5, markerColor.replace(')', ', 0.5)').replace('rgb', 'rgba'));
+              gradient1.addColorStop(1, 'rgba(0, 0, 0, 0)');
+              
+              ctx.fillStyle = gradient1;
+              ctx.beginPath();
+              ctx.arc(lx, ly, glowSize * 2, 0, Math.PI * 2);
+              ctx.fill();
+              
+              const gradient2 = ctx.createRadialGradient(rx, ry, 0, rx, ry, glowSize * 2);
+              gradient2.addColorStop(0, markerColor);
+              gradient2.addColorStop(0.5, markerColor.replace(')', ', 0.5)').replace('rgb', 'rgba'));
+              gradient2.addColorStop(1, 'rgba(0, 0, 0, 0)');
+              
+              ctx.fillStyle = gradient2;
+              ctx.beginPath();
+              ctx.arc(rx, ry, glowSize * 2, 0, Math.PI * 2);
+              ctx.fill();
             }
           }
 
@@ -2833,6 +3101,10 @@ const { useEffect, useRef, useState } = React;
               }
             }
             if (centerline && centerline.length > 1) {
+              // Get texture configuration from track data
+              const textureId = (activeTrack && activeTrack.textureId) || 'default';
+              const tex = getTextureConfig(textureId);
+              
               let path = null;
               if (typeof Path2D === 'function') {
                 path = new Path2D();
@@ -2844,8 +3116,25 @@ const { useEffect, useRef, useState } = React;
               }
               sctx.lineJoin = 'round';
               sctx.lineCap = 'round';
-              // Base asphalt color - slightly varied grey
-              sctx.strokeStyle = '#505558';
+              
+              // Night texture: draw glow effect underneath
+              if (tex.hasGlowEffect && tex.glowColor) {
+                sctx.strokeStyle = tex.glowColor;
+                sctx.lineWidth = ROAD_WIDTH * 1.3;
+                if (path) sctx.stroke(path);
+                else {
+                  sctx.beginPath();
+                  for (let i = 0; i < centerline.length; i++) {
+                    const p = centerline[i];
+                    if (i === 0) sctx.moveTo(p.x, p.y);
+                    else sctx.lineTo(p.x, p.y);
+                  }
+                  sctx.stroke();
+                }
+              }
+              
+              // Base asphalt color (use texture-specific color)
+              sctx.strokeStyle = tex.baseColor;
               sctx.lineWidth = ROAD_WIDTH;
               if (path) sctx.stroke(path);
               else {
@@ -2862,15 +3151,15 @@ const { useEffect, useRef, useState } = React;
               const rawCurvatures = calculateTrackCurvature(centerline);
               const curvatures = smoothCurvatures(rawCurvatures, 12);
               
-              // Add asphalt texture noise
-              drawAsphaltNoise(sctx, centerline, ROAD_WIDTH);
+              // Add asphalt texture noise (with texture config)
+              drawAsphaltNoise(sctx, centerline, ROAD_WIDTH, tex);
               
-              // Draw tire marks with curvature-based intensity
-              drawTireMarks(sctx, centerline, curvatures, ROAD_WIDTH);
+              // Draw tire marks with curvature-based intensity (with texture config)
+              drawTireMarks(sctx, centerline, curvatures, ROAD_WIDTH, tex);
               
-              // Center line marking
-              sctx.strokeStyle = '#cfd8dc';
-              sctx.lineWidth = 2;
+              // Center line marking (use texture-specific color and width)
+              sctx.strokeStyle = tex.centerLineColor;
+              sctx.lineWidth = tex.centerLineWidth || 2;
               if (path) sctx.stroke(path);
               else {
                 sctx.beginPath();

@@ -5,10 +5,19 @@
   const MIN_POINTS = 32;
   const DEFAULT_ROAD_WIDTH = 80;
   const DEFAULT_SCALE = 1.0;
+  const DEFAULT_TEXTURE = 'default';
   const ROAD_WIDTH_RANGE = [40, 180];
   const SCALE_RANGE = [0.6, 2.5];
   const ERASE_RADIUS = 24;
   const SAMPLING_SPACING = 10;
+
+  // Track texture options available in the editor
+  const TEXTURE_OPTIONS = [
+    { id: 'default', name: 'Standard' },
+    { id: 'vintage', name: 'Vintage Circuit' },
+    { id: 'modern', name: 'Modern GP' },
+    { id: 'night', name: 'Night Race' }
+  ];
 
   function clamp(v, min, max){ return Math.min(max, Math.max(min, v)); }
 
@@ -417,6 +426,7 @@
       points: [],
       roadWidth: DEFAULT_ROAD_WIDTH,
       scale: DEFAULT_SCALE,
+      textureId: DEFAULT_TEXTURE,
       isDrawing: false,
       pointerId: null,
       history: [],
@@ -435,6 +445,11 @@
   };
 
   TrackEditor.prototype.buildUI = function(){
+    // Build texture options HTML
+    const textureOptionsHtml = TEXTURE_OPTIONS.map(opt => 
+      `<option value="${opt.id}"${opt.id === DEFAULT_TEXTURE ? ' selected' : ''}>${opt.name}</option>`
+    ).join('');
+
     const overlay = document.createElement("div");
     overlay.className = "track-editor-overlay hidden";
     overlay.innerHTML = `
@@ -471,6 +486,12 @@
               <span>World Scale <strong data-label="scale">${DEFAULT_SCALE.toFixed(2)}</strong>x</span>
               <input type="range" min="${SCALE_RANGE[0]}" max="${SCALE_RANGE[1]}" value="${DEFAULT_SCALE}" step="0.01" data-field="scale" />
             </label>
+            <label class="te-field">
+              <span>Track Texture</span>
+              <select class="te-select" data-field="texture">
+                ${textureOptionsHtml}
+              </select>
+            </label>
             <div class="te-status" aria-live="polite"></div>
             <div class="te-actions">
               <button type="button" class="te-btn te-secondary" data-action="export">Export Bundle</button>
@@ -494,6 +515,7 @@
     this.nameInput = overlay.querySelector('[data-field="name"]');
     this.roadWidthInput = overlay.querySelector('[data-field="roadWidth"]');
     this.scaleInput = overlay.querySelector('[data-field="scale"]');
+    this.textureSelect = overlay.querySelector('[data-field="texture"]');
     this.roadWidthLabel = overlay.querySelector('[data-label="roadWidth"]');
     this.scaleLabel = overlay.querySelector('[data-label="scale"]');
     this.testActions = overlay.querySelector("[data-test-actions]");
@@ -534,6 +556,10 @@
       const value = clamp(parseFloat(this.scaleInput.value) || DEFAULT_SCALE, SCALE_RANGE[0], SCALE_RANGE[1]);
       this.state.scale = value;
       this.scaleLabel.textContent = value.toFixed(2);
+    });
+
+    this.textureSelect.addEventListener("change", () => {
+      this.state.textureId = this.textureSelect.value || DEFAULT_TEXTURE;
     });
 
     this.canvas.addEventListener("pointerdown", (e) => this.onPointerDown(e));
@@ -579,10 +605,12 @@
     this.setStatus("", "");
     this.roadWidthInput.value = DEFAULT_ROAD_WIDTH;
     this.scaleInput.value = DEFAULT_SCALE;
+    this.textureSelect.value = DEFAULT_TEXTURE;
     this.roadWidthLabel.textContent = DEFAULT_ROAD_WIDTH.toFixed(0);
     this.scaleLabel.textContent = DEFAULT_SCALE.toFixed(2);
     this.state.roadWidth = DEFAULT_ROAD_WIDTH;
     this.state.scale = DEFAULT_SCALE;
+    this.state.textureId = DEFAULT_TEXTURE;
     this.nameInput.value = "";
     this.pushHistory();
     this.render();
@@ -845,6 +873,7 @@
       world: { width: worldWidth, height: worldHeight, scale: this.state.scale },
       points: scaled,
       roadWidth,
+      textureId: this.state.textureId || DEFAULT_TEXTURE,
       racingLine,
       startLine: meta.startLine,
       spawn: meta.spawn,
