@@ -11,135 +11,156 @@
    */
   const TEXTURE_STYLES = {
     /**
-     * Modern - Fresh, dark asphalt with clean tire marks
-     * Represents a newly paved professional racing circuit
+     * Modern - Fresh, very dark asphalt with minimal tire marks
+     * Represents a newly paved professional racing circuit - pristine condition
      */
     modern: {
       id: 'modern',
       name: 'Modern Circuit',
-      description: 'Fresh dark asphalt with clean, crisp tire marks',
-      // Base asphalt color (dark charcoal)
-      baseColor: '#3a3d40',
-      // Color variation range for base
-      baseVariation: 8,
-      // Tire mark colors (darker shades)
-      tireMarkBaseShade: 25,
-      tireMarkVariation: 15,
-      // Tire mark intensity (0-1)
-      tireMarkIntensity: 0.32,
-      // Base intensity for tire marks
-      tireMarkBaseIntensity: 0.06,
-      // Curvature boost for tire marks at corners
-      tireMarkCurvatureBoost: 0.28,
-      // Asphalt noise speckle settings
-      noiseBaseShade: 45,
-      noiseVariation: 25,
-      noiseBaseAlpha: 0.10,
-      noiseAlphaVariation: 0.12,
-      // Center line color
-      centerLineColor: '#e0e5e8',
-      // Additional styling
-      wearPatternIntensity: 0.15,
-      oilStainIntensity: 0.08
+      description: 'Fresh dark asphalt - newly paved, minimal tire marks',
+      // Very dark, almost black asphalt (fresh pavement)
+      baseColor: '#1a1c1e',
+      // Low variation for uniform new surface
+      baseVariation: 4,
+      // Very subtle tire marks (new track)
+      tireMarkBaseShade: 12,
+      tireMarkVariation: 8,
+      // Low tire mark visibility (fresh track)
+      tireMarkIntensity: 0.15,
+      tireMarkBaseIntensity: 0.02,
+      tireMarkCurvatureBoost: 0.12,
+      // Minimal noise for smooth new surface
+      noiseBaseShade: 25,
+      noiseVariation: 12,
+      noiseBaseAlpha: 0.04,
+      noiseAlphaVariation: 0.05,
+      // Bright white center line (fresh paint)
+      centerLineColor: '#ffffff',
+      wearPatternIntensity: 0.05,
+      oilStainIntensity: 0.02
     },
 
     /**
-     * Classic - Lighter grey asphalt with aged appearance
-     * Represents an established racing venue with years of racing history
+     * Classic - Medium grey with heavy tire marks from years of racing
+     * Represents an established racing venue with decades of history
      */
     classic: {
       id: 'classic',
       name: 'Classic Raceway',
-      description: 'Lighter grey asphalt with worn character',
-      baseColor: '#5c6066',
-      baseVariation: 10,
-      tireMarkBaseShade: 35,
-      tireMarkVariation: 20,
-      tireMarkIntensity: 0.38,
-      tireMarkBaseIntensity: 0.08,
-      tireMarkCurvatureBoost: 0.30,
-      noiseBaseShade: 60,
-      noiseVariation: 30,
-      noiseBaseAlpha: 0.14,
-      noiseAlphaVariation: 0.14,
-      centerLineColor: '#d0d5d8',
-      wearPatternIntensity: 0.25,
-      oilStainIntensity: 0.12
+      description: 'Decades of racing history - heavy tire marks, worn surface',
+      // Medium grey (well-used track)
+      baseColor: '#4a4d52',
+      // Moderate variation from wear
+      baseVariation: 12,
+      // Dark, prominent tire marks
+      tireMarkBaseShade: 20,
+      tireMarkVariation: 18,
+      // Very visible tire marks (lots of racing)
+      tireMarkIntensity: 0.55,
+      tireMarkBaseIntensity: 0.15,
+      tireMarkCurvatureBoost: 0.45,
+      // Moderate roughness
+      noiseBaseShade: 50,
+      noiseVariation: 28,
+      noiseBaseAlpha: 0.18,
+      noiseAlphaVariation: 0.15,
+      // Slightly faded center line
+      centerLineColor: '#d8dce0',
+      wearPatternIntensity: 0.35,
+      oilStainIntensity: 0.20
     },
 
     /**
-     * Weathered - Heavily worn track with faded markings
-     * Represents an old track that has seen many races
+     * Weathered - Very light grey, sun-bleached old track
+     * Represents an abandoned or poorly maintained circuit
      */
     weathered: {
       id: 'weathered',
       name: 'Weathered Tarmac',
-      description: 'Aged asphalt with heavy wear and faded markings',
-      baseColor: '#6a6e72',
-      baseVariation: 14,
-      tireMarkBaseShade: 42,
-      tireMarkVariation: 25,
-      tireMarkIntensity: 0.42,
-      tireMarkBaseIntensity: 0.10,
-      tireMarkCurvatureBoost: 0.35,
-      noiseBaseShade: 70,
-      noiseVariation: 35,
-      noiseBaseAlpha: 0.18,
-      noiseAlphaVariation: 0.16,
-      centerLineColor: '#b8bdc0',
-      wearPatternIntensity: 0.35,
-      oilStainIntensity: 0.18
+      description: 'Sun-bleached, cracked surface - heavily worn and faded',
+      // Light grey, sun-bleached appearance
+      baseColor: '#787c82',
+      // High variation for cracked/patchy surface
+      baseVariation: 22,
+      // Faded tire marks (old and weathered)
+      tireMarkBaseShade: 55,
+      tireMarkVariation: 35,
+      // Moderate visibility but faded
+      tireMarkIntensity: 0.40,
+      tireMarkBaseIntensity: 0.12,
+      tireMarkCurvatureBoost: 0.30,
+      // Very rough, speckled surface
+      noiseBaseShade: 85,
+      noiseVariation: 45,
+      noiseBaseAlpha: 0.28,
+      noiseAlphaVariation: 0.22,
+      // Very faded, barely visible center line
+      centerLineColor: '#9ea3a8',
+      wearPatternIntensity: 0.55,
+      oilStainIntensity: 0.30
     },
 
     /**
-     * Night Circuit - Dark surface optimized for night racing
-     * Features high contrast markings visible under lights
+     * Night Circuit - Deep black with blue tint, high contrast markings
+     * Optimized for night racing with reflective properties
      */
     night: {
       id: 'night',
       name: 'Night Circuit',
-      description: 'Dark surface with high-contrast tire marks',
-      baseColor: '#2a2d30',
-      baseVariation: 6,
-      tireMarkBaseShade: 18,
-      tireMarkVariation: 12,
-      tireMarkIntensity: 0.40,
-      tireMarkBaseIntensity: 0.08,
-      tireMarkCurvatureBoost: 0.32,
-      noiseBaseShade: 35,
-      noiseVariation: 20,
-      noiseBaseAlpha: 0.08,
-      noiseAlphaVariation: 0.10,
-      centerLineColor: '#f0f4f7',
-      wearPatternIntensity: 0.12,
-      oilStainIntensity: 0.06
+      description: 'Deep black surface with blue tint - high contrast for night racing',
+      // Very dark with slight blue tint
+      baseColor: '#0f1218',
+      // Very low variation for smooth surface
+      baseVariation: 3,
+      // High contrast tire marks (visible under lights)
+      tireMarkBaseShade: 35,
+      tireMarkVariation: 15,
+      // Very visible, high contrast marks
+      tireMarkIntensity: 0.50,
+      tireMarkBaseIntensity: 0.10,
+      tireMarkCurvatureBoost: 0.40,
+      // Subtle speckling
+      noiseBaseShade: 30,
+      noiseVariation: 18,
+      noiseBaseAlpha: 0.06,
+      noiseAlphaVariation: 0.08,
+      // Bright reflective center line
+      centerLineColor: '#f8faff',
+      wearPatternIntensity: 0.08,
+      oilStainIntensity: 0.04
     },
 
     /**
-     * Street Circuit - Urban racing surface
-     * Rougher texture with patches and repairs visible
+     * Street Circuit - Brownish urban road with rough texture
+     * City streets converted to racing - patches, repairs, rough surface
      */
     street: {
       id: 'street',
       name: 'Street Circuit',
-      description: 'Urban road surface with patches and repairs',
-      baseColor: '#4a4e52',
-      baseVariation: 16,
-      tireMarkBaseShade: 30,
-      tireMarkVariation: 22,
-      tireMarkIntensity: 0.35,
-      tireMarkBaseIntensity: 0.07,
-      tireMarkCurvatureBoost: 0.25,
-      noiseBaseShade: 55,
-      noiseVariation: 40,
-      noiseBaseAlpha: 0.16,
-      noiseAlphaVariation: 0.18,
-      centerLineColor: '#c5cad0',
-      wearPatternIntensity: 0.30,
-      oilStainIntensity: 0.15,
+      description: 'Urban road surface - brownish grey with patches and rough texture',
+      // Brownish-grey urban road color
+      baseColor: '#3d3a36',
+      // Very high variation for patchy urban roads
+      baseVariation: 28,
+      // Scattered tire marks from regular traffic + racing
+      tireMarkBaseShade: 28,
+      tireMarkVariation: 30,
+      // Moderate tire marks
+      tireMarkIntensity: 0.38,
+      tireMarkBaseIntensity: 0.08,
+      tireMarkCurvatureBoost: 0.28,
+      // Very rough, varied surface
+      noiseBaseShade: 45,
+      noiseVariation: 55,
+      noiseBaseAlpha: 0.25,
+      noiseAlphaVariation: 0.22,
+      // Worn yellow-ish center line (urban roads)
+      centerLineColor: '#e8e4d0',
+      wearPatternIntensity: 0.45,
+      oilStainIntensity: 0.25,
       // Street circuit specific: patches
       hasPatchwork: true,
-      patchDensity: 0.08
+      patchDensity: 0.15
     }
   };
 

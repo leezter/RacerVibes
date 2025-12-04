@@ -2658,18 +2658,19 @@ const { useEffect, useRef, useState } = React;
           }
 
           // Default texture style values when no style is specified
+          // These match the "modern" texture style for consistency
           const DEFAULT_TEXTURE_STYLE = {
-            baseColor: '#505558',
-            centerLineColor: '#cfd8dc',
-            tireMarkBaseShade: 40,
-            tireMarkVariation: 25,
-            tireMarkIntensity: 0.35,
-            tireMarkBaseIntensity: 0.05,
-            tireMarkCurvatureBoost: 0.25,
-            noiseBaseShade: 55,
-            noiseVariation: 35,
-            noiseBaseAlpha: 0.12,
-            noiseAlphaVariation: 0.15
+            baseColor: '#1a1c1e',
+            centerLineColor: '#ffffff',
+            tireMarkBaseShade: 12,
+            tireMarkVariation: 8,
+            tireMarkIntensity: 0.15,
+            tireMarkBaseIntensity: 0.02,
+            tireMarkCurvatureBoost: 0.12,
+            noiseBaseShade: 25,
+            noiseVariation: 12,
+            noiseBaseAlpha: 0.04,
+            noiseAlphaVariation: 0.05
           };
 
           // Helper to get current texture style with defaults
