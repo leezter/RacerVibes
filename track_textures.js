@@ -184,6 +184,9 @@
     return DEFAULT_STYLE;
   }
 
+  // Fallback RGB color when hex parsing fails (neutral grey)
+  const FALLBACK_RGB = { r: 80, g: 85, b: 88 };
+
   /**
    * Parse a hex color to RGB components
    * @param {string} hex - Hex color string (e.g., '#3a3d40')
@@ -191,7 +194,7 @@
    */
   function hexToRgb(hex) {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    if (!result) return { r: 80, g: 85, b: 88 }; // fallback grey
+    if (!result) return { ...FALLBACK_RGB };
     return {
       r: parseInt(result[1], 16),
       g: parseInt(result[2], 16),

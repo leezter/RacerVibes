@@ -2657,17 +2657,38 @@ const { useEffect, useRef, useState } = React;
             return x - Math.floor(x);
           }
 
+          // Default texture style values when no style is specified
+          const DEFAULT_TEXTURE_STYLE = {
+            baseColor: '#505558',
+            centerLineColor: '#cfd8dc',
+            tireMarkBaseShade: 40,
+            tireMarkVariation: 25,
+            tireMarkIntensity: 0.35,
+            tireMarkBaseIntensity: 0.05,
+            tireMarkCurvatureBoost: 0.25,
+            noiseBaseShade: 55,
+            noiseVariation: 35,
+            noiseBaseAlpha: 0.12,
+            noiseAlphaVariation: 0.15
+          };
+
+          // Helper to get current texture style with defaults
+          function getTextureStyle() {
+            const style = (activeTrack && activeTrack.textureStyle) || null;
+            return style || DEFAULT_TEXTURE_STYLE;
+          }
+
           // Draw tire mark streaks along the track
           function drawTireMarks(ctx, centerline, curvatures, roadWidth, textureStyle) {
             if (!centerline || centerline.length < 2 || !curvatures.length) return;
             
             // Get texture style config (fallback to defaults if not available)
-            const style = textureStyle || {};
-            const tireMarkBaseShade = style.tireMarkBaseShade ?? 40;
-            const tireMarkVariation = style.tireMarkVariation ?? 25;
-            const tireMarkIntensity = style.tireMarkIntensity ?? 0.35;
-            const tireMarkBaseIntensity = style.tireMarkBaseIntensity ?? 0.05;
-            const tireMarkCurvatureBoost = style.tireMarkCurvatureBoost ?? 0.25;
+            const style = textureStyle || DEFAULT_TEXTURE_STYLE;
+            const tireMarkBaseShade = style.tireMarkBaseShade ?? DEFAULT_TEXTURE_STYLE.tireMarkBaseShade;
+            const tireMarkVariation = style.tireMarkVariation ?? DEFAULT_TEXTURE_STYLE.tireMarkVariation;
+            const tireMarkIntensity = style.tireMarkIntensity ?? DEFAULT_TEXTURE_STYLE.tireMarkIntensity;
+            const tireMarkBaseIntensity = style.tireMarkBaseIntensity ?? DEFAULT_TEXTURE_STYLE.tireMarkBaseIntensity;
+            const tireMarkCurvatureBoost = style.tireMarkCurvatureBoost ?? DEFAULT_TEXTURE_STYLE.tireMarkCurvatureBoost;
             
             // Normalize curvatures to 0-1 range
             const maxCurv = Math.max(...curvatures, 0.001);
@@ -2750,11 +2771,11 @@ const { useEffect, useRef, useState } = React;
             if (!centerline || centerline.length < 2) return;
             
             // Get texture style config (fallback to defaults if not available)
-            const style = textureStyle || {};
-            const noiseBaseShade = style.noiseBaseShade ?? 55;
-            const noiseVariation = style.noiseVariation ?? 35;
-            const noiseBaseAlpha = style.noiseBaseAlpha ?? 0.12;
-            const noiseAlphaVariation = style.noiseAlphaVariation ?? 0.15;
+            const style = textureStyle || DEFAULT_TEXTURE_STYLE;
+            const noiseBaseShade = style.noiseBaseShade ?? DEFAULT_TEXTURE_STYLE.noiseBaseShade;
+            const noiseVariation = style.noiseVariation ?? DEFAULT_TEXTURE_STYLE.noiseVariation;
+            const noiseBaseAlpha = style.noiseBaseAlpha ?? DEFAULT_TEXTURE_STYLE.noiseBaseAlpha;
+            const noiseAlphaVariation = style.noiseAlphaVariation ?? DEFAULT_TEXTURE_STYLE.noiseAlphaVariation;
             
             const n = centerline.length;
             const step = 3; // Sample every few points
@@ -2859,10 +2880,10 @@ const { useEffect, useRef, useState } = React;
               }
               sctx.lineJoin = 'round';
               sctx.lineCap = 'round';
-              // Get texture style from activeTrack (uses modern as default)
-              const textureStyle = (activeTrack && activeTrack.textureStyle) || null;
-              const baseColor = textureStyle && textureStyle.baseColor ? textureStyle.baseColor : '#505558';
-              const centerLineColor = textureStyle && textureStyle.centerLineColor ? textureStyle.centerLineColor : '#cfd8dc';
+              // Get texture style using helper (falls back to defaults)
+              const textureStyle = getTextureStyle();
+              const baseColor = textureStyle.baseColor || DEFAULT_TEXTURE_STYLE.baseColor;
+              const centerLineColor = textureStyle.centerLineColor || DEFAULT_TEXTURE_STYLE.centerLineColor;
               
               // Base asphalt color - use texture style
               sctx.strokeStyle = baseColor;
