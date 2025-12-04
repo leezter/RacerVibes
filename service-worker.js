@@ -1,7 +1,7 @@
 // Drift mode fully removed in this release.
 // 'racer.html' is the single entry point; Grip is default.
 // Cache version bumped to evict the old drift page.
-const CACHE_VERSION = 'rv-static-v20251120-assets';
+const CACHE_VERSION = 'rv-static-v20251204-textures';
 const CORE_ASSETS = [
   'racer_start_menu.html',
   'racer.html',
@@ -16,6 +16,8 @@ const CORE_ASSETS = [
   'decor_generator.js',
   'trackCollision.js',
   'track_storage.js',
+  'track_textures.js',
+  'track_editor.js',
   'ui/speedometer.js',
   'assets/decor/decor_atlas.png',
   'assets/vehicles/truck_orange.png',
