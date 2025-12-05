@@ -11,6 +11,7 @@
   <script src="utils/storage-utils.js" defer></script>
   <script src="track_storage.js" defer></script>
   <script src="track_editor.js" defer></script>
+  <script src="track_builder.js" defer></script>
   <style>
     /* ===== CSS Variables & Reset ===== */
     :root {
@@ -1006,6 +1007,488 @@
         width: 100%;
       }
     }
+
+    /* ===== New Track Builder Styles ===== */
+    .track-builder-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: #0a1628;
+    }
+    
+    .track-builder-overlay.hidden {
+      display: none;
+    }
+    
+    .track-builder-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    
+    /* Header */
+    .tb-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      background: rgba(10, 22, 40, 0.95);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      gap: 16px;
+      flex-shrink: 0;
+    }
+    
+    .tb-header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    .tb-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .tb-logo-icon {
+      font-size: 24px;
+    }
+    
+    .tb-logo-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    
+    .tb-logo-title {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: #06b6d4;
+      text-transform: uppercase;
+    }
+    
+    .tb-track-name-input {
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 12px;
+      padding: 0;
+      width: 150px;
+    }
+    
+    .tb-track-name-input:focus {
+      outline: none;
+      color: var(--text-primary);
+    }
+    
+    .tb-header-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .tb-icon-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.05);
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    
+    .tb-icon-btn:hover {
+      background: rgba(255,255,255,0.1);
+      color: var(--text-primary);
+      border-color: rgba(255,255,255,0.2);
+    }
+    
+    .tb-icon-btn.tb-danger:hover {
+      background: rgba(239, 68, 68, 0.2);
+      border-color: rgba(239, 68, 68, 0.4);
+      color: #ef4444;
+    }
+    
+    .tb-bake-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+      border: none;
+      border-radius: 8px;
+      color: white;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    
+    .tb-bake-btn:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+    
+    /* Main Area */
+    .tb-main {
+      flex: 1;
+      display: flex;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .tb-canvas-area {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .tb-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+      cursor: crosshair;
+    }
+    
+    /* Circuit Status */
+    .tb-circuit-status {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 12px 28px;
+      background: rgba(16, 185, 129, 0.15);
+      border: 2px solid #10b981;
+      border-radius: 8px;
+      pointer-events: none;
+    }
+    
+    .tb-circuit-status.hidden {
+      display: none;
+    }
+    
+    .tb-status-text {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      color: #10b981;
+      text-transform: uppercase;
+    }
+    
+    /* Bottom Toolbar */
+    .tb-toolbar {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 4px;
+      padding: 8px;
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      backdrop-filter: blur(8px);
+    }
+    
+    .tb-tool-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 12px 20px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      color: var(--text-secondary);
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    
+    .tb-tool-btn:hover {
+      background: rgba(255,255,255,0.05);
+      color: var(--text-primary);
+    }
+    
+    .tb-tool-btn.active {
+      background: rgba(6, 182, 212, 0.15);
+      border-color: rgba(6, 182, 212, 0.4);
+      color: #06b6d4;
+    }
+    
+    /* Panel Toggle */
+    .tb-panel-toggle {
+      position: absolute;
+      right: 300px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 24px;
+      height: 48px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-right: none;
+      border-radius: 8px 0 0 8px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      z-index: 10;
+    }
+    
+    .tb-panel-toggle:hover {
+      background: rgba(15, 23, 42, 1);
+      color: var(--text-primary);
+    }
+    
+    .tb-panel-toggle.collapsed {
+      right: 0;
+    }
+    
+    .tb-panel-toggle.collapsed svg {
+      transform: rotate(180deg);
+    }
+    
+    /* Properties Panel */
+    .tb-properties-panel {
+      width: 300px;
+      background: rgba(15, 23, 42, 0.95);
+      border-left: 1px solid rgba(255,255,255,0.08);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      transition: margin-right 0.3s ease;
+    }
+    
+    .tb-properties-panel.collapsed {
+      margin-right: -300px;
+    }
+    
+    .tb-panel-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      color: var(--text-secondary);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 1px;
+    }
+    
+    /* Stats */
+    .tb-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: rgba(255,255,255,0.08);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    
+    .tb-stat {
+      background: rgba(15, 23, 42, 0.95);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    
+    .tb-stat-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      letter-spacing: 0.5px;
+    }
+    
+    .tb-stat-value {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+    
+    .tb-stat-value small {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-left: 2px;
+    }
+    
+    /* Sections */
+    .tb-section {
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    
+    .tb-section-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      color: var(--text-secondary);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+    
+    /* Surface Grid */
+    .tb-surface-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    
+    .tb-surface-btn {
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px;
+      color: var(--text-secondary);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: left;
+    }
+    
+    .tb-surface-btn:hover {
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(255,255,255,0.2);
+    }
+    
+    .tb-surface-btn.active {
+      background: rgba(6, 182, 212, 0.15);
+      border-color: #06b6d4;
+      color: #06b6d4;
+    }
+    
+    /* Sliders */
+    .tb-slider-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      color: var(--text-secondary);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+    
+    .tb-slider-value {
+      margin-left: auto;
+      color: #06b6d4;
+    }
+    
+    .tb-slider {
+      width: 100%;
+      height: 6px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: rgba(255,255,255,0.1);
+      border-radius: 3px;
+      outline: none;
+    }
+    
+    .tb-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      background: #06b6d4;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: transform 0.15s ease;
+    }
+    
+    .tb-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+    
+    .tb-slider::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      background: #06b6d4;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+    }
+    
+    /* Tips */
+    .tb-tips {
+      padding: 16px 20px;
+      color: var(--text-muted);
+      font-size: 11px;
+      line-height: 1.6;
+    }
+    
+    /* Close Button */
+    .tb-close-btn {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      width: 40px;
+      height: 40px;
+      background: rgba(0,0,0,0.5);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 50%;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      z-index: 20;
+    }
+    
+    .tb-close-btn:hover {
+      background: rgba(239, 68, 68, 0.3);
+      border-color: rgba(239, 68, 68, 0.5);
+      color: #ef4444;
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+      .tb-properties-panel {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        z-index: 15;
+      }
+      
+      .tb-panel-toggle {
+        right: 0;
+      }
+      
+      .tb-properties-panel:not(.collapsed) + .tb-panel-toggle {
+        right: 300px;
+      }
+      
+      .tb-toolbar {
+        padding: 6px;
+      }
+      
+      .tb-tool-btn {
+        padding: 10px 14px;
+      }
+      
+      .tb-tool-btn span {
+        display: none;
+      }
+      
+      .tb-header {
+        padding: 10px 16px;
+      }
+      
+      .tb-logo-title {
+        font-size: 12px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -1049,6 +1532,10 @@
         <button class="nav-btn" data-view="settings">
           <span class="nav-icon">⚙️</span>
           <span>Settings</span>
+        </button>
+        <button class="nav-btn" id="trackBuilderBtn">
+          <span class="nav-icon">🛠️</span>
+          <span>Track Builder</span>
         </button>
       </nav>
 
@@ -1337,12 +1824,17 @@
             });
           });
           
-          // Track builder button
+          // Track builder button - prefer new TrackBuilder over old TrackEditor
           const createTrackCard = $('createTrackCard');
-          if (createTrackCard && trackEditor) {
+          if (createTrackCard && (trackBuilder || trackEditor)) {
             createTrackCard.addEventListener('click', () => {
-              trackEditor.reset();
-              trackEditor.open();
+              if (trackBuilder) {
+                trackBuilder.reset();
+                trackBuilder.open();
+              } else if (trackEditor) {
+                trackEditor.reset();
+                trackEditor.open();
+              }
             });
           } else if (createTrackCard) {
             createTrackCard.style.opacity = '0.5';
@@ -1432,6 +1924,7 @@
         
         // ===== Custom Tracks =====
         let trackEditor = null;
+        let trackBuilder = null;
         
         async function refreshCustomTracks(selectId) {
           if (!window.TrackStore || typeof TrackStore.listTracks !== 'function') {
@@ -1452,6 +1945,7 @@
           }
         }
         
+        // Old track editor (kept for backward compatibility)
         if (window.TrackEditor && window.TrackStore) {
           trackEditor = TrackEditor.create({
             onSaved: async (entry) => {
@@ -1462,6 +1956,39 @@
               state.track = 'custom:' + entry.id;
               saveStartPayload({ track: state.track, car: state.vehicle, mode: state.mode });
               window.location.href = 'racer.html';
+            }
+          });
+        }
+        
+        // New fullscreen Track Builder
+        if (window.TrackBuilder && window.TrackStore) {
+          trackBuilder = TrackBuilder.create({
+            onSaved: async (entry) => {
+              await refreshCustomTracks(entry && entry.id);
+            },
+            onTestDrive: (_mode, entry) => {
+              if (!entry || !entry.id) return;
+              state.track = 'custom:' + entry.id;
+              saveStartPayload({ track: state.track, car: state.vehicle, mode: state.mode });
+              window.location.href = 'racer.html';
+            },
+            onClose: () => {
+              // Nothing special needed on close
+            }
+          });
+        }
+        
+        // Track Builder button in sidebar
+        const trackBuilderBtn = $('trackBuilderBtn');
+        if (trackBuilderBtn) {
+          trackBuilderBtn.addEventListener('click', () => {
+            if (trackBuilder) {
+              trackBuilder.reset();
+              trackBuilder.open();
+            } else if (trackEditor) {
+              // Fallback to old editor if new builder not available
+              trackEditor.reset();
+              trackEditor.open();
             }
           });
         }
