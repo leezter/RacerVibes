@@ -743,6 +743,8 @@
       const value = clamp(parseFloat(this.scaleSlider.value) || DEFAULT_SCALE, SCALE_RANGE[0], SCALE_RANGE[1]);
       this.state.scale = value;
       this.scaleLabel.textContent = value.toFixed(1) + 'x';
+      // Re-render to show the updated track scale visually
+      this.render();
     });
     
     // Track name
@@ -777,10 +779,15 @@
     const rect = this.canvas.getBoundingClientRect();
     const x = (e.clientX - rect.left);
     const y = (e.clientY - rect.top);
-    // Transform by pan and zoom
+    // Transform by pan and zoom to get display coordinates
+    const displayX = (x - this.state.panOffset.x) / this.state.zoom;
+    const displayY = (y - this.state.panOffset.y) / this.state.zoom;
+    // Convert from display (scaled) coordinates back to raw point coordinates
+    // since we store points in raw space but display them scaled
+    const worldScale = this.state.scale;
     return {
-      x: (x - this.state.panOffset.x) / this.state.zoom,
-      y: (y - this.state.panOffset.y) / this.state.zoom
+      x: displayX / worldScale,
+      y: displayY / worldScale
     };
   };
   
@@ -898,8 +905,9 @@
       this.circuitStatus.classList.add('hidden');
     }
     
-    // Update stats
-    this.lengthStat.innerHTML = calculateTrackLength(pts) + '<small>px</small>';
+    // Update stats - show the actual scaled track length (what will appear in race)
+    const scaledPts = pts.map(p => ({ x: p.x * this.state.scale, y: p.y * this.state.scale }));
+    this.lengthStat.innerHTML = calculateTrackLength(scaledPts) + '<small>px</small>';
     this.turnsStat.textContent = estimateTurns(pts);
   };
   
@@ -947,7 +955,10 @@
       return;
     }
     
-    const bbox = boundingBox(pts);
+    // Apply world scale to points for accurate bounding box calculation
+    const worldScale = this.state.scale;
+    const scaledPts = pts.map(p => ({ x: p.x * worldScale, y: p.y * worldScale }));
+    const bbox = boundingBox(scaledPts);
     const padding = 80;
     const trackWidth = bbox.width + padding * 2;
     const trackHeight = bbox.height + padding * 2;
@@ -1034,8 +1045,16 @@
     
     // Get the width scale from localStorage to match race appearance
     const widthScale = readWidthScale();
-    // The visual road width should match how it appears in the race
+    // Apply world scale to geometry AND width scale to road width
+    // This makes the preview match what will appear in the race
+    const worldScale = this.state.scale;
     const visualRoadWidth = this.state.roadWidth * widthScale;
+    
+    // Scale points by world scale to show accurate track size
+    const scaledPts = pts.map(p => ({
+      x: p.x * worldScale,
+      y: p.y * worldScale
+    }));
     
     ctx.save();
     ctx.lineJoin = 'round';
@@ -1045,9 +1064,9 @@
     ctx.lineWidth = visualRoadWidth + 8;
     ctx.strokeStyle = 'rgba(255,255,255,0.2)';
     ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) {
-      ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.moveTo(scaledPts[0].x, scaledPts[0].y);
+    for (let i = 1; i < scaledPts.length; i++) {
+      ctx.lineTo(scaledPts[i].x, scaledPts[i].y);
     }
     if (this.state.isClosed) ctx.closePath();
     ctx.stroke();
@@ -1056,9 +1075,9 @@
     ctx.lineWidth = visualRoadWidth;
     ctx.strokeStyle = surface.roadColor;
     ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) {
-      ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.moveTo(scaledPts[0].x, scaledPts[0].y);
+    for (let i = 1; i < scaledPts.length; i++) {
+      ctx.lineTo(scaledPts[i].x, scaledPts[i].y);
     }
     if (this.state.isClosed) ctx.closePath();
     ctx.stroke();
@@ -1068,9 +1087,9 @@
     ctx.strokeStyle = 'rgba(255,255,255,0.6)';
     ctx.setLineDash([12, 12]);
     ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) {
-      ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.moveTo(scaledPts[0].x, scaledPts[0].y);
+    for (let i = 1; i < scaledPts.length; i++) {
+      ctx.lineTo(scaledPts[i].x, scaledPts[i].y);
     }
     if (this.state.isClosed) ctx.closePath();
     ctx.stroke();
@@ -1079,23 +1098,25 @@
     // Start marker
     ctx.fillStyle = '#10b981';
     ctx.beginPath();
-    ctx.arc(pts[0].x, pts[0].y, 8, 0, Math.PI * 2);
+    ctx.arc(scaledPts[0].x, scaledPts[0].y, 8, 0, Math.PI * 2);
     ctx.fill();
     
     // Draw starting grid when track is closed
-    if (this.state.isClosed && pts.length >= 2) {
-      this.drawStartingGrid(ctx, pts, visualRoadWidth);
+    if (this.state.isClosed && scaledPts.length >= 2) {
+      this.drawStartingGrid(ctx, scaledPts, visualRoadWidth);
     }
     
     ctx.restore();
   };
   
   // Draw visual representation of car lineup at starting line
-  TrackBuilder.prototype.drawStartingGrid = function(ctx, pts, visualRoadWidth) {
-    if (!pts || pts.length < 2) return;
+  // scaledPts: points already scaled by world scale
+  // visualRoadWidth: road width already scaled by width scale
+  TrackBuilder.prototype.drawStartingGrid = function(ctx, scaledPts, visualRoadWidth) {
+    if (!scaledPts || scaledPts.length < 2) return;
     
-    const first = pts[0];
-    const second = pts[1];
+    const first = scaledPts[0];
+    const second = scaledPts[1];
     
     // Calculate forward direction (tangent at start)
     const dx = second.x - first.x;
@@ -1106,14 +1127,24 @@
     const angle = Math.atan2(tangent.y, tangent.x);
     
     // Get car profile (use GT as reference)
+    // Car dimensions are NOT scaled - they remain at their true pixel size
+    // This matches how cars are rendered in the actual race
     const car = DEFAULT_CAR_PROFILE;
     const carWidth = car.width;
     const carLength = car.length;
     
-    // Calculate grid layout - 2 cars per row, staggered
+    // Calculate grid layout to match racer.html buildGridSlots logic
     const totalCars = 1 + DEFAULT_AI_CAR_COUNT; // player + AI cars
-    const rowGap = carLength * 1.4; // gap between rows
-    const lateralOffset = visualRoadWidth * 0.2; // offset from center line
+    
+    // Match the slot sizing logic from racer.html buildGridSlots
+    const baseWidth = visualRoadWidth;
+    const slotWidth = clamp(baseWidth * 0.22, 14, Math.min(baseWidth * 0.5, 48));
+    const slotLength = clamp(baseWidth * 0.65, 28, 90);
+    const rowGap = Math.max(slotLength * 0.9, 26);
+    const startGap = Math.max(slotLength * 0.35, 8);
+    const laneSpacing = totalCars === 1 ? 0 : Math.max(slotWidth + 8, Math.min(baseWidth * 0.45, slotWidth * 1.8));
+    const columns = totalCars === 1 ? 1 : 2;
+    const lateralOffsets = columns === 1 ? [0] : [-laneSpacing * 0.5, laneSpacing * 0.5];
     
     ctx.save();
     
@@ -1148,15 +1179,15 @@
     const colors = ["#3949ab", "#1e88e5", "#43a047", "#f4511e", "#8e24aa", "#00897b", "#fdd835", "#f97316", "#00acc1", "#c0ca33"];
     
     for (let i = 0; i < Math.min(totalCars, 10); i++) {
-      const row = Math.floor(i / 2);
-      const side = (i % 2 === 0) ? -1 : 1;
+      const row = Math.floor(i / columns);
+      const column = columns === 1 ? 0 : (i % columns);
       
-      // Position car behind the start line, staggered
-      const forwardOffset = (row + 1) * rowGap;
-      const sideOffset = side * lateralOffset;
+      // Position car behind the start line, matching racer.html logic
+      const forwardOffset = -(row * rowGap + slotLength * 0.6 + startGap);
+      const lateralOffset = lateralOffsets[column] || 0;
       
-      const carX = first.x - tangent.x * forwardOffset + normal.x * sideOffset;
-      const carY = first.y - tangent.y * forwardOffset + normal.y * sideOffset;
+      const carX = first.x - tangent.x * (-forwardOffset) + normal.x * lateralOffset;
+      const carY = first.y - tangent.y * (-forwardOffset) + normal.y * lateralOffset;
       
       // Draw car body
       ctx.save();
