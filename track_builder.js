@@ -8,6 +8,11 @@
   const SAMPLING_SPACING = 10;
   const ERASE_RADIUS = 24;
   
+  // Fixed world size - same drawing area on all devices
+  // Sized to match desktop at zoom 0.25 (~1600px canvas / 0.25 = 6400px world)
+  const WORLD_WIDTH = 6400;
+  const WORLD_HEIGHT = 4800;
+  
   // Width scale from racer.html - used to show accurate preview
   // NOTE: These values must match SCALE_MIN/SCALE_MAX/SCALE_DEFAULT in racer.html
   const RACE_WIDTH_SCALE_DEFAULT = 2.5;
@@ -423,12 +428,13 @@
       historyIndex: -1,
       lastBakeResult: null,
       isClosed: false,
-      panOffset: { x: 0, y: 0 },
-      zoom: 0.25,
-      isPanning: false,
-      panStart: null,
       trackName: 'Grand Prix 1'
     };
+    
+    // View transform - calculated on resize to fit fixed world to screen
+    this.viewScale = 1;
+    this.viewOffsetX = 0;
+    this.viewOffsetY = 0;
     
     this.init();
   }
@@ -527,25 +533,14 @@
                 </svg>
                 <span>Eraser</span>
               </button>
-              <button class="tb-tool-btn" data-tool="pan" title="Pan">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M5 9l-3 3 3 3"></path>
-                  <path d="M9 5l3-3 3 3"></path>
-                  <path d="M15 19l-3 3-3-3"></path>
-                  <path d="M19 9l3 3-3 3"></path>
-                  <path d="M2 12h20"></path>
-                  <path d="M12 2v20"></path>
-                </svg>
-                <span>Pan</span>
-              </button>
-              <button class="tb-tool-btn" data-action="fit" title="Fit to View">
+              <button class="tb-tool-btn" data-action="fit" title="Center Track">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M8 3H5a2 2 0 00-2 2v3"></path>
                   <path d="M21 8V5a2 2 0 00-2-2h-3"></path>
                   <path d="M3 16v3a2 2 0 002 2h3"></path>
                   <path d="M16 21h3a2 2 0 002-2v-3"></path>
                 </svg>
-                <span></span>
+                <span>Center</span>
               </button>
             </div>
           </div>
@@ -657,6 +652,15 @@
     this.displayWidth = rect.width;
     this.displayHeight = rect.height;
     
+    // Calculate view scale to fit fixed world in screen
+    const scaleX = rect.width / WORLD_WIDTH;
+    const scaleY = rect.height / WORLD_HEIGHT;
+    this.viewScale = Math.min(scaleX, scaleY);
+    
+    // Center the world in the viewport
+    this.viewOffsetX = (rect.width - WORLD_WIDTH * this.viewScale) / 2;
+    this.viewOffsetY = (rect.height - WORLD_HEIGHT * this.viewScale) / 2;
+    
     this.render();
   };
   
@@ -730,14 +734,6 @@
     this.canvas.addEventListener('pointercancel', (e) => this.onPointerUp(e));
     this.canvas.addEventListener('pointerleave', (e) => this.onPointerUp(e));
     
-    // Wheel for zoom
-    this.canvas.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      const delta = -e.deltaY * 0.001;
-      this.state.zoom = clamp(this.state.zoom + delta, 0.25, 4);
-      this.render();
-    }, { passive: false });
-    
     // Resize handler
     window.addEventListener('resize', () => {
       if (!this.overlay.classList.contains('hidden')) {
@@ -748,12 +744,12 @@
   
   TrackBuilder.prototype.getCanvasPos = function(e) {
     const rect = this.canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left);
-    const y = (e.clientY - rect.top);
-    // Transform by pan and zoom
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    // Transform screen coords to fixed world coords
     return {
-      x: (x - this.state.panOffset.x) / this.state.zoom,
-      y: (y - this.state.panOffset.y) / this.state.zoom
+      x: (screenX - this.viewOffsetX) / this.viewScale,
+      y: (screenY - this.viewOffsetY) / this.viewScale
     };
   };
   
@@ -770,9 +766,6 @@
     } else if (this.state.tool === 'erase') {
       this.eraseAt(pos);
       this.pushHistory();
-    } else if (this.state.tool === 'pan') {
-      this.state.isPanning = true;
-      this.state.panStart = { x: e.clientX, y: e.clientY };
     }
     this.render();
   };
@@ -790,13 +783,6 @@
       this.render();
     } else if (this.state.tool === 'erase' && e.buttons) {
       this.eraseAt(pos);
-      this.render();
-    } else if (this.state.tool === 'pan' && this.state.isPanning) {
-      const dx = e.clientX - this.state.panStart.x;
-      const dy = e.clientY - this.state.panStart.y;
-      this.state.panOffset.x += dx;
-      this.state.panOffset.y += dy;
-      this.state.panStart = { x: e.clientX, y: e.clientY };
       this.render();
     }
   };
@@ -824,8 +810,6 @@
       this.render();
     }
     
-    this.state.isPanning = false;
-    this.state.panStart = null;
     this.state.pointerId = null;
   };
   
@@ -912,30 +896,28 @@
   };
   
   TrackBuilder.prototype.fitToView = function() {
+    // With fixed world size, fitToView centers the track in the world
     const pts = this.state.points;
     if (!pts.length) {
-      this.state.zoom = 1;
-      this.state.panOffset = { x: 0, y: 0 };
       this.render();
       return;
     }
     
     const bbox = boundingBox(pts);
-    const padding = 80;
-    const trackWidth = bbox.width + padding * 2;
-    const trackHeight = bbox.height + padding * 2;
-    
-    const zoomX = this.displayWidth / trackWidth;
-    const zoomY = this.displayHeight / trackHeight;
-    this.state.zoom = Math.min(zoomX, zoomY, 2);
-    
     const centerX = (bbox.minX + bbox.maxX) / 2;
     const centerY = (bbox.minY + bbox.maxY) / 2;
+    const worldCenterX = WORLD_WIDTH / 2;
+    const worldCenterY = WORLD_HEIGHT / 2;
     
-    this.state.panOffset = {
-      x: this.displayWidth / 2 - centerX * this.state.zoom,
-      y: this.displayHeight / 2 - centerY * this.state.zoom
-    };
+    // Move all points to center of world
+    const dx = worldCenterX - centerX;
+    const dy = worldCenterY - centerY;
+    
+    this.pushHistory();
+    for (let i = 0; i < pts.length; i++) {
+      pts[i].x += dx;
+      pts[i].y += dy;
+    }
     
     this.render();
   };
@@ -960,9 +942,14 @@
     ctx.fillStyle = '#0a1628';
     ctx.fillRect(0, 0, this.displayWidth, this.displayHeight);
     
-    // Apply zoom and pan
-    ctx.translate(this.state.panOffset.x, this.state.panOffset.y);
-    ctx.scale(this.state.zoom, this.state.zoom);
+    // Apply view transform to fit fixed world in screen
+    ctx.translate(this.viewOffsetX, this.viewOffsetY);
+    ctx.scale(this.viewScale, this.viewScale);
+    
+    // Draw world boundary
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    ctx.lineWidth = 2 / this.viewScale;
+    ctx.strokeRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
     
     // Draw grid
     this.drawGrid(ctx);
@@ -974,29 +961,23 @@
   };
   
   TrackBuilder.prototype.drawGrid = function(ctx) {
-    const gridSize = 50;
-    const w = this.displayWidth / this.state.zoom + 1000;
-    const h = this.displayHeight / this.state.zoom + 1000;
-    const offsetX = -this.state.panOffset.x / this.state.zoom;
-    const offsetY = -this.state.panOffset.y / this.state.zoom;
+    const gridSize = 100;
     
     ctx.strokeStyle = 'rgba(255,255,255,0.03)';
-    ctx.lineWidth = 1 / this.state.zoom;
+    ctx.lineWidth = 1 / this.viewScale;
     
-    const startX = Math.floor(offsetX / gridSize) * gridSize;
-    const startY = Math.floor(offsetY / gridSize) * gridSize;
-    
-    for (let x = startX; x < offsetX + w; x += gridSize) {
+    // Draw grid within fixed world bounds
+    for (let x = 0; x <= WORLD_WIDTH; x += gridSize) {
       ctx.beginPath();
-      ctx.moveTo(x, offsetY);
-      ctx.lineTo(x, offsetY + h);
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, WORLD_HEIGHT);
       ctx.stroke();
     }
     
-    for (let y = startY; y < offsetY + h; y += gridSize) {
+    for (let y = 0; y <= WORLD_HEIGHT; y += gridSize) {
       ctx.beginPath();
-      ctx.moveTo(offsetX, y);
-      ctx.lineTo(offsetX + w, y);
+      ctx.moveTo(0, y);
+      ctx.lineTo(WORLD_WIDTH, y);
       ctx.stroke();
     }
   };
@@ -1192,7 +1173,6 @@
   TrackBuilder.prototype.close = function() {
     this.overlay.classList.add('hidden');
     this.state.isDrawing = false;
-    this.state.isPanning = false;
     this.state.pointerId = null;
     this.onClose();
   };
@@ -1203,8 +1183,6 @@
     this.state.historyIndex = -1;
     this.state.lastBakeResult = null;
     this.state.isClosed = false;
-    this.state.panOffset = { x: 0, y: 0 };
-    this.state.zoom = 0.25;
     this.state.roadWidth = DEFAULT_ROAD_WIDTH;
     this.state.surfaceType = 'tarmac-pro';
     this.state.trackName = 'Grand Prix 1';
