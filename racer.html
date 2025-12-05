@@ -3435,7 +3435,12 @@ const { useEffect, useRef, useState } = React;
             const isCustomTrack = !!(T.isCustom || (T.origin && T.origin === "sketcher") || /^custom:/i.test(name));
             const baseWorldWidth = (T.world && T.world.width) || BASE_WORLD_W;
             const baseWorldHeight = (T.world && T.world.height) || BASE_WORLD_H;
-            applyWorldSize(baseWorldWidth * GEO_SCALE, baseWorldHeight * GEO_SCALE);
+            
+            // For custom tracks, geometry is already scaled during bake - don't apply GEO_SCALE again
+            // For built-in tracks, apply GEO_SCALE to both world size and geometry
+            const effectiveGeoScale = isCustomTrack ? 1 : GEO_SCALE;
+            
+            applyWorldSize(baseWorldWidth * effectiveGeoScale, baseWorldHeight * effectiveGeoScale);
             activeTrack = { ...T, name: displayName, key: name, world: { width: W, height: H }, baseWorld: { width: baseWorldWidth, height: baseWorldHeight }, isCustom: isCustomTrack, roadWidth: (T.roadWidth || 80) * WIDTH_SCALE };
             activeTrackRef.current = activeTrack;
             startGrid = null;
@@ -3444,13 +3449,13 @@ const { useEffect, useRef, useState } = React;
 
             const baseCx = baseWorldWidth / 2;
             const baseCy = baseWorldHeight / 2;
-            const scaledPoints = T.points.map((p) => scalePoint(p, baseCx, baseCy, GEO_SCALE));
+            const scaledPoints = T.points.map((p) => scalePoint(p, baseCx, baseCy, effectiveGeoScale));
             const bb = bbox(scaledPoints);
             const dx = ((W - bb.w) / 2) - bb.minX;
             const dy = ((H - bb.h) / 2) - bb.minY;
             const transformPoint = (p) => {
               const src = p || { x: baseCx, y: baseCy };
-              const scaled = scalePoint(src, baseCx, baseCy, GEO_SCALE);
+              const scaled = scalePoint(src, baseCx, baseCy, effectiveGeoScale);
               return { x: scaled.x + dx, y: scaled.y + dy };
             };
             const transformPose = (pose, fallbackAngle) => {
@@ -3461,7 +3466,7 @@ const { useEffect, useRef, useState } = React;
             };
 
             const sourcePoints = Array.isArray(T.points) && T.points.length ? T.points : centerline;
-            const interpStep = Math.max(4, Math.round(6 * GEO_SCALE)); // keep physics segment count stable as tracks scale up
+            const interpStep = Math.max(4, Math.round(6 * (isCustomTrack ? 1 : GEO_SCALE))); // keep physics segment count stable as tracks scale up
             centerline = interpolate(sourcePoints.map(transformPoint), interpStep);
             const startSrc = (T.startLine && T.startLine.a && T.startLine.b) ? T.startLine : { a: sourcePoints[0], b: sourcePoints[1] || sourcePoints[0] };
             startLine = { a: transformPoint(startSrc.a), b: transformPoint(startSrc.b) };
@@ -3516,7 +3521,7 @@ const { useEffect, useRef, useState } = React;
               height: H,
               baseWorldWidth,
               baseWorldHeight,
-              worldScale: GEO_SCALE,
+              worldScale: effectiveGeoScale,
               roadWidth: ROAD_WIDTH,
               centerline: centerline.map((p) => ({ x: p.x, y: p.y })),
               maskCanvas: trackMap,
