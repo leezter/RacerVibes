@@ -11,11 +11,14 @@
   const ERASE_RADIUS = 24;
   
   // Width scale from racer.html - used to show accurate preview
+  // NOTE: These values must match SCALE_MIN/SCALE_MAX/SCALE_DEFAULT in racer.html
   const RACE_WIDTH_SCALE_DEFAULT = 2.5;
   const RACE_WIDTH_SCALE_MIN = 0.5;
   const RACE_WIDTH_SCALE_MAX = 3.0;
   
   // Car profiles matching racer.html for starting grid visualization
+  // NOTE: Only visual properties (width, length, color) are needed here
+  // These values must match CarProfiles in racer.html
   const CAR_PROFILES = {
     "GT":    { width: 24, length: 45, color: "#3949ab" },
     "F1":    { width: 18, length: 44, color: "#d32f2f" },
