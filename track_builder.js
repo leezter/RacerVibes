@@ -43,6 +43,39 @@
     } catch (_) {}
     return RACE_WIDTH_SCALE_DEFAULT;
   }
+
+  // Unit conversion helpers
+  // Prefer using PlanckWorld.meters if available (uses PPM_DEFAULT), otherwise fall back to 30 px/m
+  function pxToMeters(px) {
+    try {
+      // 1) Prefer PlanckWorld.meters if available (uses configured PPM)
+      if (typeof window !== 'undefined' && window.PlanckWorld && typeof window.PlanckWorld.meters === 'function') {
+        return window.PlanckWorld.meters(px);
+      }
+      // 2) If the page exposes SPEED_PX_PER_MPH (racer.html), derive ppm from it
+      if (typeof window !== 'undefined' && typeof window.SPEED_PX_PER_MPH === 'number') {
+        const ppmFromSpeed = window.SPEED_PX_PER_MPH * 2.23694; // reverse of SPEED_PX_PER_MPH = ppm / 2.23694
+        if (ppmFromSpeed > 0) return px / ppmFromSpeed;
+      }
+      // 3) If PlanckWorld.PPM_DEFAULT exists, use it
+      if (typeof window !== 'undefined' && window.PlanckWorld && typeof window.PlanckWorld.PPM_DEFAULT === 'number') {
+        return px / window.PlanckWorld.PPM_DEFAULT;
+      }
+    } catch (e) {}
+    // Last-resort fallback
+    const fallbackPpm = 30;
+    return px / fallbackPpm;
+  }
+
+  function pxToKilometres(px) {
+    return pxToMeters(px) / 1000;
+  }
+
+  function formatMeters(m) {
+    if (m >= 1000) return (m / 1000).toFixed(2) + ' km';
+    if (m >= 1) return m.toFixed(2) + ' m';
+    return (m * 100).toFixed(1) + ' cm';
+  }
   
   // Surface types matching the reference image
   const SURFACE_TYPES = [
@@ -566,7 +599,7 @@
             <div class="tb-stats">
               <div class="tb-stat">
                 <span class="tb-stat-label">LENGTH</span>
-                <span class="tb-stat-value" data-stat="length">0<small>px</small></span>
+                <span class="tb-stat-value" data-stat="length">0<small>km</small></span>
               </div>
               <div class="tb-stat">
                 <span class="tb-stat-label">TURNS (EST)</span>
@@ -596,7 +629,7 @@
                   <path d="M21 18H3"></path>
                 </svg>
                 <span>ROAD WIDTH</span>
-                <span class="tb-slider-value" data-label="roadWidth">${initialVisualWidth}px (visual)</span>
+                <span class="tb-slider-value" data-label="roadWidth">${formatMeters(pxToMeters(initialVisualWidth))}</span>
               </div>
               <input type="range" class="tb-slider" data-field="roadWidth" 
                      min="${ROAD_WIDTH_RANGE[0]}" max="${ROAD_WIDTH_RANGE[1]}" 
@@ -718,7 +751,8 @@
       // Show the visual width that will appear in the race
       const widthScale = readWidthScale();
       const visualWidth = Math.round(value * widthScale);
-      this.roadWidthLabel.textContent = visualWidth + 'px (visual)';
+      const meters = pxToMeters(visualWidth);
+      this.roadWidthLabel.textContent = formatMeters(meters);
       this.render();
     });
     
@@ -856,7 +890,9 @@
     }
     
     // Update stats
-    this.lengthStat.innerHTML = calculateTrackLength(pts) + '<small>px</small>';
+    const pxLen = calculateTrackLength(pts);
+    const km = pxToKilometres(pxLen);
+    this.lengthStat.innerHTML = km.toFixed(2) + ' <small>km</small>';
     this.turnsStat.textContent = estimateTurns(pts);
   };
   
@@ -1191,7 +1227,8 @@
     // Show the visual width that will appear in the race
     const widthScale = readWidthScale();
     const visualWidth = Math.round(DEFAULT_ROAD_WIDTH * widthScale);
-    this.roadWidthLabel.textContent = visualWidth + 'px (visual)';
+    const meters = pxToMeters(visualWidth);
+    this.roadWidthLabel.textContent = formatMeters(meters);
     this.trackNameInput.value = this.state.trackName;
     
     this.overlay.querySelectorAll('.tb-surface-btn').forEach(btn => {
