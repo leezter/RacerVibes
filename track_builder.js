@@ -10,6 +10,34 @@
   const SAMPLING_SPACING = 10;
   const ERASE_RADIUS = 24;
   
+  // Width scale from racer.html - used to show accurate preview
+  const RACE_WIDTH_SCALE_DEFAULT = 2.5;
+  const RACE_WIDTH_SCALE_MIN = 0.5;
+  const RACE_WIDTH_SCALE_MAX = 3.0;
+  
+  // Car profiles matching racer.html for starting grid visualization
+  const CAR_PROFILES = {
+    "GT":    { width: 24, length: 45, color: "#3949ab" },
+    "F1":    { width: 18, length: 44, color: "#d32f2f" },
+    "Rally": { width: 18, length: 34, color: "#2e7d32" },
+    "Truck": { width: 29, length: 60, color: "#f97316" }
+  };
+  const DEFAULT_CAR_PROFILE = CAR_PROFILES.GT;
+  const DEFAULT_AI_CAR_COUNT = 9;
+  
+  // Read width scale from localStorage (same key as racer.html)
+  function readWidthScale() {
+    try {
+      const stored = localStorage.getItem('widthScale');
+      if (stored === null) return RACE_WIDTH_SCALE_DEFAULT;
+      const parsed = parseFloat(stored);
+      if (Number.isFinite(parsed)) {
+        return Math.min(RACE_WIDTH_SCALE_MAX, Math.max(RACE_WIDTH_SCALE_MIN, parsed));
+      }
+    } catch (_) {}
+    return RACE_WIDTH_SCALE_DEFAULT;
+  }
+  
   // Surface types matching the reference image
   const SURFACE_TYPES = [
     { id: 'tarmac-pro', name: 'Tarmac Pro', color: '#4a5568', roadColor: '#6b7280' },
@@ -417,6 +445,10 @@
       `<button class="tb-surface-btn ${s.id === this.state.surfaceType ? 'active' : ''}" data-surface="${s.id}">${s.name}</button>`
     ).join('');
     
+    // Calculate initial visual road width
+    const initialWidthScale = readWidthScale();
+    const initialVisualWidth = Math.round(DEFAULT_ROAD_WIDTH * initialWidthScale);
+    
     const overlay = document.createElement('div');
     overlay.className = 'track-builder-overlay hidden';
     overlay.innerHTML = `
@@ -569,7 +601,7 @@
                   <path d="M21 18H3"></path>
                 </svg>
                 <span>ROAD WIDTH</span>
-                <span class="tb-slider-value" data-label="roadWidth">${DEFAULT_ROAD_WIDTH}px</span>
+                <span class="tb-slider-value" data-label="roadWidth">${initialVisualWidth}px (visual)</span>
               </div>
               <input type="range" class="tb-slider" data-field="roadWidth" 
                      min="${ROAD_WIDTH_RANGE[0]}" max="${ROAD_WIDTH_RANGE[1]}" 
@@ -697,7 +729,10 @@
     this.roadWidthSlider.addEventListener('input', () => {
       const value = clamp(parseFloat(this.roadWidthSlider.value) || DEFAULT_ROAD_WIDTH, ROAD_WIDTH_RANGE[0], ROAD_WIDTH_RANGE[1]);
       this.state.roadWidth = value;
-      this.roadWidthLabel.textContent = value + 'px';
+      // Show the visual width that will appear in the race
+      const widthScale = readWidthScale();
+      const visualWidth = Math.round(value * widthScale);
+      this.roadWidthLabel.textContent = visualWidth + 'px (visual)';
       this.render();
     });
     
@@ -994,12 +1029,17 @@
     const pts = this.state.points;
     if (!pts.length) return;
     
+    // Get the width scale from localStorage to match race appearance
+    const widthScale = readWidthScale();
+    // The visual road width should match how it appears in the race
+    const visualRoadWidth = this.state.roadWidth * widthScale;
+    
     ctx.save();
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     
     // Track outline (darker edge)
-    ctx.lineWidth = this.state.roadWidth + 8;
+    ctx.lineWidth = visualRoadWidth + 8;
     ctx.strokeStyle = 'rgba(255,255,255,0.2)';
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
@@ -1010,7 +1050,7 @@
     ctx.stroke();
     
     // Road surface
-    ctx.lineWidth = this.state.roadWidth;
+    ctx.lineWidth = visualRoadWidth;
     ctx.strokeStyle = surface.roadColor;
     ctx.beginPath();
     ctx.moveTo(pts[0].x, pts[0].y);
@@ -1038,6 +1078,121 @@
     ctx.beginPath();
     ctx.arc(pts[0].x, pts[0].y, 8, 0, Math.PI * 2);
     ctx.fill();
+    
+    // Draw starting grid when track is closed
+    if (this.state.isClosed && pts.length >= 2) {
+      this.drawStartingGrid(ctx, pts, visualRoadWidth);
+    }
+    
+    ctx.restore();
+  };
+  
+  // Draw visual representation of car lineup at starting line
+  TrackBuilder.prototype.drawStartingGrid = function(ctx, pts, visualRoadWidth) {
+    if (!pts || pts.length < 2) return;
+    
+    const first = pts[0];
+    const second = pts[1];
+    
+    // Calculate forward direction (tangent at start)
+    const dx = second.x - first.x;
+    const dy = second.y - first.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const tangent = { x: dx / len, y: dy / len };
+    const normal = { x: -tangent.y, y: tangent.x };
+    const angle = Math.atan2(tangent.y, tangent.x);
+    
+    // Get car profile (use GT as reference)
+    const car = DEFAULT_CAR_PROFILE;
+    const carWidth = car.width;
+    const carLength = car.length;
+    
+    // Calculate grid layout - 2 cars per row, staggered
+    const totalCars = 1 + DEFAULT_AI_CAR_COUNT; // player + AI cars
+    const rowGap = carLength * 1.4; // gap between rows
+    const lateralOffset = visualRoadWidth * 0.2; // offset from center line
+    
+    ctx.save();
+    
+    // Draw start/finish line
+    const halfWidth = visualRoadWidth * 0.5;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 4;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(first.x + normal.x * halfWidth, first.y + normal.y * halfWidth);
+    ctx.lineTo(first.x - normal.x * halfWidth, first.y - normal.y * halfWidth);
+    ctx.stroke();
+    
+    // Draw checkered pattern on start line
+    const checkSize = 8;
+    const numChecks = Math.floor(visualRoadWidth / checkSize);
+    for (let i = 0; i < numChecks; i++) {
+      const offset = -halfWidth + (i + 0.5) * (visualRoadWidth / numChecks);
+      const px = first.x + normal.x * offset;
+      const py = first.y + normal.y * offset;
+      if (i % 2 === 0) {
+        ctx.fillStyle = '#ffffff';
+      } else {
+        ctx.fillStyle = '#1a1a1a';
+      }
+      ctx.beginPath();
+      ctx.arc(px, py, checkSize * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    // Draw cars in grid formation
+    const colors = ["#3949ab", "#1e88e5", "#43a047", "#f4511e", "#8e24aa", "#00897b", "#fdd835", "#f97316", "#00acc1", "#c0ca33"];
+    
+    for (let i = 0; i < Math.min(totalCars, 10); i++) {
+      const row = Math.floor(i / 2);
+      const side = (i % 2 === 0) ? -1 : 1;
+      
+      // Position car behind the start line, staggered
+      const forwardOffset = (row + 1) * rowGap;
+      const sideOffset = side * lateralOffset;
+      
+      const carX = first.x - tangent.x * forwardOffset + normal.x * sideOffset;
+      const carY = first.y - tangent.y * forwardOffset + normal.y * sideOffset;
+      
+      // Draw car body
+      ctx.save();
+      ctx.translate(carX, carY);
+      ctx.rotate(angle);
+      
+      // Car shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.fillRect(-carLength / 2 + 2, -carWidth / 2 + 2, carLength, carWidth);
+      
+      // Car body
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.fillRect(-carLength / 2, -carWidth / 2, carLength, carWidth);
+      
+      // Windshield area (darker)
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(carLength * 0.1, -carWidth / 2 + 3, carLength * 0.25, carWidth - 6);
+      
+      // Highlight stripe
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      ctx.fillRect(-carLength / 2, -2, carLength, 4);
+      
+      // Player indicator (first car)
+      if (i === 0) {
+        ctx.strokeStyle = '#ffd700';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(-carLength / 2 - 2, -carWidth / 2 - 2, carLength + 4, carWidth + 4);
+      }
+      
+      ctx.restore();
+    }
+    
+    // Draw "START" label
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const labelOffset = halfWidth + 20;
+    ctx.fillText('START', first.x + normal.x * labelOffset, first.y + normal.y * labelOffset);
     
     ctx.restore();
   };
@@ -1070,7 +1225,10 @@
     
     this.roadWidthSlider.value = DEFAULT_ROAD_WIDTH;
     this.scaleSlider.value = DEFAULT_SCALE;
-    this.roadWidthLabel.textContent = DEFAULT_ROAD_WIDTH + 'px';
+    // Show the visual width that will appear in the race
+    const widthScale = readWidthScale();
+    const visualWidth = Math.round(DEFAULT_ROAD_WIDTH * widthScale);
+    this.roadWidthLabel.textContent = visualWidth + 'px (visual)';
     this.scaleLabel.textContent = DEFAULT_SCALE.toFixed(1) + 'x';
     this.trackNameInput.value = this.state.trackName;
     
