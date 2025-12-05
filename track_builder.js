@@ -424,7 +424,7 @@
       lastBakeResult: null,
       isClosed: false,
       panOffset: { x: 0, y: 0 },
-      zoom: 1,
+      zoom: 0.25,
       isPanning: false,
       panStart: null,
       trackName: 'Grand Prix 1'
@@ -1204,7 +1204,7 @@
     this.state.lastBakeResult = null;
     this.state.isClosed = false;
     this.state.panOffset = { x: 0, y: 0 };
-    this.state.zoom = 1;
+    this.state.zoom = 0.25;
     this.state.roadWidth = DEFAULT_ROAD_WIDTH;
     this.state.surfaceType = 'tarmac-pro';
     this.state.trackName = 'Grand Prix 1';
