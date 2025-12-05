@@ -36,6 +36,8 @@
       .btn.brk   { right:12px; bottom:24px; }
   .btn.gyro  { right:12px; top:12px; width:44px; height:32px; border-radius:8px; font-size:11px; }
       @media (min-width: 900px) { .hud { display:none; } }
+  .quit-btn { position:fixed; right:12px; bottom:12px; z-index:36; width:44px; height:44px; border-radius:8px; background:rgba(15,23,42,0.96); color:#e2e8f0; display:grid; place-items:center; cursor:pointer; box-shadow:0 8px 20px rgba(0,0,0,.45); font-size:18px; }
+  .quit-btn:active { transform:translateY(1px); }
       /* Portrait orientation warning */
       .portrait-warning { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(10,10,10,0.94); color:#fff; z-index:10; text-align:center; padding:24px; }
       .portrait-warning .box { max-width:520px; border:1px solid #2a2a2a; border-radius:12px; padding:18px; background:#111; }
@@ -100,6 +102,9 @@
       <div class="btn gyro"   title="Toggle Gyro">GY</div>
     </div>
 
+    <!-- Quit button (bottom-right) -->
+    <div id="quitBtn" class="quit-btn" title="Quit to menu" aria-label="Quit to menu">⎋</div>
+
     <script src="modes/registry.js"></script>
     <script src="modes/grip.js"></script>
     <script type="text/babel" data-presets="env,react">
@@ -123,6 +128,18 @@ function getViewportSize(){
   const vh = (doc && doc.clientHeight) || window.innerHeight || 0;
   return { w: vw, h: vh };
 }
+
+// Quit button handler: navigate back to start menu (delegated click — robust to script timing)
+document.addEventListener('click', (e) => {
+  try {
+    const target = e.target;
+    if (!target) return;
+    const btn = target.closest ? target.closest('#quitBtn') : null;
+    if (btn) {
+      window.location.href = 'racer_start_menu.html';
+    }
+  } catch (_) {}
+});
  
 // ===== Skid marks =====
 let skids = []; // {x1,y1,x2,y2, life}
@@ -168,7 +185,14 @@ function ensureAudio() {
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     const ctx = new AudioCtx();
-    const master = ctx.createGain(); master.gain.value = 0.9; master.connect(ctx.destination);
+    const master = ctx.createGain();
+    // Respect saved master volume (stored 0.0 - 1.0 in localStorage as 'masterVolume')
+    try {
+      const mvRaw = localStorage.getItem('masterVolume');
+      const mv = mvRaw === null ? 0.9 : Number(mvRaw);
+      master.gain.value = isNaN(mv) ? 0.9 : mv;
+    } catch (e) { master.gain.value = 0.9; }
+    master.connect(ctx.destination);
 
     // Engine: two oscillators + mild drive + lowpass "intake" filter
     const engGain = ctx.createGain(); engGain.gain.value = 0.0; engGain.connect(master);

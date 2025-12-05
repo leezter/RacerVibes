@@ -1861,6 +1861,16 @@
                   </div>
                   <div class="toggle-switch on" id="sfxToggle"></div>
                 </div>
+                <div class="setting-row">
+                  <div class="setting-info">
+                    <div class="setting-label">Master Volume</div>
+                    <div class="setting-desc">Overall sound level</div>
+                  </div>
+                  <div class="setting-control" style="display:flex;align-items:center;gap:8px;">
+                    <input type="range" id="masterVolume" min="0" max="100" step="1" style="width:160px;">
+                    <div class="val" id="masterVolumeVal">90</div>
+                  </div>
+                </div>
               </div>
             </div>
             
@@ -2099,6 +2109,17 @@
             }
           });
         });
+
+        // Master volume slider
+        const masterSlider = $('masterVolume');
+        const masterVolumeVal = $('masterVolumeVal');
+        if (masterSlider) {
+          masterSlider.addEventListener('input', () => {
+            const v = Number(masterSlider.value || 90);
+            if (masterVolumeVal) masterVolumeVal.textContent = `${v}`;
+            try { localStorage.setItem('masterVolume', (v/100).toString()); } catch(_) {}
+          });
+        }
         
         // Load saved settings
         function loadSettings() {
@@ -2120,6 +2141,16 @@
             if (gyroToggle) {
               gyroToggle.classList.toggle('on', gyroEnabled === 'true');
             }
+            // Load master volume (0.0 - 1.0 stored)
+            try {
+              const mvRaw = localStorage.getItem('masterVolume');
+              const mv = mvRaw === null ? 0.9 : Number(mvRaw);
+              const mvEl = $('masterVolume');
+              const mvValEl = $('masterVolumeVal');
+              const display = Math.round((isNaN(mv) ? 0.9 : mv) * 100);
+              if (mvEl) mvEl.value = display;
+              if (mvValEl) mvValEl.textContent = `${display}`;
+            } catch(_) {}
           } catch(_) {}
         }
         
