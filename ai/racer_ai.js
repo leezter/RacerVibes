@@ -28,6 +28,26 @@
   const LOOKAHEAD_BLEND_WEIGHT = 0.65;  // Weight for looking ahead to anticipate turns (smoother)
   const LATERAL_CORRECTION_GAIN = 0.003; // Very gentle correction to avoid oscillation
 
+  // Braking physics constants for corner anticipation
+  const BRAKING_CFG = {
+    deceleration: 1800,      // px/s^2 - assumed braking deceleration (tuned for grip)
+    safetyMargin: 1.15,      // multiplier on required braking distance for safety
+    minBrakingLookahead: 80, // minimum pixels to scan ahead for corners
+    maxBrakingLookahead: 400,// maximum pixels to scan ahead (limit computation)
+    scanStep: 12,            // pixels between scan samples along racing line
+    cornerSpeedBuffer: 10,   // px/s extra margin below corner target speed (reduced)
+    minDistanceEpsilon: 1,   // minimum distance to prevent division by zero
+    minSpeedDrop: 40,        // minimum speed difference to trigger anticipatory braking (px/s)
+    // Anticipatory braking thresholds
+    brakeStartUrgency: 0.6,  // urgency threshold to start anticipatory braking (increased)
+    brakeFullRange: 0.4,     // range for progressive braking (1.0 - brakeStartUrgency)
+    throttleCutFactor: 0.4,  // how aggressively to cut throttle based on urgency (reduced)
+    maxThrottleCut: 0.7,     // maximum throttle reduction (reduced)
+    // Emergency braking
+    emergencyUrgency: 1.0,   // urgency threshold for emergency braking
+    emergencyBrakeBoost: 1.2 // multiplier on brake force in emergency (reduced)
+  };
+
   const SKILL_PRESETS = {
     easy: {
       maxThrottle: 0.85,
@@ -41,7 +61,9 @@
       searchWindow: 48,
       speedHysteresis: 14,
       cornerEntryFactor: 0.45,
-      minTargetSpeed: 90
+      minTargetSpeed: 90,
+      brakingDecel: 1400,      // easier AI brakes less aggressively
+      brakingSafety: 1.3       // more safety margin
     },
     medium: {
       maxThrottle: 0.95,
@@ -55,7 +77,9 @@
       searchWindow: 56,
       speedHysteresis: 10,
       cornerEntryFactor: 0.6,
-      minTargetSpeed: 110
+      minTargetSpeed: 110,
+      brakingDecel: 1600,
+      brakingSafety: 1.2
     },
     hard: {
       maxThrottle: 1.2,
@@ -69,7 +93,9 @@
       searchWindow: 64,
       speedHysteresis: 7,
       cornerEntryFactor: 0.75,
-      minTargetSpeed: 120
+      minTargetSpeed: 120,
+      brakingDecel: 1900,      // harder AI brakes more precisely
+      brakingSafety: 1.1       // less safety margin
     }
   };
 
@@ -439,6 +465,92 @@
     return a;
   }
 
+  /**
+   * Scan ahead along the racing line to find the minimum target speed within braking range.
+   * Returns { minSpeed, distance, urgency } where:
+   * - minSpeed: the lowest targetSpeed found ahead
+   * - distance: how far ahead that slowest point is (px)
+   * - urgency: 0-1 value indicating how urgently we need to brake
+   * 
+   * The key insight: if we're going at currentSpeed and need to reach minSpeed,
+   * we need to brake starting at: d = (v_current² - v_min²) / (2 * deceleration)
+   */
+  function scanAheadForCorners(line, startIdx, currentSpeed, skill, speedScale) {
+    if (!line || !line.length) return null;
+    
+    const count = line.length;
+    const decel = (skill && skill.brakingDecel) || BRAKING_CFG.deceleration;
+    const safety = (skill && skill.brakingSafety) || BRAKING_CFG.safetyMargin;
+    const minTargetSpeed = (skill && skill.minTargetSpeed) || 90;
+    
+    // Calculate how far we could theoretically need to look ahead
+    // braking distance = v² / (2*a), so max lookahead scales with speed squared
+    const speedSq = currentSpeed * currentSpeed;
+    const theoreticalBrakingDist = speedSq / (2 * decel) * safety;
+    const maxLookahead = clamp(
+      theoreticalBrakingDist + BRAKING_CFG.minBrakingLookahead,
+      BRAKING_CFG.minBrakingLookahead,
+      BRAKING_CFG.maxBrakingLookahead
+    );
+    
+    let dist = 0;
+    let curIdx = ((startIdx % count) + count) % count;
+    let minSpeed = currentSpeed;
+    let minSpeedDist = 0;
+    let prevPt = line[curIdx];
+    
+    // Scan along the racing line
+    while (dist < maxLookahead) {
+      const nextIdx = (curIdx + 1) % count;
+      const nextPt = line[nextIdx];
+      const segLen = Math.hypot(nextPt.x - prevPt.x, nextPt.y - prevPt.y);
+      dist += segLen;
+      
+      // Get target speed at this point, scaled by maxThrottle
+      const nodeSpeed = nextPt.targetSpeed || minTargetSpeed;
+      const scaledSpeed = Math.min(MAX_TARGET_SPEED, nodeSpeed * speedScale);
+      
+      // Track the minimum speed we'll encounter
+      if (scaledSpeed < minSpeed) {
+        minSpeed = scaledSpeed;
+        minSpeedDist = dist;
+      }
+      
+      prevPt = nextPt;
+      curIdx = nextIdx;
+      
+      // If we've looped all the way around, stop
+      if (curIdx === startIdx) break;
+    }
+    
+    // Apply corner speed buffer for safety
+    minSpeed = Math.max(minTargetSpeed, minSpeed - BRAKING_CFG.cornerSpeedBuffer);
+    
+    // Calculate required braking distance from current speed to minSpeed
+    const speedDelta = currentSpeed - minSpeed;
+    
+    // Only trigger anticipatory braking if there's a significant speed drop required
+    if (speedDelta <= BRAKING_CFG.minSpeedDrop) {
+      // Speed difference is too small to warrant anticipatory braking
+      return { minSpeed, distance: minSpeedDist, urgency: 0, requiredBrakeDist: 0 };
+    }
+    
+    // Physics: d = (currentSpeed² - minSpeed²) / (2 * decel)
+    const requiredBrakeDist = (speedSq - minSpeed * minSpeed) / (2 * decel) * safety;
+    
+    // Urgency: how close are we to needing to brake?
+    // urgency = 1 when we should have already started braking
+    // urgency = 0 when we have plenty of distance
+    const urgency = clamp(requiredBrakeDist / Math.max(minSpeedDist, BRAKING_CFG.minDistanceEpsilon), 0, 1.5);
+    
+    return {
+      minSpeed,
+      distance: minSpeedDist,
+      requiredBrakeDist,
+      urgency
+    };
+  }
+
   function createController(initialLine, preset = 'medium') {
     let line = Array.isArray(initialLine) ? initialLine : [];
     let idx = 0;
@@ -526,12 +638,57 @@
           const speedScale = mapThrottleToSpeedScale(skill.maxThrottle);
           const scaledCurrent = Math.min(MAX_TARGET_SPEED, rawCurrent * speedScale);
           const scaledFuture = Math.min(MAX_TARGET_SPEED, rawFuture * speedScale);
-          const targetSpeed = Math.max(skill.minTargetSpeed, Math.min(scaledCurrent, scaledFuture) - skill.cornerMargin);
-          const speedError = targetSpeed - speed;
-          const throttleGain = clamp(skill.maxThrottle ?? 1, 0.1, 2);
-          let throttle = speedError > 0 ? clamp(speedError / Math.max(targetSpeed, 60), 0, 1) * throttleGain : 0;
-          let brake = speedError < 0 ? clamp(-speedError / Math.max(targetSpeed, 60), 0, 1) * skill.brakeAggro : 0;
+          
+        // === Enhanced corner anticipation using physics-based braking ===
+        // Scan ahead along the racing line to find the minimum speed we'll need
+        const cornerScan = scanAheadForCorners(line, idx, speed, skill, speedScale);
+        
+        let targetSpeed;
+        let anticipatoryBrake = 0;
+        let anticipatoryThrottleCut = 0;
+        
+        if (cornerScan && cornerScan.urgency > 0) {
+          // We have a corner coming up that requires slowing down
+          const { minSpeed, urgency } = cornerScan;
+          
+          // Target speed should consider the upcoming corner's requirements
+          // Blend between current segment speed and the corner's minimum speed based on urgency
+          const effectiveMinSpeed = Math.max(skill.minTargetSpeed, minSpeed);
+          targetSpeed = Math.max(skill.minTargetSpeed, Math.min(scaledCurrent, scaledFuture, effectiveMinSpeed) - skill.cornerMargin);
+          
+          // Calculate braking intensity based on how urgent the situation is
+          // Only start braking when urgency exceeds threshold - don't slow down too early
+          if (urgency > BRAKING_CFG.brakeStartUrgency) {
+            // Start anticipatory braking
+            // Progressive braking: gentle at first, harder as we get closer
+            const brakeIntensity = clamp((urgency - BRAKING_CFG.brakeStartUrgency) / BRAKING_CFG.brakeFullRange, 0, 1);
+            anticipatoryBrake = brakeIntensity * skill.brakeAggro;
+            
+            // Only cut throttle when actively braking (past threshold)
+            // Use the brake intensity (not raw urgency) for throttle cut
+            anticipatoryThrottleCut = clamp(brakeIntensity * BRAKING_CFG.throttleCutFactor, 0, BRAKING_CFG.maxThrottleCut);
+          }
+          
+          // Emergency braking if we're very late
+          if (urgency > BRAKING_CFG.emergencyUrgency) {
+            anticipatoryBrake = Math.min(1, anticipatoryBrake * BRAKING_CFG.emergencyBrakeBoost);
+            anticipatoryThrottleCut = BRAKING_CFG.maxThrottleCut;
+          }
+        } else {
+          // No significant corner ahead, use the simpler calculation
+          targetSpeed = Math.max(skill.minTargetSpeed, Math.min(scaledCurrent, scaledFuture) - skill.cornerMargin);
+        }
+        
+        const speedError = targetSpeed - speed;
+        const throttleGain = clamp(skill.maxThrottle ?? 1, 0.1, 2);
+        let throttle = speedError > 0 ? clamp(speedError / Math.max(targetSpeed, 60), 0, 1) * throttleGain : 0;
+        let brake = speedError < 0 ? clamp(-speedError / Math.max(targetSpeed, 60), 0, 1) * skill.brakeAggro : 0;
 
+        // Apply anticipatory braking from corner scanning
+        brake = Math.max(brake, anticipatoryBrake);
+        throttle *= (1 - anticipatoryThrottleCut);
+
+        // Legacy futureDrop anticipation (kept as backup, but corner scanning should handle most cases)
         const futureDrop = scaledCurrent - scaledFuture;
         if (futureDrop > 0) {
           const anticipation = clamp(futureDrop / 160, 0, 1);
