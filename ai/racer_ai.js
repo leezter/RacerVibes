@@ -35,16 +35,17 @@
     minBrakingLookahead: 80, // minimum pixels to scan ahead for corners
     maxBrakingLookahead: 400,// maximum pixels to scan ahead (limit computation)
     scanStep: 12,            // pixels between scan samples along racing line
-    cornerSpeedBuffer: 20,   // px/s extra margin below corner target speed
+    cornerSpeedBuffer: 10,   // px/s extra margin below corner target speed (reduced)
     minDistanceEpsilon: 1,   // minimum distance to prevent division by zero
+    minSpeedDrop: 40,        // minimum speed difference to trigger anticipatory braking (px/s)
     // Anticipatory braking thresholds
-    brakeStartUrgency: 0.3,  // urgency threshold to start anticipatory braking
-    brakeFullRange: 0.7,     // range for progressive braking (1.0 - brakeStartUrgency)
-    throttleCutFactor: 0.8,  // how aggressively to cut throttle based on urgency
-    maxThrottleCut: 0.95,    // maximum throttle reduction
+    brakeStartUrgency: 0.6,  // urgency threshold to start anticipatory braking (increased)
+    brakeFullRange: 0.4,     // range for progressive braking (1.0 - brakeStartUrgency)
+    throttleCutFactor: 0.4,  // how aggressively to cut throttle based on urgency (reduced)
+    maxThrottleCut: 0.7,     // maximum throttle reduction (reduced)
     // Emergency braking
     emergencyUrgency: 1.0,   // urgency threshold for emergency braking
-    emergencyBrakeBoost: 1.3 // multiplier on brake force in emergency
+    emergencyBrakeBoost: 1.2 // multiplier on brake force in emergency (reduced)
   };
 
   const SKILL_PRESETS = {
@@ -527,8 +528,10 @@
     
     // Calculate required braking distance from current speed to minSpeed
     const speedDelta = currentSpeed - minSpeed;
-    if (speedDelta <= 0) {
-      // Already slow enough for upcoming corners
+    
+    // Only trigger anticipatory braking if there's a significant speed drop required
+    if (speedDelta <= BRAKING_CFG.minSpeedDrop) {
+      // Speed difference is too small to warrant anticipatory braking
       return { minSpeed, distance: minSpeedDist, urgency: 0, requiredBrakeDist: 0 };
     }
     
@@ -654,16 +657,16 @@
           targetSpeed = Math.max(skill.minTargetSpeed, Math.min(scaledCurrent, scaledFuture, effectiveMinSpeed) - skill.cornerMargin);
           
           // Calculate braking intensity based on how urgent the situation is
-          // urgency > emergencyUrgency means we should have already started braking
-          // urgency = 0.5 means we're halfway to needing full brakes
+          // Only start braking when urgency exceeds threshold - don't slow down too early
           if (urgency > BRAKING_CFG.brakeStartUrgency) {
             // Start anticipatory braking
             // Progressive braking: gentle at first, harder as we get closer
             const brakeIntensity = clamp((urgency - BRAKING_CFG.brakeStartUrgency) / BRAKING_CFG.brakeFullRange, 0, 1);
             anticipatoryBrake = brakeIntensity * skill.brakeAggro;
             
-            // Also cut throttle proportionally to urgency
-            anticipatoryThrottleCut = clamp(urgency * BRAKING_CFG.throttleCutFactor, 0, BRAKING_CFG.maxThrottleCut);
+            // Only cut throttle when actively braking (past threshold)
+            // Use the brake intensity (not raw urgency) for throttle cut
+            anticipatoryThrottleCut = clamp(brakeIntensity * BRAKING_CFG.throttleCutFactor, 0, BRAKING_CFG.maxThrottleCut);
           }
           
           // Emergency braking if we're very late
