@@ -8,6 +8,15 @@
   const SCALE_RANGE = [0.6, 2.5];
   const ERASE_RADIUS = 24;
   const SAMPLING_SPACING = 10;
+  
+  // Canvas and world coordinate system
+  const BASE_WORLD_WIDTH = 960;
+  const BASE_WORLD_HEIGHT = 640;
+  
+  // Smoothing algorithm constants
+  const MAX_RADIUS_ENFORCEMENT_ITERATIONS = 200;
+  const MAX_BLEND_STRENGTH = 0.7;
+  const BLEND_SCALE_FACTOR = 0.3;
 
   // Track texture options available in the builder
   const TEXTURE_OPTIONS = [
@@ -150,7 +159,7 @@
     return angle / avgLen;
   }
 
-  function enforceMinimumRadius(points, minRadius, maxIterations = 200) {
+  function enforceMinimumRadius(points, minRadius, maxIterations = MAX_RADIUS_ENFORCEMENT_ITERATIONS) {
     let pts = ensureClosed(points).map(p => ({ x: p.x, y: p.y }));
     const n = pts.length;
     if (n < 4) return pts;
@@ -175,7 +184,7 @@
           const violation = curvature / maxCurvature;
           maxViolation = Math.max(maxViolation, violation);
           
-          const blend = Math.min(0.7, 0.3 * violation);
+          const blend = Math.min(MAX_BLEND_STRENGTH, BLEND_SCALE_FACTOR * violation);
           const midX = (prev.x + nextPt.x) / 2;
           const midY = (prev.y + nextPt.y) / 2;
           
@@ -955,11 +964,9 @@
     // Scale points to match canvas size to world size
     const canvasWidth = this.displayWidth;
     const canvasHeight = this.displayHeight;
-    const baseWorldWidth = 960;
-    const baseWorldHeight = 640;
     
-    const scaleX = baseWorldWidth / canvasWidth;
-    const scaleY = baseWorldHeight / canvasHeight;
+    const scaleX = BASE_WORLD_WIDTH / canvasWidth;
+    const scaleY = BASE_WORLD_HEIGHT / canvasHeight;
     
     let processed = closedRaw.map(p => ({
       x: p.x * scaleX,
@@ -983,8 +990,8 @@
       y: p.y * this.state.scale
     }));
     
-    const worldWidth = Math.round(baseWorldWidth * this.state.scale);
-    const worldHeight = Math.round(baseWorldHeight * this.state.scale);
+    const worldWidth = Math.round(BASE_WORLD_WIDTH * this.state.scale);
+    const worldHeight = Math.round(BASE_WORLD_HEIGHT * this.state.scale);
     const meta = computeTrackMeta(scaled, roadWidth);
     const mask = makeMask(scaled, roadWidth, worldWidth, worldHeight);
     const thumbnail = makeThumbnail(scaled, worldWidth, worldHeight);

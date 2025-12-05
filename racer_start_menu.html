@@ -1833,7 +1833,7 @@
           if (createTrackCard) {
             createTrackCard.addEventListener('click', () => {
               // Use new Track Builder if available
-              if (typeof trackBuilder !== 'undefined' && trackBuilder) {
+              if (trackBuilder) {
                 trackBuilder.reset();
                 trackBuilder.open();
               } else if (trackEditor) {
