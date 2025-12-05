@@ -2,10 +2,8 @@
   'use strict';
   
   // ===== Constants =====
-  const DEFAULT_ROAD_WIDTH = 48;
-  const DEFAULT_SCALE = 2.5;
-  const ROAD_WIDTH_RANGE = [30, 100];
-  const SCALE_RANGE = [0.6, 3.5];
+  const DEFAULT_ROAD_WIDTH = 120;
+  const ROAD_WIDTH_RANGE = [60, 140];
   const MIN_POINTS = 32;
   const SAMPLING_SPACING = 10;
   const ERASE_RADIUS = 24;
@@ -418,7 +416,6 @@
       tool: 'draw',
       points: [],
       roadWidth: DEFAULT_ROAD_WIDTH,
-      scale: DEFAULT_SCALE,
       surfaceType: 'tarmac-pro',
       isDrawing: false,
       pointerId: null,
@@ -611,22 +608,6 @@
                      value="${DEFAULT_ROAD_WIDTH}" />
             </div>
             
-            <!-- World Scale Slider -->
-            <div class="tb-section">
-              <div class="tb-slider-header">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="2" y1="12" x2="22" y2="12"></line>
-                  <path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"></path>
-                </svg>
-                <span>WORLD SCALE</span>
-                <span class="tb-slider-value" data-label="scale">${DEFAULT_SCALE.toFixed(1)}x</span>
-              </div>
-              <input type="range" class="tb-slider" data-field="scale" 
-                     min="${SCALE_RANGE[0]}" max="${SCALE_RANGE[1]}" 
-                     value="${DEFAULT_SCALE}" step="0.1" />
-            </div>
-            
             <!-- Pro Tips -->
             <div class="tb-tips">
               <p>Pro Tip: Close the loop to enable baking. Use smooth strokes for better racing lines.</p>
@@ -652,9 +633,7 @@
     this.circuitStatus = overlay.querySelector('.tb-circuit-status');
     this.trackNameInput = overlay.querySelector('.tb-track-name-input');
     this.roadWidthSlider = overlay.querySelector('[data-field="roadWidth"]');
-    this.scaleSlider = overlay.querySelector('[data-field="scale"]');
     this.roadWidthLabel = overlay.querySelector('[data-label="roadWidth"]');
-    this.scaleLabel = overlay.querySelector('[data-label="scale"]');
     this.lengthStat = overlay.querySelector('[data-stat="length"]');
     this.turnsStat = overlay.querySelector('[data-stat="turns"]');
     this.propertiesPanel = overlay.querySelector('.tb-properties-panel');
@@ -739,14 +718,6 @@
       this.render();
     });
     
-    this.scaleSlider.addEventListener('input', () => {
-      const value = clamp(parseFloat(this.scaleSlider.value) || DEFAULT_SCALE, SCALE_RANGE[0], SCALE_RANGE[1]);
-      this.state.scale = value;
-      this.scaleLabel.textContent = value.toFixed(1) + 'x';
-      // Re-render to show the updated track scale visually
-      this.render();
-    });
-    
     // Track name
     this.trackNameInput.addEventListener('input', () => {
       this.state.trackName = this.trackNameInput.value || 'Grand Prix 1';
@@ -779,15 +750,10 @@
     const rect = this.canvas.getBoundingClientRect();
     const x = (e.clientX - rect.left);
     const y = (e.clientY - rect.top);
-    // Transform by pan and zoom to get display coordinates
-    const displayX = (x - this.state.panOffset.x) / this.state.zoom;
-    const displayY = (y - this.state.panOffset.y) / this.state.zoom;
-    // Convert from display (scaled) coordinates back to raw point coordinates
-    // since we store points in raw space but display them scaled
-    const worldScale = this.state.scale;
+    // Transform by pan and zoom
     return {
-      x: displayX / worldScale,
-      y: displayY / worldScale
+      x: (x - this.state.panOffset.x) / this.state.zoom,
+      y: (y - this.state.panOffset.y) / this.state.zoom
     };
   };
   
@@ -905,9 +871,8 @@
       this.circuitStatus.classList.add('hidden');
     }
     
-    // Update stats - show the actual scaled track length (what will appear in race)
-    const scaledPts = pts.map(p => ({ x: p.x * this.state.scale, y: p.y * this.state.scale }));
-    this.lengthStat.innerHTML = calculateTrackLength(scaledPts) + '<small>px</small>';
+    // Update stats
+    this.lengthStat.innerHTML = calculateTrackLength(pts) + '<small>px</small>';
     this.turnsStat.textContent = estimateTurns(pts);
   };
   
@@ -955,10 +920,7 @@
       return;
     }
     
-    // Apply world scale to points for accurate bounding box calculation
-    const worldScale = this.state.scale;
-    const scaledPts = pts.map(p => ({ x: p.x * worldScale, y: p.y * worldScale }));
-    const bbox = boundingBox(scaledPts);
+    const bbox = boundingBox(pts);
     const padding = 80;
     const trackWidth = bbox.width + padding * 2;
     const trackHeight = bbox.height + padding * 2;
@@ -1045,16 +1007,7 @@
     
     // Get the width scale from localStorage to match race appearance
     const widthScale = readWidthScale();
-    // Apply world scale to geometry AND width scale to road width
-    // This makes the preview match what will appear in the race
-    const worldScale = this.state.scale;
     const visualRoadWidth = this.state.roadWidth * widthScale;
-    
-    // Scale points by world scale to show accurate track size
-    const scaledPts = pts.map(p => ({
-      x: p.x * worldScale,
-      y: p.y * worldScale
-    }));
     
     ctx.save();
     ctx.lineJoin = 'round';
@@ -1064,9 +1017,9 @@
     ctx.lineWidth = visualRoadWidth + 8;
     ctx.strokeStyle = 'rgba(255,255,255,0.2)';
     ctx.beginPath();
-    ctx.moveTo(scaledPts[0].x, scaledPts[0].y);
-    for (let i = 1; i < scaledPts.length; i++) {
-      ctx.lineTo(scaledPts[i].x, scaledPts[i].y);
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) {
+      ctx.lineTo(pts[i].x, pts[i].y);
     }
     if (this.state.isClosed) ctx.closePath();
     ctx.stroke();
@@ -1075,9 +1028,9 @@
     ctx.lineWidth = visualRoadWidth;
     ctx.strokeStyle = surface.roadColor;
     ctx.beginPath();
-    ctx.moveTo(scaledPts[0].x, scaledPts[0].y);
-    for (let i = 1; i < scaledPts.length; i++) {
-      ctx.lineTo(scaledPts[i].x, scaledPts[i].y);
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) {
+      ctx.lineTo(pts[i].x, pts[i].y);
     }
     if (this.state.isClosed) ctx.closePath();
     ctx.stroke();
@@ -1087,9 +1040,9 @@
     ctx.strokeStyle = 'rgba(255,255,255,0.6)';
     ctx.setLineDash([12, 12]);
     ctx.beginPath();
-    ctx.moveTo(scaledPts[0].x, scaledPts[0].y);
-    for (let i = 1; i < scaledPts.length; i++) {
-      ctx.lineTo(scaledPts[i].x, scaledPts[i].y);
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) {
+      ctx.lineTo(pts[i].x, pts[i].y);
     }
     if (this.state.isClosed) ctx.closePath();
     ctx.stroke();
@@ -1098,25 +1051,25 @@
     // Start marker
     ctx.fillStyle = '#10b981';
     ctx.beginPath();
-    ctx.arc(scaledPts[0].x, scaledPts[0].y, 8, 0, Math.PI * 2);
+    ctx.arc(pts[0].x, pts[0].y, 8, 0, Math.PI * 2);
     ctx.fill();
     
     // Draw starting grid when track is closed
-    if (this.state.isClosed && scaledPts.length >= 2) {
-      this.drawStartingGrid(ctx, scaledPts, visualRoadWidth);
+    if (this.state.isClosed && pts.length >= 2) {
+      this.drawStartingGrid(ctx, pts, visualRoadWidth);
     }
     
     ctx.restore();
   };
   
   // Draw visual representation of car lineup at starting line
-  // scaledPts: points already scaled by world scale
-  // visualRoadWidth: road width already scaled by width scale
-  TrackBuilder.prototype.drawStartingGrid = function(ctx, scaledPts, visualRoadWidth) {
-    if (!scaledPts || scaledPts.length < 2) return;
+  // pts: track centerline points
+  // visualRoadWidth: road width scaled by width scale
+  TrackBuilder.prototype.drawStartingGrid = function(ctx, pts, visualRoadWidth) {
+    if (!pts || pts.length < 2) return;
     
-    const first = scaledPts[0];
-    const second = scaledPts[1];
+    const first = pts[0];
+    const second = pts[1];
     
     // Calculate forward direction (tangent at start)
     const dx = second.x - first.x;
@@ -1253,17 +1206,14 @@
     this.state.panOffset = { x: 0, y: 0 };
     this.state.zoom = 1;
     this.state.roadWidth = DEFAULT_ROAD_WIDTH;
-    this.state.scale = DEFAULT_SCALE;
     this.state.surfaceType = 'tarmac-pro';
     this.state.trackName = 'Grand Prix 1';
     
     this.roadWidthSlider.value = DEFAULT_ROAD_WIDTH;
-    this.scaleSlider.value = DEFAULT_SCALE;
     // Show the visual width that will appear in the race
     const widthScale = readWidthScale();
     const visualWidth = Math.round(DEFAULT_ROAD_WIDTH * widthScale);
     this.roadWidthLabel.textContent = visualWidth + 'px (visual)';
-    this.scaleLabel.textContent = DEFAULT_SCALE.toFixed(1) + 'x';
     this.trackNameInput.value = this.state.trackName;
     
     this.overlay.querySelectorAll('.tb-surface-btn').forEach(btn => {
@@ -1302,31 +1252,27 @@
     processed = relaxPath(processed, 15, 0.3);
     
     const intersections = findSelfIntersections(processed);
-    const scaled = processed.map(p => ({
-      x: p.x * this.state.scale,
-      y: p.y * this.state.scale
-    }));
     
-    const bbox = boundingBox(scaled);
+    const bbox = boundingBox(processed);
     const worldWidth = Math.round(bbox.width + roadWidth * 4);
     const worldHeight = Math.round(bbox.height + roadWidth * 4);
     
     // Offset points to fit in world
     const offsetX = -bbox.minX + roadWidth * 2;
     const offsetY = -bbox.minY + roadWidth * 2;
-    const offsetScaled = scaled.map(p => ({ x: p.x + offsetX, y: p.y + offsetY }));
+    const offsetPoints = processed.map(p => ({ x: p.x + offsetX, y: p.y + offsetY }));
     
-    const meta = computeTrackMeta(offsetScaled, roadWidth);
-    const mask = makeMask(offsetScaled, roadWidth, worldWidth, worldHeight);
-    const thumbnail = makeThumbnail(offsetScaled, worldWidth, worldHeight);
+    const meta = computeTrackMeta(offsetPoints, roadWidth);
+    const mask = makeMask(offsetPoints, roadWidth, worldWidth, worldHeight);
+    const thumbnail = makeThumbnail(offsetPoints, worldWidth, worldHeight);
     const racingLine = (window.RacerAI && typeof window.RacerAI.buildRacingLine === 'function')
-      ? window.RacerAI.buildRacingLine(offsetScaled, roadWidth)
+      ? window.RacerAI.buildRacingLine(offsetPoints, roadWidth)
       : [];
     
     const data = {
       name,
-      world: { width: worldWidth, height: worldHeight, scale: this.state.scale },
-      points: offsetScaled,
+      world: { width: worldWidth, height: worldHeight },
+      points: offsetPoints,
       roadWidth,
       textureId: this.state.surfaceType,
       racingLine,
