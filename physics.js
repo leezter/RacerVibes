@@ -80,6 +80,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     },
     GT: {
       ...PLANCK_DEFAULTS,
+      restitution: 0.40,
   mass: 2.20,
       wheelbase: 36,
       cgToFront: 17,
@@ -102,19 +103,19 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
   loadSenseK: 0.08,
   muLongLoadSenseK: 0.04,
       rearCircle: 0.50,
-  vKineBlend: 1.8,
-      cgHeight: 2,
-        yawDampK: 0.00,
+      vKineBlend: 1.8,
+      cgHeight: 3,
+        yawDampK: 0.30,
     reverseEntrySpeed: 40,
     reverseTorqueScale: 0.50,
       touchSteer: {
         maxSteerLowSpeed: 0.75,
         maxSteerHighSpeed: 0.10,
-        falloffSpeed: 260,
+        falloffSpeed: 350,
         baseSteerRate: 5.4,
         steerRateFalloff: 0.0032,
         returnGain: 0,
-        filterTau: 0.12
+        filterTau: 0.40
       }
     },
     Rally: {
