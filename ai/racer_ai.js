@@ -35,12 +35,12 @@
       steerP: 1.6,
       steerD: 0.06,
       lookaheadBase: 35,
-      lookaheadSpeed: 0.12,
+      lookaheadSpeed: 0.18,
       cornerMargin: 32,
       steerCutThrottle: 0.45,
       searchWindow: 48,
       speedHysteresis: 14,
-      cornerEntryFactor: 0.45,
+      cornerEntryFactor: 0.65,
       minTargetSpeed: 90
     },
     medium: {
@@ -49,12 +49,12 @@
       steerP: 2.1,
       steerD: 0.1,
       lookaheadBase: 40,
-      lookaheadSpeed: 0.14,
+      lookaheadSpeed: 0.20,
       cornerMargin: 22,
       steerCutThrottle: 0.3,
       searchWindow: 56,
       speedHysteresis: 10,
-      cornerEntryFactor: 0.6,
+      cornerEntryFactor: 0.80,
       minTargetSpeed: 110
     },
     hard: {
@@ -63,12 +63,12 @@
       steerP: 3.2,
       steerD: 0.16,
       lookaheadBase: 50,
-      lookaheadSpeed: 0.16,
+      lookaheadSpeed: 0.22,
       cornerMargin: 0,
       steerCutThrottle: 0.18,
       searchWindow: 64,
       speedHysteresis: 7,
-      cornerEntryFactor: 0.75,
+      cornerEntryFactor: 0.95,
       minTargetSpeed: 120
     }
   };
@@ -534,7 +534,7 @@
 
         const futureDrop = scaledCurrent - scaledFuture;
         if (futureDrop > 0) {
-          const anticipation = clamp(futureDrop / 160, 0, 1);
+          const anticipation = clamp(futureDrop / 100, 0, 1);
           brake = Math.max(brake, anticipation * skill.cornerEntryFactor);
           throttle *= (1 - anticipation * 0.7);
         }
