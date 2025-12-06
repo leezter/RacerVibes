@@ -31,44 +31,44 @@
   const SKILL_PRESETS = {
     easy: {
       maxThrottle: 0.85,
-      brakeAggro: 0.65,
+      brakeAggro: 0.75,
       steerP: 1.6,
       steerD: 0.06,
-      lookaheadBase: 35,
-      lookaheadSpeed: 0.18,
-      cornerMargin: 32,
+      lookaheadBase: 50,
+      lookaheadSpeed: 0.25,
+      cornerMargin: 40,
       steerCutThrottle: 0.45,
       searchWindow: 48,
       speedHysteresis: 14,
-      cornerEntryFactor: 0.65,
+      cornerEntryFactor: 0.85,
       minTargetSpeed: 90
     },
     medium: {
       maxThrottle: 0.95,
-      brakeAggro: 0.9,
+      brakeAggro: 1.0,
       steerP: 2.1,
       steerD: 0.1,
-      lookaheadBase: 40,
-      lookaheadSpeed: 0.2,
-      cornerMargin: 22,
+      lookaheadBase: 60,
+      lookaheadSpeed: 0.28,
+      cornerMargin: 30,
       steerCutThrottle: 0.3,
       searchWindow: 56,
       speedHysteresis: 10,
-      cornerEntryFactor: 0.8,
+      cornerEntryFactor: 1.0,
       minTargetSpeed: 110
     },
     hard: {
       maxThrottle: 1.2,
-      brakeAggro: 0.62,
+      brakeAggro: 0.8,
       steerP: 3.2,
       steerD: 0.16,
-      lookaheadBase: 50,
-      lookaheadSpeed: 0.22,
-      cornerMargin: 0,
+      lookaheadBase: 70,
+      lookaheadSpeed: 0.32,
+      cornerMargin: 15,
       steerCutThrottle: 0.18,
       searchWindow: 64,
       speedHysteresis: 7,
-      cornerEntryFactor: 0.95,
+      cornerEntryFactor: 1.2,
       minTargetSpeed: 120
     }
   };
@@ -526,17 +526,37 @@
           const speedScale = mapThrottleToSpeedScale(skill.maxThrottle);
           const scaledCurrent = Math.min(MAX_TARGET_SPEED, rawCurrent * speedScale);
           const scaledFuture = Math.min(MAX_TARGET_SPEED, rawFuture * speedScale);
-          const targetSpeed = Math.max(skill.minTargetSpeed, Math.min(scaledCurrent, scaledFuture) - skill.cornerMargin);
+          
+          // Multi-horizon lookahead for sharp corner detection
+          // Check multiple points ahead to find the sharpest corner coming up
+          let minFutureSpeed = scaledFuture;
+          const horizonSteps = 5; // Check 5 points ahead
+          const horizonMultiplier = 3; // Each step looks 3x the base lookahead ahead
+          
+          for (let h = 1; h <= horizonSteps; h++) {
+            const horizonDist = lookahead * h * horizonMultiplier;
+            const horizonSample = sampleAlongLine(line, idx, horizonDist);
+            if (horizonSample && Number.isFinite(horizonSample.targetSpeed)) {
+              const scaledHorizonSpeed = Math.min(MAX_TARGET_SPEED, horizonSample.targetSpeed * speedScale);
+              minFutureSpeed = Math.min(minFutureSpeed, scaledHorizonSpeed);
+            }
+          }
+          
+          const targetSpeed = Math.max(skill.minTargetSpeed, Math.min(scaledCurrent, minFutureSpeed) - skill.cornerMargin);
           const speedError = targetSpeed - speed;
           const throttleGain = clamp(skill.maxThrottle ?? 1, 0.1, 2);
           let throttle = speedError > 0 ? clamp(speedError / Math.max(targetSpeed, 60), 0, 1) * throttleGain : 0;
           let brake = speedError < 0 ? clamp(-speedError / Math.max(targetSpeed, 60), 0, 1) * skill.brakeAggro : 0;
 
-        const futureDrop = scaledCurrent - scaledFuture;
+        // Enhanced anticipatory braking - check for speed drops ahead
+        const futureDrop = scaledCurrent - minFutureSpeed;
         if (futureDrop > 0) {
-          const anticipation = clamp(futureDrop / 100, 0, 1);
+          // Scale anticipation by both the magnitude of the drop AND current speed
+          // At high speeds, even moderate drops should trigger strong braking
+          const speedFactor = Math.min(1.5, speed / 400); // More aggressive at high speeds
+          const anticipation = clamp((futureDrop / 80) * speedFactor, 0, 1);
           brake = Math.max(brake, anticipation * skill.cornerEntryFactor);
-          throttle *= (1 - anticipation * 0.7);
+          throttle *= (1 - anticipation * 0.8);
         }
 
         const steerMag = Math.abs(steer);
