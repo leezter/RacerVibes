@@ -16,6 +16,13 @@
   };
   const MAX_TARGET_SPEED = 2600; // ~190 mph with ppm ≈ 30
 
+  // Multi-horizon lookahead constants for sharp corner detection
+  const MULTI_HORIZON_STEPS = 5;           // Number of future points to check
+  const HORIZON_DISTANCE_MULTIPLIER = 3;   // Distance multiplier for each horizon step
+  const HIGH_SPEED_THRESHOLD = 400;        // Speed (px/s) above which braking becomes more aggressive
+  const MAX_SPEED_FACTOR = 1.5;            // Maximum speed-based braking multiplier
+  const ANTICIPATION_DIVISOR = 80;         // Base divisor for anticipation calculation
+
   // Racing line smoothing constants
   // Note: The racing line is computed once when track loads, not per-frame, so
   // these higher iteration counts are acceptable for silky smooth results.
@@ -31,44 +38,44 @@
   const SKILL_PRESETS = {
     easy: {
       maxThrottle: 0.85,
-      brakeAggro: 0.65,
+      brakeAggro: 0.75,
       steerP: 1.6,
       steerD: 0.06,
-      lookaheadBase: 35,
-      lookaheadSpeed: 0.12,
-      cornerMargin: 32,
+      lookaheadBase: 50,
+      lookaheadSpeed: 0.25,
+      cornerMargin: 40,
       steerCutThrottle: 0.45,
       searchWindow: 48,
       speedHysteresis: 14,
-      cornerEntryFactor: 0.45,
+      cornerEntryFactor: 0.85,
       minTargetSpeed: 90
     },
     medium: {
       maxThrottle: 0.95,
-      brakeAggro: 0.9,
+      brakeAggro: 1.0,
       steerP: 2.1,
       steerD: 0.1,
-      lookaheadBase: 40,
-      lookaheadSpeed: 0.14,
-      cornerMargin: 22,
+      lookaheadBase: 60,
+      lookaheadSpeed: 0.28,
+      cornerMargin: 30,
       steerCutThrottle: 0.3,
       searchWindow: 56,
       speedHysteresis: 10,
-      cornerEntryFactor: 0.6,
+      cornerEntryFactor: 1.0,
       minTargetSpeed: 110
     },
     hard: {
       maxThrottle: 1.2,
-      brakeAggro: 0.62,
+      brakeAggro: 0.8,
       steerP: 3.2,
       steerD: 0.16,
-      lookaheadBase: 50,
-      lookaheadSpeed: 0.16,
-      cornerMargin: 0,
+      lookaheadBase: 70,
+      lookaheadSpeed: 0.32,
+      cornerMargin: 15,
       steerCutThrottle: 0.18,
       searchWindow: 64,
       speedHysteresis: 7,
-      cornerEntryFactor: 0.75,
+      cornerEntryFactor: 1.2,
       minTargetSpeed: 120
     }
   };
@@ -526,17 +533,35 @@
           const speedScale = mapThrottleToSpeedScale(skill.maxThrottle);
           const scaledCurrent = Math.min(MAX_TARGET_SPEED, rawCurrent * speedScale);
           const scaledFuture = Math.min(MAX_TARGET_SPEED, rawFuture * speedScale);
-          const targetSpeed = Math.max(skill.minTargetSpeed, Math.min(scaledCurrent, scaledFuture) - skill.cornerMargin);
+          
+          // Multi-horizon lookahead for sharp corner detection
+          // Check multiple points ahead to find the sharpest corner coming up
+          let minFutureSpeed = scaledFuture;
+          
+          for (let h = 1; h <= MULTI_HORIZON_STEPS; h++) {
+            const horizonDist = lookahead * h * HORIZON_DISTANCE_MULTIPLIER;
+            const horizonSample = sampleAlongLine(line, idx, horizonDist);
+            if (horizonSample && Number.isFinite(horizonSample.targetSpeed)) {
+              const scaledHorizonSpeed = Math.min(MAX_TARGET_SPEED, horizonSample.targetSpeed * speedScale);
+              minFutureSpeed = Math.min(minFutureSpeed, scaledHorizonSpeed);
+            }
+          }
+          
+          const targetSpeed = Math.max(skill.minTargetSpeed, Math.min(scaledCurrent, minFutureSpeed) - skill.cornerMargin);
           const speedError = targetSpeed - speed;
           const throttleGain = clamp(skill.maxThrottle ?? 1, 0.1, 2);
           let throttle = speedError > 0 ? clamp(speedError / Math.max(targetSpeed, 60), 0, 1) * throttleGain : 0;
           let brake = speedError < 0 ? clamp(-speedError / Math.max(targetSpeed, 60), 0, 1) * skill.brakeAggro : 0;
 
-        const futureDrop = scaledCurrent - scaledFuture;
+        // Enhanced anticipatory braking - check for speed drops ahead
+        const futureDrop = scaledCurrent - minFutureSpeed;
         if (futureDrop > 0) {
-          const anticipation = clamp(futureDrop / 160, 0, 1);
+          // Scale anticipation by both the magnitude of the drop AND current speed
+          // At high speeds, even moderate drops should trigger strong braking
+          const speedFactor = Math.min(MAX_SPEED_FACTOR, speed / HIGH_SPEED_THRESHOLD);
+          const anticipation = clamp((futureDrop / ANTICIPATION_DIVISOR) * speedFactor, 0, 1);
           brake = Math.max(brake, anticipation * skill.cornerEntryFactor);
-          throttle *= (1 - anticipation * 0.7);
+          throttle *= (1 - anticipation * 0.8);
         }
 
         const steerMag = Math.abs(steer);
