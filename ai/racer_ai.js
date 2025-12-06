@@ -16,6 +16,13 @@
   };
   const MAX_TARGET_SPEED = 2600; // ~190 mph with ppm ≈ 30
 
+  // Multi-horizon lookahead constants for sharp corner detection
+  const MULTI_HORIZON_STEPS = 5;           // Number of future points to check
+  const HORIZON_DISTANCE_MULTIPLIER = 3;   // Distance multiplier for each horizon step
+  const HIGH_SPEED_THRESHOLD = 400;        // Speed (px/s) above which braking becomes more aggressive
+  const MAX_SPEED_FACTOR = 1.5;            // Maximum speed-based braking multiplier
+  const ANTICIPATION_DIVISOR = 80;         // Base divisor for anticipation calculation
+
   // Racing line smoothing constants
   // Note: The racing line is computed once when track loads, not per-frame, so
   // these higher iteration counts are acceptable for silky smooth results.
@@ -530,11 +537,9 @@
           // Multi-horizon lookahead for sharp corner detection
           // Check multiple points ahead to find the sharpest corner coming up
           let minFutureSpeed = scaledFuture;
-          const horizonSteps = 5; // Check 5 points ahead
-          const horizonMultiplier = 3; // Each step looks 3x the base lookahead ahead
           
-          for (let h = 1; h <= horizonSteps; h++) {
-            const horizonDist = lookahead * h * horizonMultiplier;
+          for (let h = 1; h <= MULTI_HORIZON_STEPS; h++) {
+            const horizonDist = lookahead * h * HORIZON_DISTANCE_MULTIPLIER;
             const horizonSample = sampleAlongLine(line, idx, horizonDist);
             if (horizonSample && Number.isFinite(horizonSample.targetSpeed)) {
               const scaledHorizonSpeed = Math.min(MAX_TARGET_SPEED, horizonSample.targetSpeed * speedScale);
@@ -553,8 +558,8 @@
         if (futureDrop > 0) {
           // Scale anticipation by both the magnitude of the drop AND current speed
           // At high speeds, even moderate drops should trigger strong braking
-          const speedFactor = Math.min(1.5, speed / 400); // More aggressive at high speeds
-          const anticipation = clamp((futureDrop / 80) * speedFactor, 0, 1);
+          const speedFactor = Math.min(MAX_SPEED_FACTOR, speed / HIGH_SPEED_THRESHOLD);
+          const anticipation = clamp((futureDrop / ANTICIPATION_DIVISOR) * speedFactor, 0, 1);
           brake = Math.max(brake, anticipation * skill.cornerEntryFactor);
           throttle *= (1 - anticipation * 0.8);
         }
