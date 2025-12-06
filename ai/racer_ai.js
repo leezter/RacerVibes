@@ -49,12 +49,12 @@
       steerP: 2.1,
       steerD: 0.1,
       lookaheadBase: 40,
-      lookaheadSpeed: 0.20,
+      lookaheadSpeed: 0.2,
       cornerMargin: 22,
       steerCutThrottle: 0.3,
       searchWindow: 56,
       speedHysteresis: 10,
-      cornerEntryFactor: 0.80,
+      cornerEntryFactor: 0.8,
       minTargetSpeed: 110
     },
     hard: {
