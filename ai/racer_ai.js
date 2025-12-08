@@ -584,24 +584,12 @@
         const throttleGain = clamp(skill.maxThrottle ?? 1, 0.1, 2);
         let throttle =
           speedError > 0 ? clamp(speedError / Math.max(targetSpeed, 60), 0, 1) * throttleGain : 0;
-        // baseBrake is mutable because hysteresis may limit it before adding anticipatory braking
+
+        // Calculate base brake from speed error
         let baseBrake =
           speedError < 0
             ? clamp(-speedError / Math.max(targetSpeed, 60), 0, 1) * skill.brakeAggro
             : 0;
-
-        // Apply hysteresis to base brake BEFORE adding anticipatory braking
-        // This prevents oscillation near target speed but doesn't interfere with corner braking
-        const HYSTERESIS_LIMIT = 0.2; // Max brake/throttle allowed when near target speed
-        const hyst = skill.speedHysteresis;
-        if (speedError > hyst) {
-          // Going too slow - reduce base brake to avoid oscillation
-          baseBrake = Math.min(baseBrake, HYSTERESIS_LIMIT);
-        }
-        if (speedError < -hyst) {
-          // Going too fast - reduce throttle to avoid oscillation
-          throttle = Math.min(throttle, HYSTERESIS_LIMIT);
-        }
 
         let brake = baseBrake;
 
@@ -615,16 +603,21 @@
           const requiredDecel = speedDrop / Math.max(timeToCorner, 0.1);
 
           // Normalize deceleration to brake intensity (typical max decel ~500-800 px/s²)
-          const maxDecel = 700; // Approximate maximum deceleration capability
+          // INCREASED sensitivity to ensure strong braking
+          const maxDecel = 500; // Reduced from 700 to make braking more aggressive
           const brakingIntensity = clamp(requiredDecel / maxDecel, 0, 1);
 
-          // Apply anticipatory braking with skill-based factor
-          // This is ADDED AFTER hysteresis so it won't be crushed
-          const anticipation = brakingIntensity * skill.cornerEntryFactor;
+          // Apply STRONG anticipatory braking - multiply by larger factor for noticeable effect
+          // Use skill.brakeAggro to scale anticipation strength
+          const anticipation = brakingIntensity * skill.brakeAggro;
           brake = Math.max(brake, anticipation);
 
-          // Reduce throttle proportionally to braking intensity
-          throttle *= 1 - brakingIntensity * 0.85;
+          // CUT throttle completely when significant braking is needed
+          if (brakingIntensity > 0.3) {
+            throttle = 0; // Full throttle cut for hard braking
+          } else {
+            throttle *= 1 - brakingIntensity * 0.85;
+          }
         }
 
         const steerMag = Math.abs(steer);
@@ -641,6 +634,14 @@
           const speedCutReduction = 1 - clamp(speed / LOW_SPEED_THRESHOLD, 0, 1);
           const effectiveCut = cut * (1 - speedCutReduction * LOW_SPEED_CUT_REDUCTION);
           throttle *= 1 - effectiveCut;
+        }
+
+        // Apply hysteresis to prevent oscillation ONLY for throttle when going too fast
+        // Do NOT apply hysteresis to brake - we want full braking power for corners
+        const hyst = skill.speedHysteresis;
+        if (speedError < -hyst) {
+          // Going too fast - reduce throttle to avoid oscillation
+          throttle = Math.min(throttle, 0.2);
         }
 
         // Debug logging (enable by setting window.DEBUG_AI_BRAKING = car.id to debug specific car)
