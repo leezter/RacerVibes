@@ -628,13 +628,20 @@
         if (speedError > hyst) brake = Math.min(brake, 0.2);
         if (speedError < -hyst) throttle = Math.min(throttle, 0.2);
 
-        // Debug logging (enable by setting window.DEBUG_AI_BRAKING = true)
-        if (typeof window !== 'undefined' && window.DEBUG_AI_BRAKING && Math.random() < 0.01) {
-          console.log(
-            `AI: speed=${speed.toFixed(0)} target=${targetSpeed.toFixed(0)} ` +
-              `brake=${brake.toFixed(2)} throttle=${throttle.toFixed(2)} ` +
-              `speedErr=${speedError.toFixed(0)}`,
-          );
+        // Debug logging (enable by setting window.DEBUG_AI_BRAKING = car.id to debug specific car)
+        // or window.DEBUG_AI_BRAKING = true to debug first AI car
+        if (typeof window !== 'undefined' && window.DEBUG_AI_BRAKING) {
+          const shouldLog =
+            window.DEBUG_AI_BRAKING === true ||
+            (car && car.id && window.DEBUG_AI_BRAKING === car.id);
+          if (shouldLog && Math.random() < 0.02) {
+            // Log 2% of frames to avoid console spam
+            console.log(
+              `AI[${car?.id || '?'}]: speed=${speed.toFixed(0)} target=${targetSpeed.toFixed(0)} ` +
+                `brake=${brake.toFixed(2)} throttle=${throttle.toFixed(2)} ` +
+                `minFuture=${minFutureSpeed.toFixed(0)} dist=${brakingDistance.toFixed(0)}`,
+            );
+          }
         }
 
         return {
