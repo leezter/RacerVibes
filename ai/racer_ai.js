@@ -638,10 +638,11 @@
 
         // Apply hysteresis to prevent oscillation ONLY for throttle when going too fast
         // Do NOT apply hysteresis to brake - we want full braking power for corners
+        const HYSTERESIS_LIMIT = 0.2; // Max throttle allowed when significantly over target speed
         const hyst = skill.speedHysteresis;
         if (speedError < -hyst) {
           // Going too fast - reduce throttle to avoid oscillation
-          throttle = Math.min(throttle, 0.2);
+          throttle = Math.min(throttle, HYSTERESIS_LIMIT);
         }
 
         // Debug logging (enable by setting window.DEBUG_AI_BRAKING = car.id to debug specific car)
