@@ -606,8 +606,8 @@
 
           // Normalize deceleration to brake intensity with VERY aggressive scaling
           // Reduced maxDecel significantly to ensure we hit max brake values quickly
-          const maxDecel = 250; // Drastically reduced from 500 for maximum aggression
-          let brakingIntensity = clamp(requiredDecel / maxDecel, 0, 1);
+          const MAX_DECEL_THRESHOLD = 250; // Drastically reduced from 500 for maximum aggression
+          let brakingIntensity = clamp(requiredDecel / MAX_DECEL_THRESHOLD, 0, 1);
 
           // Apply power curve to make braking more aggressive
           // Square root makes moderate intensities stronger while keeping max at 1.0
@@ -615,7 +615,11 @@
 
           // Apply MAXIMUM anticipatory braking using brakeAggro
           // Amplify significantly but clamp to 1.0 since physics input is clamped
-          const anticipation = Math.min(1.0, brakingIntensity * skill.brakeAggro * 1.3);
+          const BRAKE_AMPLIFICATION_FACTOR = 1.3;
+          const anticipation = Math.min(
+            1.0,
+            brakingIntensity * skill.brakeAggro * BRAKE_AMPLIFICATION_FACTOR,
+          );
           brake = Math.max(brake, anticipation);
 
           // CUT throttle completely when ANY significant braking is needed
