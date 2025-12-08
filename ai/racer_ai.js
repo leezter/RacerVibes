@@ -543,22 +543,8 @@
           currentNode && Number.isFinite(currentNode.targetSpeed)
             ? currentNode.targetSpeed
             : skill.minTargetSpeed;
-        const rawFuture = Number.isFinite(sample.targetSpeed) ? sample.targetSpeed : rawCurrent;
         const speedScale = mapThrottleToSpeedScale(skill.maxThrottle);
         const scaledCurrent = Math.min(MAX_TARGET_SPEED, rawCurrent * speedScale);
-        const scaledFuture = Math.min(MAX_TARGET_SPEED, rawFuture * speedScale);
-        const targetSpeed = Math.max(
-          skill.minTargetSpeed,
-          Math.min(scaledCurrent, scaledFuture) - skill.cornerMargin,
-        );
-        const speedError = targetSpeed - speed;
-        const throttleGain = clamp(skill.maxThrottle ?? 1, 0.1, 2);
-        let throttle =
-          speedError > 0 ? clamp(speedError / Math.max(targetSpeed, 60), 0, 1) * throttleGain : 0;
-        let brake =
-          speedError < 0
-            ? clamp(-speedError / Math.max(targetSpeed, 60), 0, 1) * skill.brakeAggro
-            : 0;
 
         // Enhanced corner braking anticipation - look further ahead for sharp corners
         // Use longer braking lookahead that scales linearly with speed (increased anticipation time)
@@ -568,6 +554,7 @@
         const brakingLookahead = brakingLookaheadBase + speed * brakingLookaheadSpeedFactor;
 
         // Sample multiple points ahead to find the minimum speed requirement
+        // This is used both for target speed calculation AND for anticipatory braking
         const numBrakingSamples = 5;
         let minFutureSpeed = scaledCurrent;
         let brakingDistance = 0;
@@ -583,6 +570,22 @@
             }
           }
         }
+
+        // Use the minimum speed found in braking lookahead for target speed calculation
+        // This ensures AI sees sharp corners coming and starts slowing down early
+        const scaledFuture = minFutureSpeed;
+        const targetSpeed = Math.max(
+          skill.minTargetSpeed,
+          Math.min(scaledCurrent, scaledFuture) - skill.cornerMargin,
+        );
+        const speedError = targetSpeed - speed;
+        const throttleGain = clamp(skill.maxThrottle ?? 1, 0.1, 2);
+        let throttle =
+          speedError > 0 ? clamp(speedError / Math.max(targetSpeed, 60), 0, 1) * throttleGain : 0;
+        let brake =
+          speedError < 0
+            ? clamp(-speedError / Math.max(targetSpeed, 60), 0, 1) * skill.brakeAggro
+            : 0;
 
         // Calculate required deceleration and braking intensity
         const speedDrop = speed - minFutureSpeed;
@@ -605,14 +608,6 @@
           throttle *= 1 - brakingIntensity * 0.85;
         }
 
-        // Legacy anticipation for immediate lookahead (keep for short-range adjustments)
-        const futureDrop = scaledCurrent - scaledFuture;
-        if (futureDrop > 0) {
-          const immediateAnticipation = clamp(futureDrop / 160, 0, 1);
-          brake = Math.max(brake, immediateAnticipation * skill.cornerEntryFactor * 0.5);
-          throttle *= 1 - immediateAnticipation * 0.4;
-        }
-
         const steerMag = Math.abs(steer);
         if (steerMag > skill.steerCutThrottle) {
           const cut = clamp(
@@ -632,6 +627,15 @@
         const hyst = skill.speedHysteresis;
         if (speedError > hyst) brake = Math.min(brake, 0.2);
         if (speedError < -hyst) throttle = Math.min(throttle, 0.2);
+
+        // Debug logging (enable by setting window.DEBUG_AI_BRAKING = true)
+        if (typeof window !== 'undefined' && window.DEBUG_AI_BRAKING && Math.random() < 0.01) {
+          console.log(
+            `AI: speed=${speed.toFixed(0)} target=${targetSpeed.toFixed(0)} ` +
+              `brake=${brake.toFixed(2)} throttle=${throttle.toFixed(2)} ` +
+              `speedErr=${speedError.toFixed(0)}`,
+          );
+        }
 
         return {
           throttle,
