@@ -549,13 +549,15 @@
         // Enhanced corner braking anticipation - look further ahead for sharp corners
         // Use longer braking lookahead that scales linearly with speed (increased anticipation time)
         // This allows AI to detect and brake for sharp corners well in advance
-        const brakingLookaheadBase = 80; // Minimum braking lookahead distance
-        const brakingLookaheadSpeedFactor = 0.35; // Scale with speed for high-speed braking
+        // Increased significantly to ensure AI sees corners before hitting them
+        const brakingLookaheadBase = 150; // Minimum braking lookahead distance (was 80)
+        const brakingLookaheadSpeedFactor = 0.65; // Scale with speed for high-speed braking (was 0.35)
         const brakingLookahead = brakingLookaheadBase + speed * brakingLookaheadSpeedFactor;
 
         // Sample multiple points ahead to find the minimum speed requirement
         // This is used both for target speed calculation AND for anticipatory braking
-        const numBrakingSamples = 5;
+        // Increased samples for better corner detection at high speed
+        const numBrakingSamples = 8;
         let minFutureSpeed = scaledCurrent;
         let brakingDistance = 0;
 
@@ -636,10 +638,15 @@
             (car && car.id && window.DEBUG_AI_BRAKING === car.id);
           if (shouldLog && Math.random() < 0.02) {
             // Log 2% of frames to avoid console spam
+            const baseBrake =
+              speedError < 0
+                ? clamp(-speedError / Math.max(targetSpeed, 60), 0, 1) * skill.brakeAggro
+                : 0;
             console.log(
-              `AI[${car?.id || '?'}]: speed=${speed.toFixed(0)} target=${targetSpeed.toFixed(0)} ` +
-                `brake=${brake.toFixed(2)} throttle=${throttle.toFixed(2)} ` +
-                `minFuture=${minFutureSpeed.toFixed(0)} dist=${brakingDistance.toFixed(0)}`,
+              `AI[${car?.id || '?'}]: speed=${speed.toFixed(0)} cur=${scaledCurrent.toFixed(0)} ` +
+                `minFut=${minFutureSpeed.toFixed(0)} tgt=${targetSpeed.toFixed(0)} ` +
+                `err=${speedError.toFixed(0)} dist=${brakingDistance.toFixed(0)} ` +
+                `baseBrk=${baseBrake.toFixed(2)} finalBrk=${brake.toFixed(2)} thr=${throttle.toFixed(2)}`,
             );
           }
         }
