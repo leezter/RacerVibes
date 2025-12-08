@@ -584,10 +584,11 @@
         const throttleGain = clamp(skill.maxThrottle ?? 1, 0.1, 2);
         let throttle =
           speedError > 0 ? clamp(speedError / Math.max(targetSpeed, 60), 0, 1) * throttleGain : 0;
-        let brake =
+        const baseBrake =
           speedError < 0
             ? clamp(-speedError / Math.max(targetSpeed, 60), 0, 1) * skill.brakeAggro
             : 0;
+        let brake = baseBrake;
 
         // Calculate required deceleration and braking intensity
         const speedDrop = speed - minFutureSpeed;
@@ -638,15 +639,12 @@
             (car && car.id && window.DEBUG_AI_BRAKING === car.id);
           if (shouldLog && Math.random() < 0.02) {
             // Log 2% of frames to avoid console spam
-            const baseBrake =
-              speedError < 0
-                ? clamp(-speedError / Math.max(targetSpeed, 60), 0, 1) * skill.brakeAggro
-                : 0;
             console.log(
-              `AI[${car?.id || '?'}]: speed=${speed.toFixed(0)} cur=${scaledCurrent.toFixed(0)} ` +
-                `minFut=${minFutureSpeed.toFixed(0)} tgt=${targetSpeed.toFixed(0)} ` +
-                `err=${speedError.toFixed(0)} dist=${brakingDistance.toFixed(0)} ` +
-                `baseBrk=${baseBrake.toFixed(2)} finalBrk=${brake.toFixed(2)} thr=${throttle.toFixed(2)}`,
+              `AI[${car?.id || '?'}]: ` +
+                `spd=${speed.toFixed(0)} cur=${scaledCurrent.toFixed(0)} ` +
+                `minF=${minFutureSpeed.toFixed(0)} tgt=${targetSpeed.toFixed(0)} ` +
+                `err=${speedError.toFixed(0)} dst=${brakingDistance.toFixed(0)} ` +
+                `base=${baseBrake.toFixed(2)} fin=${brake.toFixed(2)} thr=${throttle.toFixed(2)}`,
             );
           }
         }
