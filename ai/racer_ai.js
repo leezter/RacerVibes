@@ -561,7 +561,7 @@
             : 0;
 
         // Enhanced corner braking anticipation - look further ahead for sharp corners
-        // Use longer braking lookahead that scales with speed^2 (braking distance increases quadratically)
+        // Use longer braking lookahead that scales linearly with speed (increased anticipation time)
         // This allows AI to detect and brake for sharp corners well in advance
         const brakingLookaheadBase = 80; // Minimum braking lookahead distance
         const brakingLookaheadSpeedFactor = 0.35; // Scale with speed for high-speed braking
@@ -587,8 +587,8 @@
         // Calculate required deceleration and braking intensity
         const speedDrop = speed - minFutureSpeed;
         if (speedDrop > 0 && brakingDistance > 0) {
-          // Physics: v² = u² + 2as, so required deceleration a = (v² - u²) / (2s)
-          // But we work in approximate terms: estimate time to reach corner and required deceleration
+          // Use approximation: a = Δv / Δt where Δt = distance / average_speed
+          // This estimates time to reach corner and calculates required average deceleration
           const avgSpeed = (speed + minFutureSpeed) / 2;
           const timeToCorner = avgSpeed > 10 ? brakingDistance / avgSpeed : 1.0;
           const requiredDecel = speedDrop / Math.max(timeToCorner, 0.1);
