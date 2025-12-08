@@ -6,13 +6,13 @@
   const DEFAULT_LINE_CFG = {
     sampleStep: 6,
     smoothingPasses: 5,
-    apexAggression: 0.70,   // 0 = conservative (60% track width), 1 = aggressive (95% track width)
-    maxOffset: 0.90,        // Maximum fraction of half-width to use
+    apexAggression: 0.7, // 0 = conservative (60% track width), 1 = aggressive (95% track width)
+    maxOffset: 0.9, // Maximum fraction of half-width to use
     minRadius: 12,
     roadFriction: 1.1,
-    gravity: 750,        // px/s^2 to roughly match RacerPhysics defaults
-    straightSpeed: 520,  // px/s cap before scaling
-    cornerSpeedFloor: 140
+    gravity: 750, // px/s^2 to roughly match RacerPhysics defaults
+    straightSpeed: 520, // px/s cap before scaling
+    cornerSpeedFloor: 140,
   };
   const MAX_TARGET_SPEED = 2600; // ~190 mph with ppm ≈ 30
 
@@ -24,8 +24,8 @@
   // Steering blend weights for following the racing line
   // Higher lookahead weight = smoother steering, car uses line as a guide
   // Lower lookahead weight = stricter line following but can cause oscillation
-  const TANGENT_BLEND_WEIGHT = 0.35;    // Weight for following the racing line's tangent direction
-  const LOOKAHEAD_BLEND_WEIGHT = 0.65;  // Weight for looking ahead to anticipate turns (smoother)
+  const TANGENT_BLEND_WEIGHT = 0.35; // Weight for following the racing line's tangent direction
+  const LOOKAHEAD_BLEND_WEIGHT = 0.65; // Weight for looking ahead to anticipate turns (smoother)
   const LATERAL_CORRECTION_GAIN = 0.003; // Very gentle correction to avoid oscillation
 
   const SKILL_PRESETS = {
@@ -41,7 +41,7 @@
       searchWindow: 48,
       speedHysteresis: 14,
       cornerEntryFactor: 0.45,
-      minTargetSpeed: 90
+      minTargetSpeed: 90,
     },
     medium: {
       maxThrottle: 0.95,
@@ -55,7 +55,7 @@
       searchWindow: 56,
       speedHysteresis: 10,
       cornerEntryFactor: 0.6,
-      minTargetSpeed: 110
+      minTargetSpeed: 110,
     },
     hard: {
       maxThrottle: 1.2,
@@ -69,8 +69,8 @@
       searchWindow: 64,
       speedHysteresis: 7,
       cornerEntryFactor: 0.75,
-      minTargetSpeed: 120
-    }
+      minTargetSpeed: 120,
+    },
   };
 
   function mapThrottleToSpeedScale(value) {
@@ -122,10 +122,10 @@
    * Creates a new array each iteration to avoid ripple effects.
    */
   function relaxPath(points, iterations, strength = 0.5) {
-    let pts = points.map(p => ({ x: p.x, y: p.y }));
+    let pts = points.map((p) => ({ x: p.x, y: p.y }));
     const n = pts.length;
     if (n < 3) return pts;
-    
+
     for (let k = 0; k < iterations; k++) {
       const next = new Array(n);
       for (let i = 0; i < n; i++) {
@@ -136,7 +136,7 @@
         const midY = (prev.y + nextPt.y) / 2;
         next[i] = {
           x: curr.x + (midX - curr.x) * strength,
-          y: curr.y + (midY - curr.y) * strength
+          y: curr.y + (midY - curr.y) * strength,
         };
       }
       pts = next;
@@ -149,10 +149,10 @@
    * Weights: [0.1, 0.2, 0.4, 0.2, 0.1]
    */
   function gaussianSmooth(points, passes) {
-    let pts = points.map(p => ({ x: p.x, y: p.y }));
+    let pts = points.map((p) => ({ x: p.x, y: p.y }));
     const n = pts.length;
     if (n < 5) return pts;
-    
+
     for (let k = 0; k < passes; k++) {
       const next = new Array(n);
       for (let i = 0; i < n; i++) {
@@ -163,7 +163,7 @@
         const n2 = pts[(i + 2) % n];
         next[i] = {
           x: p2.x * 0.1 + p1.x * 0.2 + p0.x * 0.4 + n1.x * 0.2 + n2.x * 0.1,
-          y: p2.y * 0.1 + p1.y * 0.2 + p0.y * 0.4 + n1.y * 0.2 + n2.y * 0.1
+          y: p2.y * 0.1 + p1.y * 0.2 + p0.y * 0.4 + n1.y * 0.2 + n2.y * 0.1,
         };
       }
       pts = next;
@@ -201,8 +201,8 @@
 
     // 2. Setup Constraints
     const halfWidth = roadWidth / 2;
-    const maxOff = (cfg.maxOffset !== undefined) ? cfg.maxOffset : 0.85;
-    const aggression = clamp((cfg.apexAggression !== undefined) ? cfg.apexAggression : 0.5, 0, 1);
+    const maxOff = cfg.maxOffset !== undefined ? cfg.maxOffset : 0.85;
+    const aggression = clamp(cfg.apexAggression !== undefined ? cfg.apexAggression : 0.5, 0, 1);
     const usableWidth = halfWidth * (0.6 + 0.35 * aggression) * maxOff;
 
     // 3. Calculate curvature at each point using wider window for stability
@@ -217,7 +217,7 @@
     // 4. Heavy smoothing of curvature values for stable racing line
     // This is key to creating smooth transitions between corners
     let smoothCurvatures = smoothValues(rawCurvatures, 8, 0.5); // 8 passes of smoothing
-    smoothCurvatures = smoothValues(smoothCurvatures, 4, 0.3);  // Additional light passes
+    smoothCurvatures = smoothValues(smoothCurvatures, 4, 0.3); // Additional light passes
 
     // 5. Find max absolute curvature for normalization
     let maxAbsCurv = 0;
@@ -251,10 +251,10 @@
     const lookaheadDist = Math.max(8, Math.floor(n / 10));
     const lookbehindDist = lookaheadDist;
     const adjustedOffsets = [];
-    
+
     for (let i = 0; i < n; i++) {
       const currentAbsCurv = Math.abs(smoothCurvatures[i]);
-      
+
       // Look ahead for upcoming corners
       let maxFutureCurv = 0;
       let futureApexOffset = 0;
@@ -266,7 +266,7 @@
           futureApexOffset = baseOffsets[futureIdx];
         }
       }
-      
+
       // Look behind for recent corners
       let maxPastCurv = 0;
       let pastApexOffset = 0;
@@ -278,23 +278,23 @@
           pastApexOffset = baseOffsets[pastIdx];
         }
       }
-      
+
       let offset = baseOffsets[i];
-      
+
       // Approaching a corner - position on the outside
       if (maxFutureCurv > currentAbsCurv * 1.3 && maxFutureCurv > 0.25 * maxAbsCurv) {
         const setupOffset = -futureApexOffset * (CORNER_BLEND_FACTOR + 0.25 * aggression);
         const blend = clamp((maxFutureCurv - currentAbsCurv) / maxAbsCurv, 0, 0.85);
         offset = lerp(offset, setupOffset, blend * CORNER_BLEND_FACTOR);
       }
-      
+
       // Exiting a corner - track out to the outside
       if (maxPastCurv > currentAbsCurv * 1.3 && maxPastCurv > 0.25 * maxAbsCurv) {
         const exitOffset = -pastApexOffset * (CORNER_BLEND_FACTOR + 0.25 * aggression);
         const blend = clamp((maxPastCurv - currentAbsCurv) / maxAbsCurv, 0, 0.85);
         offset = lerp(offset, exitOffset, blend * CORNER_BLEND_FACTOR);
       }
-      
+
       adjustedOffsets[i] = offset;
     }
 
@@ -310,7 +310,7 @@
       const offset = clamp(finalOffsets[i], -usableWidth, usableWidth);
       path.push({
         x: points[i].x + normals[i].x * offset,
-        y: points[i].y + normals[i].y * offset
+        y: points[i].y + normals[i].y * offset,
       });
     }
 
@@ -329,13 +329,13 @@
         const curr = path[i];
         const nextPt = path[(i + 1) % n];
         const center = points[i];
-        
+
         // Smooth toward neighbors
         const midX = (prev.x + nextPt.x) / 2;
         const midY = (prev.y + nextPt.y) / 2;
         let newX = curr.x + (midX - curr.x) * 0.3;
         let newY = curr.y + (midY - curr.y) * 0.3;
-        
+
         // Constrain to track width
         const dx = newX - center.x;
         const dy = newY - center.y;
@@ -345,7 +345,7 @@
           newX = center.x + dx * ratio;
           newY = center.y + dy * ratio;
         }
-        
+
         next[i] = { x: newX, y: newY };
       }
       path = next;
@@ -377,7 +377,7 @@
         normal,
         curvature,
         radius: radiusPx,
-        targetSpeed
+        targetSpeed,
       };
     });
   }
@@ -398,7 +398,7 @@
           index: idx,
           nextIndex: nextIdx,
           point: { x: curr.x + (next.x - curr.x) * t, y: curr.y + (next.y - curr.y) * t },
-          targetSpeed: lerp(curr.targetSpeed, next.targetSpeed, t)
+          targetSpeed: lerp(curr.targetSpeed, next.targetSpeed, t),
         };
       }
       remaining -= segLen;
@@ -408,7 +408,7 @@
       index: idx,
       nextIndex: (idx + 1) % count,
       point: { x: line[idx].x, y: line[idx].y },
-      targetSpeed: line[idx].targetSpeed
+      targetSpeed: line[idx].targetSpeed,
     };
   }
 
@@ -467,19 +467,26 @@
       update(car, dt) {
         if (!line.length || !car) return { throttle: 0, brake: 1, steer: 0 };
         idx = nearestIndex(line, idx, car.x, car.y, skill.searchWindow);
-        const speed = Math.hypot((car.physics && car.physics.vx) || car.vx || 0, (car.physics && car.physics.vy) || car.vy || 0);
+        const speed = Math.hypot(
+          (car.physics && car.physics.vx) || car.vx || 0,
+          (car.physics && car.physics.vy) || car.vy || 0,
+        );
         const lookahead = skill.lookaheadBase + speed * skill.lookaheadSpeed;
-        const sample = sampleAlongLine(line, idx, lookahead) || { point: { x: line[idx].x, y: line[idx].y }, targetSpeed: line[idx].targetSpeed, nextIndex: idx };
+        const sample = sampleAlongLine(line, idx, lookahead) || {
+          point: { x: line[idx].x, y: line[idx].y },
+          targetSpeed: line[idx].targetSpeed,
+          nextIndex: idx,
+        };
         idx = sample.nextIndex || idx;
-        
+
         // Get current node on the racing line
         const currentNode = line[idx] || line[0];
-        
+
         // Calculate heading toward lookahead point
         const targetX = sample.point.x - car.x;
         const targetY = sample.point.y - car.y;
         const lookaheadHeading = Math.atan2(targetY, targetX);
-        
+
         // Get the racing line's tangent direction at current position
         // This tells us where the racing line is actually pointing right now
         const tangent = currentNode.tangent;
@@ -487,7 +494,7 @@
         if (tangent && Number.isFinite(tangent.x) && Number.isFinite(tangent.y)) {
           tangentHeading = Math.atan2(tangent.y, tangent.x);
         }
-        
+
         // Calculate lateral offset from the racing line (for path-following correction)
         const dx = car.x - currentNode.x;
         const dy = car.y - currentNode.y;
@@ -496,12 +503,12 @@
         if (normal && Number.isFinite(normal.x) && Number.isFinite(normal.y)) {
           lateralOffset = dx * normal.x + dy * normal.y; // positive = left of line, negative = right
         }
-        
+
         // Blend tangent direction (following the line) with lookahead direction (anticipating turns)
         // Use primarily lookahead direction for smoother steering (racing line as guide, not strict path)
         const tangentError = normalizeAngle(tangentHeading - car.angle);
         const lookaheadError = normalizeAngle(lookaheadHeading - car.angle);
-        
+
         // Lateral correction: only apply when significantly off the line (deadband)
         // Also reduce correction at higher speeds to avoid oscillation
         const LATERAL_DEADBAND = 15; // pixels - ignore small offsets
@@ -511,44 +518,115 @@
           // Apply gentle correction only for significant deviations
           const excessOffset = absOffset - LATERAL_DEADBAND;
           const speedFactor = clamp(1 - speed / 800, 0.2, 1); // Reduce correction at high speed
-          lateralCorrection = clamp(-Math.sign(lateralOffset) * excessOffset * LATERAL_CORRECTION_GAIN * speedFactor, -0.15, 0.15);
+          lateralCorrection = clamp(
+            -Math.sign(lateralOffset) * excessOffset * LATERAL_CORRECTION_GAIN * speedFactor,
+            -0.15,
+            0.15,
+          );
         }
-        
+
         // Blend: use lookahead primarily for smooth steering, tangent helps follow the line shape
-        const blendedError = tangentError * TANGENT_BLEND_WEIGHT + lookaheadError * LOOKAHEAD_BLEND_WEIGHT + lateralCorrection;
+        const blendedError =
+          tangentError * TANGENT_BLEND_WEIGHT +
+          lookaheadError * LOOKAHEAD_BLEND_WEIGHT +
+          lateralCorrection;
         const error = normalizeAngle(blendedError);
-        
-        const steer = clamp(error * skill.steerP + ((error - prevError) / Math.max(1e-3, dt)) * skill.steerD, -1, 1);
+
+        const steer = clamp(
+          error * skill.steerP + ((error - prevError) / Math.max(1e-3, dt)) * skill.steerD,
+          -1,
+          1,
+        );
         prevError = error;
 
-          const rawCurrent = (currentNode && Number.isFinite(currentNode.targetSpeed)) ? currentNode.targetSpeed : skill.minTargetSpeed;
-          const rawFuture = Number.isFinite(sample.targetSpeed) ? sample.targetSpeed : rawCurrent;
-          const speedScale = mapThrottleToSpeedScale(skill.maxThrottle);
-          const scaledCurrent = Math.min(MAX_TARGET_SPEED, rawCurrent * speedScale);
-          const scaledFuture = Math.min(MAX_TARGET_SPEED, rawFuture * speedScale);
-          const targetSpeed = Math.max(skill.minTargetSpeed, Math.min(scaledCurrent, scaledFuture) - skill.cornerMargin);
-          const speedError = targetSpeed - speed;
-          const throttleGain = clamp(skill.maxThrottle ?? 1, 0.1, 2);
-          let throttle = speedError > 0 ? clamp(speedError / Math.max(targetSpeed, 60), 0, 1) * throttleGain : 0;
-          let brake = speedError < 0 ? clamp(-speedError / Math.max(targetSpeed, 60), 0, 1) * skill.brakeAggro : 0;
+        const rawCurrent =
+          currentNode && Number.isFinite(currentNode.targetSpeed)
+            ? currentNode.targetSpeed
+            : skill.minTargetSpeed;
+        const rawFuture = Number.isFinite(sample.targetSpeed) ? sample.targetSpeed : rawCurrent;
+        const speedScale = mapThrottleToSpeedScale(skill.maxThrottle);
+        const scaledCurrent = Math.min(MAX_TARGET_SPEED, rawCurrent * speedScale);
+        const scaledFuture = Math.min(MAX_TARGET_SPEED, rawFuture * speedScale);
+        const targetSpeed = Math.max(
+          skill.minTargetSpeed,
+          Math.min(scaledCurrent, scaledFuture) - skill.cornerMargin,
+        );
+        const speedError = targetSpeed - speed;
+        const throttleGain = clamp(skill.maxThrottle ?? 1, 0.1, 2);
+        let throttle =
+          speedError > 0 ? clamp(speedError / Math.max(targetSpeed, 60), 0, 1) * throttleGain : 0;
+        let brake =
+          speedError < 0
+            ? clamp(-speedError / Math.max(targetSpeed, 60), 0, 1) * skill.brakeAggro
+            : 0;
 
+        // Enhanced corner braking anticipation - look further ahead for sharp corners
+        // Use longer braking lookahead that scales with speed^2 (braking distance increases quadratically)
+        // This allows AI to detect and brake for sharp corners well in advance
+        const brakingLookaheadBase = 80; // Minimum braking lookahead distance
+        const brakingLookaheadSpeedFactor = 0.35; // Scale with speed for high-speed braking
+        const brakingLookahead = brakingLookaheadBase + speed * brakingLookaheadSpeedFactor;
+
+        // Sample multiple points ahead to find the minimum speed requirement
+        const numBrakingSamples = 5;
+        let minFutureSpeed = scaledCurrent;
+        let brakingDistance = 0;
+
+        for (let i = 1; i <= numBrakingSamples; i++) {
+          const sampleDist = (brakingLookahead / numBrakingSamples) * i;
+          const futureSample = sampleAlongLine(line, idx, sampleDist);
+          if (futureSample && Number.isFinite(futureSample.targetSpeed)) {
+            const scaledSpeed = Math.min(MAX_TARGET_SPEED, futureSample.targetSpeed * speedScale);
+            if (scaledSpeed < minFutureSpeed) {
+              minFutureSpeed = scaledSpeed;
+              brakingDistance = sampleDist;
+            }
+          }
+        }
+
+        // Calculate required deceleration and braking intensity
+        const speedDrop = speed - minFutureSpeed;
+        if (speedDrop > 0 && brakingDistance > 0) {
+          // Physics: v² = u² + 2as, so required deceleration a = (v² - u²) / (2s)
+          // But we work in approximate terms: estimate time to reach corner and required deceleration
+          const avgSpeed = (speed + minFutureSpeed) / 2;
+          const timeToCorner = avgSpeed > 10 ? brakingDistance / avgSpeed : 1.0;
+          const requiredDecel = speedDrop / Math.max(timeToCorner, 0.1);
+
+          // Normalize deceleration to brake intensity (typical max decel ~500-800 px/s²)
+          const maxDecel = 700; // Approximate maximum deceleration capability
+          const brakingIntensity = clamp(requiredDecel / maxDecel, 0, 1);
+
+          // Apply anticipatory braking with skill-based factor
+          const anticipation = brakingIntensity * skill.cornerEntryFactor;
+          brake = Math.max(brake, anticipation);
+
+          // Reduce throttle proportionally to braking intensity
+          throttle *= 1 - brakingIntensity * 0.85;
+        }
+
+        // Legacy anticipation for immediate lookahead (keep for short-range adjustments)
         const futureDrop = scaledCurrent - scaledFuture;
         if (futureDrop > 0) {
-          const anticipation = clamp(futureDrop / 160, 0, 1);
-          brake = Math.max(brake, anticipation * skill.cornerEntryFactor);
-          throttle *= (1 - anticipation * 0.7);
+          const immediateAnticipation = clamp(futureDrop / 160, 0, 1);
+          brake = Math.max(brake, immediateAnticipation * skill.cornerEntryFactor * 0.5);
+          throttle *= 1 - immediateAnticipation * 0.4;
         }
 
         const steerMag = Math.abs(steer);
         if (steerMag > skill.steerCutThrottle) {
-          const cut = clamp((steerMag - skill.steerCutThrottle) / (1 - skill.steerCutThrottle), 0, 1);
+          const cut = clamp(
+            (steerMag - skill.steerCutThrottle) / (1 - skill.steerCutThrottle),
+            0,
+            1,
+          );
           // Reduce throttle cut at low speeds so AI cars can accelerate even when steering significantly
           // This prevents AI from sitting idle when they need to steer toward the racing line at startup
           const LOW_SPEED_THRESHOLD = 150; // px/s - below this speed, allow more throttle while steering
           const LOW_SPEED_CUT_REDUCTION = 0.8; // At 0 speed, only (1 - 0.8) = 20% of throttle cut applies
           const speedCutReduction = 1 - clamp(speed / LOW_SPEED_THRESHOLD, 0, 1);
           const effectiveCut = cut * (1 - speedCutReduction * LOW_SPEED_CUT_REDUCTION);
-          throttle *= (1 - effectiveCut);
+          throttle *= 1 - effectiveCut;
         }
 
         const hyst = skill.speedHysteresis;
@@ -558,9 +636,9 @@
         return {
           throttle,
           brake,
-          steer
+          steer,
         };
-      }
+      },
     };
     return api;
   }
