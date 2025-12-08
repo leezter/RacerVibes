@@ -561,14 +561,33 @@
         let minFutureSpeed = Infinity; // Start with infinity so any corner will be detected
         let brakingDistance = brakingLookahead; // Default to full lookahead distance
 
+        // Debug logging for sampling
+        const enableDebug =
+          typeof window !== 'undefined' && window.DEBUG_AI_BRAKING && Math.random() < 0.01;
+        if (enableDebug) {
+          console.log(
+            `[SAMPLE START] speed=${speed.toFixed(0)} brakingLookahead=${brakingLookahead.toFixed(0)}`,
+          );
+        }
+
         for (let i = 1; i <= numBrakingSamples; i++) {
           const sampleDist = (brakingLookahead / numBrakingSamples) * i;
           const futureSample = sampleAlongLine(line, idx, sampleDist);
           if (futureSample && Number.isFinite(futureSample.targetSpeed)) {
             const scaledSpeed = Math.min(MAX_TARGET_SPEED, futureSample.targetSpeed * speedScale);
+            if (enableDebug) {
+              console.log(
+                `  Sample ${i}: dist=${sampleDist.toFixed(0)} rawSpeed=${futureSample.targetSpeed.toFixed(0)} scaled=${scaledSpeed.toFixed(0)}`,
+              );
+            }
             if (scaledSpeed < minFutureSpeed) {
               minFutureSpeed = scaledSpeed;
               brakingDistance = sampleDist;
+              if (enableDebug) {
+                console.log(
+                  `    ^^ NEW MIN: minFuture=${minFutureSpeed.toFixed(0)} brakeDist=${brakingDistance.toFixed(0)}`,
+                );
+              }
             }
           }
         }
@@ -577,6 +596,13 @@
         if (!Number.isFinite(minFutureSpeed) || minFutureSpeed === Infinity) {
           minFutureSpeed = scaledCurrent;
           brakingDistance = 0;
+          if (enableDebug) {
+            console.log(`[SAMPLE END] NO VALID SAMPLES - fallback to current`);
+          }
+        } else if (enableDebug) {
+          console.log(
+            `[SAMPLE END] minFuture=${minFutureSpeed.toFixed(0)} brakeDist=${brakingDistance.toFixed(0)}`,
+          );
         }
 
         // Use the minimum speed found in braking lookahead for target speed calculation
@@ -604,15 +630,29 @@
             skill.brakeAggro *
             BRAKE_BASE_MULTIPLIER;
           baseBrake = Math.min(1.0, baseBrake); // Clamp to max
+
+          if (enableDebug) {
+            console.log(
+              `[BASE BRAKE] speedErr=${speedError.toFixed(0)} baseInt=${baseIntensity.toFixed(3)} baseBrk=${baseBrake.toFixed(3)}`,
+            );
+          }
         }
 
         let brake = baseBrake;
 
         // Calculate required deceleration and braking intensity
-        const speedDrop = speed - minFutureSpeed;
+        // CRITICAL: Compare future speed against CURRENT racing line speed, not actual car speed
+        // If corner ahead requires 150 px/s but current line is 500 px/s, need to slow down by 350
+        const speedDrop = scaledCurrent - minFutureSpeed;
+        if (enableDebug) {
+          console.log(
+            `[ANTICIPATION CHECK] scaledCur=${scaledCurrent.toFixed(0)} minFut=${minFutureSpeed.toFixed(0)} speedDrop=${speedDrop.toFixed(0)} brakeDist=${brakingDistance.toFixed(0)}`,
+          );
+        }
         if (speedDrop > 0 && brakingDistance > 0) {
           // Use approximation: a = Δv / Δt where Δt = distance / average_speed
           // This estimates time to reach corner and calculates required average deceleration
+          // Use actual car speed for time calculation
           const avgSpeed = (speed + minFutureSpeed) / 2;
           const timeToCorner = avgSpeed > 10 ? brakingDistance / avgSpeed : 1.0;
           const requiredDecel = speedDrop / Math.max(timeToCorner, 0.1);
