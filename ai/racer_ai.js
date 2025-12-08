@@ -588,11 +588,13 @@
         // Calculate base brake from speed error with EXTREMELY aggressive scaling
         let baseBrake = 0;
         if (speedError < 0) {
-          // Make base brake VERY aggressive - use square root to amplify lower values
+          // Make base brake VERY aggressive - use fourth root to amplify lower values
           const baseIntensity = clamp(-speedError / Math.max(targetSpeed, 60), 0, 1);
-          // Apply sqrt twice for even more aggressive curve (fourth root)
+          // Apply fourth root (sqrt of sqrt) for extremely aggressive curve
           // This makes even small speed errors produce significant braking
-          baseBrake = Math.sqrt(Math.sqrt(baseIntensity)) * skill.brakeAggro * 1.2;
+          const BRAKE_BASE_MULTIPLIER = 1.2; // Additional amplification for base brake
+          baseBrake =
+            Math.sqrt(Math.sqrt(baseIntensity)) * skill.brakeAggro * BRAKE_BASE_MULTIPLIER;
           baseBrake = Math.min(1.0, baseBrake); // Clamp to max
         }
 
