@@ -585,11 +585,13 @@
         let throttle =
           speedError > 0 ? clamp(speedError / Math.max(targetSpeed, 60), 0, 1) * throttleGain : 0;
 
-        // Calculate base brake from speed error
-        let baseBrake =
-          speedError < 0
-            ? clamp(-speedError / Math.max(targetSpeed, 60), 0, 1) * skill.brakeAggro
-            : 0;
+        // Calculate base brake from speed error with aggressive scaling
+        let baseBrake = 0;
+        if (speedError < 0) {
+          // Make base brake more aggressive - use square root to amplify lower values
+          const baseIntensity = clamp(-speedError / Math.max(targetSpeed, 60), 0, 1);
+          baseBrake = Math.sqrt(baseIntensity) * skill.brakeAggro;
+        }
 
         let brake = baseBrake;
 
@@ -602,15 +604,18 @@
           const timeToCorner = avgSpeed > 10 ? brakingDistance / avgSpeed : 1.0;
           const requiredDecel = speedDrop / Math.max(timeToCorner, 0.1);
 
-          // Normalize deceleration to brake intensity (typical max decel ~500-800 px/s²)
-          // INCREASED sensitivity to ensure strong braking
-          const maxDecel = 500; // Reduced from 700 to make braking more aggressive
-          const brakingIntensity = clamp(requiredDecel / maxDecel, 0, 1);
+          // Normalize deceleration to brake intensity with VERY aggressive scaling
+          // Reduced maxDecel significantly to ensure we hit max brake values quickly
+          const maxDecel = 250; // Drastically reduced from 500 for maximum aggression
+          let brakingIntensity = clamp(requiredDecel / maxDecel, 0, 1);
 
-          // Apply EXTREMELY STRONG anticipatory braking
-          // Use skill.brakeAggro and amplify it significantly for very noticeable braking
-          // Allow brake values > 1.0 for maximum braking force
-          const anticipation = brakingIntensity * skill.brakeAggro * 1.5; // 1.5x amplification
+          // Apply power curve to make braking more aggressive
+          // Square root makes moderate intensities stronger while keeping max at 1.0
+          brakingIntensity = Math.sqrt(brakingIntensity);
+
+          // Apply MAXIMUM anticipatory braking using brakeAggro
+          // Amplify significantly but clamp to 1.0 since physics input is clamped
+          const anticipation = Math.min(1.0, brakingIntensity * skill.brakeAggro * 1.3);
           brake = Math.max(brake, anticipation);
 
           // CUT throttle completely when ANY significant braking is needed
