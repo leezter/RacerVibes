@@ -558,8 +558,8 @@
         // This is used both for target speed calculation AND for anticipatory braking
         // Increased samples for better corner detection at high speed
         const numBrakingSamples = 8;
-        let minFutureSpeed = scaledCurrent;
-        let brakingDistance = 0;
+        let minFutureSpeed = Infinity; // Start with infinity so any corner will be detected
+        let brakingDistance = brakingLookahead; // Default to full lookahead distance
 
         for (let i = 1; i <= numBrakingSamples; i++) {
           const sampleDist = (brakingLookahead / numBrakingSamples) * i;
@@ -571,6 +571,12 @@
               brakingDistance = sampleDist;
             }
           }
+        }
+
+        // If no valid samples found, use current speed as fallback
+        if (!Number.isFinite(minFutureSpeed) || minFutureSpeed === Infinity) {
+          minFutureSpeed = scaledCurrent;
+          brakingDistance = 0;
         }
 
         // Use the minimum speed found in braking lookahead for target speed calculation
