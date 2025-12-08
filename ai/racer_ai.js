@@ -549,9 +549,9 @@
         // Enhanced corner braking anticipation - look further ahead for sharp corners
         // Use longer braking lookahead that scales linearly with speed (increased anticipation time)
         // This allows AI to detect and brake for sharp corners well in advance
-        // MASSIVELY increased to ensure AI sees corners WELL before hitting them
-        const brakingLookaheadBase = 200; // Minimum braking lookahead distance (increased from 150)
-        const brakingLookaheadSpeedFactor = 0.8; // Scale with speed for high-speed braking (increased from 0.65)
+        // EXTREMELY increased to ensure AI sees corners VERY EARLY before hitting them
+        const brakingLookaheadBase = 250; // Minimum braking lookahead distance (massively increased from 200)
+        const brakingLookaheadSpeedFactor = 1.0; // Scale with speed for high-speed braking (increased from 0.8)
         const brakingLookahead = brakingLookaheadBase + speed * brakingLookaheadSpeedFactor;
 
         // Sample multiple points ahead to find the minimum speed requirement
@@ -585,16 +585,18 @@
         let throttle =
           speedError > 0 ? clamp(speedError / Math.max(targetSpeed, 60), 0, 1) * throttleGain : 0;
 
-        // Calculate base brake from speed error with EXTREMELY aggressive scaling
+        // Calculate base brake from speed error with ULTRA aggressive scaling
         let baseBrake = 0;
         if (speedError < 0) {
-          // Make base brake VERY aggressive - use fourth root to amplify lower values
+          // Make base brake ULTRA aggressive - use eighth root to amplify ALL values
           const baseIntensity = clamp(-speedError / Math.max(targetSpeed, 60), 0, 1);
-          // Apply fourth root (sqrt of sqrt) for extremely aggressive curve
-          // This makes even small speed errors produce significant braking
-          const BRAKE_BASE_MULTIPLIER = 1.2; // Additional amplification for base brake
+          // Apply eighth root (sqrt of sqrt of sqrt) for ULTRA aggressive curve
+          // This makes even TINY speed errors produce MASSIVE braking
+          const BRAKE_BASE_MULTIPLIER = 1.4; // Massively increased amplification for base brake
           baseBrake =
-            Math.sqrt(Math.sqrt(baseIntensity)) * skill.brakeAggro * BRAKE_BASE_MULTIPLIER;
+            Math.sqrt(Math.sqrt(Math.sqrt(baseIntensity))) *
+            skill.brakeAggro *
+            BRAKE_BASE_MULTIPLIER;
           baseBrake = Math.min(1.0, baseBrake); // Clamp to max
         }
 
@@ -609,27 +611,27 @@
           const timeToCorner = avgSpeed > 10 ? brakingDistance / avgSpeed : 1.0;
           const requiredDecel = speedDrop / Math.max(timeToCorner, 0.1);
 
-          // Normalize deceleration to brake intensity with EXTREMELY aggressive scaling
-          // Reduced maxDecel MASSIVELY to ensure we hit max brake values very quickly
-          const MAX_DECEL_THRESHOLD = 180; // Further reduced from 250 for MAXIMUM aggression
+          // Normalize deceleration to brake intensity with ULTRA aggressive scaling
+          // Reduced maxDecel EXTREMELY to ensure we hit max brake values IMMEDIATELY
+          const MAX_DECEL_THRESHOLD = 140; // Massively reduced from 180 for ULTRA aggression
           let brakingIntensity = clamp(requiredDecel / MAX_DECEL_THRESHOLD, 0, 1);
 
-          // Apply power curve to make braking more aggressive
-          // Square root makes moderate intensities stronger while keeping max at 1.0
-          brakingIntensity = Math.sqrt(brakingIntensity);
+          // Apply DOUBLE power curve to make braking EXTREMELY aggressive
+          // Apply sqrt TWICE for ultra-aggressive curve (fourth root)
+          brakingIntensity = Math.sqrt(Math.sqrt(brakingIntensity));
 
-          // Apply MAXIMUM anticipatory braking using brakeAggro
-          // Amplify significantly but clamp to 1.0 since physics input is clamped
-          const BRAKE_AMPLIFICATION_FACTOR = 1.5; // Increased from 1.3 for even stronger braking
+          // Apply ULTRA MAXIMUM anticipatory braking using brakeAggro
+          // Amplify very significantly but clamp to 1.0 since physics input is clamped
+          const BRAKE_AMPLIFICATION_FACTOR = 1.8; // Massively increased from 1.5 for ultra-strong braking
           const anticipation = Math.min(
             1.0,
             brakingIntensity * skill.brakeAggro * BRAKE_AMPLIFICATION_FACTOR,
           );
           brake = Math.max(brake, anticipation);
 
-          // CUT throttle completely when ANY braking is needed - VERY early cut
-          if (brakingIntensity > 0.15) {
-            // Even lower threshold - cut throttle very early
+          // CUT throttle completely when MINIMAL braking is needed - ULTRA early cut
+          if (brakingIntensity > 0.1) {
+            // Ultra low threshold - cut throttle immediately
             throttle = 0; // Complete throttle cut
           } else {
             throttle *= 1 - brakingIntensity;
