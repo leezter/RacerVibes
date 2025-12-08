@@ -607,16 +607,18 @@
           const maxDecel = 500; // Reduced from 700 to make braking more aggressive
           const brakingIntensity = clamp(requiredDecel / maxDecel, 0, 1);
 
-          // Apply STRONG anticipatory braking - multiply by larger factor for noticeable effect
-          // Use skill.brakeAggro to scale anticipation strength
-          const anticipation = brakingIntensity * skill.brakeAggro;
+          // Apply EXTREMELY STRONG anticipatory braking
+          // Use skill.brakeAggro and amplify it significantly for very noticeable braking
+          // Allow brake values > 1.0 for maximum braking force
+          const anticipation = brakingIntensity * skill.brakeAggro * 1.5; // 1.5x amplification
           brake = Math.max(brake, anticipation);
 
-          // CUT throttle completely when significant braking is needed
-          if (brakingIntensity > 0.3) {
-            throttle = 0; // Full throttle cut for hard braking
+          // CUT throttle completely when ANY significant braking is needed
+          if (brakingIntensity > 0.2) {
+            // Lower threshold - cut throttle earlier
+            throttle = 0; // Complete throttle cut
           } else {
-            throttle *= 1 - brakingIntensity * 0.85;
+            throttle *= 1 - brakingIntensity;
           }
         }
 
@@ -661,6 +663,14 @@
                 `base=${baseBrake.toFixed(2)} fin=${brake.toFixed(2)} thr=${throttle.toFixed(2)}`,
             );
           }
+        }
+
+        // ALWAYS log when brake is significant - helps diagnose if braking is even happening
+        if (typeof window !== 'undefined' && brake > 0.5 && Math.random() < 0.05) {
+          console.log(
+            `[BRAKE!] AI braking: ${brake.toFixed(2)} at speed ${speed.toFixed(0)} ` +
+              `(target=${targetSpeed.toFixed(0)}, minFuture=${minFutureSpeed.toFixed(0)})`,
+          );
         }
 
         return {
