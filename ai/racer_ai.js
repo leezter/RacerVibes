@@ -558,7 +558,8 @@
         // This is used both for target speed calculation AND for anticipatory braking
         // Increased samples for better corner detection at high speed
         const numBrakingSamples = 8;
-        let minFutureSpeed = Infinity; // Start with infinity so any corner will be detected
+        let minFutureSpeedRaw = Infinity; // Track RAW (unscaled) minimum speed for corner detection
+        let minFutureSpeed = Infinity; // Track SCALED minimum speed for target speed calculation
         let brakingDistance = brakingLookahead; // Default to full lookahead distance
 
         // Debug logging for sampling
@@ -566,7 +567,7 @@
           typeof window !== 'undefined' && window.DEBUG_AI_BRAKING && Math.random() < 0.01;
         if (enableDebug) {
           console.log(
-            `[SAMPLE START] speed=${speed.toFixed(0)} brakingLookahead=${brakingLookahead.toFixed(0)}`,
+            `[SAMPLE START] speed=${speed.toFixed(0)} brakingLookahead=${brakingLookahead.toFixed(0)} rawCur=${rawCurrent.toFixed(0)}`,
           );
         }
 
@@ -574,20 +575,23 @@
           const sampleDist = (brakingLookahead / numBrakingSamples) * i;
           const futureSample = sampleAlongLine(line, idx, sampleDist);
           if (futureSample && Number.isFinite(futureSample.targetSpeed)) {
-            // CRITICAL: Do NOT clamp to MAX_TARGET_SPEED here - we need to preserve speed differences
-            // for corner detection. If all speeds get clamped to 2600, speedDrop becomes 0!
-            const scaledSpeed = futureSample.targetSpeed * speedScale;
+            // Track BOTH raw and scaled speeds
+            // Raw speed is for corner detection (comparing racing line speeds)
+            // Scaled speed is for target speed calculation (actual driving speed)
+            const rawSpeed = futureSample.targetSpeed;
+            const scaledSpeed = rawSpeed * speedScale;
             if (enableDebug) {
               console.log(
-                `  Sample ${i}: dist=${sampleDist.toFixed(0)} rawSpeed=${futureSample.targetSpeed.toFixed(0)} scaled=${scaledSpeed.toFixed(0)}`,
+                `  Sample ${i}: dist=${sampleDist.toFixed(0)} rawSpeed=${rawSpeed.toFixed(0)} scaled=${scaledSpeed.toFixed(0)}`,
               );
             }
-            if (scaledSpeed < minFutureSpeed) {
+            if (rawSpeed < minFutureSpeedRaw) {
+              minFutureSpeedRaw = rawSpeed;
               minFutureSpeed = scaledSpeed;
               brakingDistance = sampleDist;
               if (enableDebug) {
                 console.log(
-                  `    ^^ NEW MIN: minFuture=${minFutureSpeed.toFixed(0)} brakeDist=${brakingDistance.toFixed(0)}`,
+                  `    ^^ NEW MIN: rawMin=${minFutureSpeedRaw.toFixed(0)} scaledMin=${minFutureSpeed.toFixed(0)} brakeDist=${brakingDistance.toFixed(0)}`,
                 );
               }
             }
@@ -595,7 +599,8 @@
         }
 
         // If no valid samples found, use current speed as fallback
-        if (!Number.isFinite(minFutureSpeed) || minFutureSpeed === Infinity) {
+        if (!Number.isFinite(minFutureSpeedRaw) || minFutureSpeedRaw === Infinity) {
+          minFutureSpeedRaw = rawCurrent;
           minFutureSpeed = scaledCurrent;
           brakingDistance = 0;
           if (enableDebug) {
@@ -603,7 +608,7 @@
           }
         } else if (enableDebug) {
           console.log(
-            `[SAMPLE END] minFuture=${minFutureSpeed.toFixed(0)} brakeDist=${brakingDistance.toFixed(0)}`,
+            `[SAMPLE END] rawMin=${minFutureSpeedRaw.toFixed(0)} scaledMin=${minFutureSpeed.toFixed(0)} brakeDist=${brakingDistance.toFixed(0)}`,
           );
         }
 
@@ -643,12 +648,13 @@
         let brake = baseBrake;
 
         // Calculate required deceleration and braking intensity
-        // CRITICAL: Compare future speed against CURRENT racing line speed, not actual car speed
+        // CRITICAL: Compare RAW racing line speeds to detect corners properly
         // If corner ahead requires 150 px/s but current line is 500 px/s, need to slow down by 350
-        const speedDrop = scaledCurrent - minFutureSpeed;
+        // Using RAW speeds prevents the issue where both get scaled/clamped to same value
+        const speedDrop = rawCurrent - minFutureSpeedRaw;
         if (enableDebug) {
           console.log(
-            `[ANTICIPATION CHECK] scaledCur=${scaledCurrent.toFixed(0)} minFut=${minFutureSpeed.toFixed(0)} speedDrop=${speedDrop.toFixed(0)} brakeDist=${brakingDistance.toFixed(0)}`,
+            `[ANTICIPATION CHECK] rawCur=${rawCurrent.toFixed(0)} rawMin=${minFutureSpeedRaw.toFixed(0)} speedDrop=${speedDrop.toFixed(0)} brakeDist=${brakingDistance.toFixed(0)}`,
           );
         }
         if (speedDrop > 0 && brakingDistance > 0) {
