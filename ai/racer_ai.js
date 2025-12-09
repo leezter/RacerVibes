@@ -574,7 +574,9 @@
           const sampleDist = (brakingLookahead / numBrakingSamples) * i;
           const futureSample = sampleAlongLine(line, idx, sampleDist);
           if (futureSample && Number.isFinite(futureSample.targetSpeed)) {
-            const scaledSpeed = Math.min(MAX_TARGET_SPEED, futureSample.targetSpeed * speedScale);
+            // CRITICAL: Do NOT clamp to MAX_TARGET_SPEED here - we need to preserve speed differences
+            // for corner detection. If all speeds get clamped to 2600, speedDrop becomes 0!
+            const scaledSpeed = futureSample.targetSpeed * speedScale;
             if (enableDebug) {
               console.log(
                 `  Sample ${i}: dist=${sampleDist.toFixed(0)} rawSpeed=${futureSample.targetSpeed.toFixed(0)} scaled=${scaledSpeed.toFixed(0)}`,
