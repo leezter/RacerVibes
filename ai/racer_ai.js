@@ -34,35 +34,35 @@
   const SKILL_PRESETS = {
     easy: {
       maxThrottle: 0.85,
-      brakeAggro: 0.65,
+      brakeAggro: 0.7, // INCREASED: More braking for improved corner handling
       steerP: 1.6,
       steerD: 0.06,
       lookaheadBase: 35,
       lookaheadSpeed: 0.12,
-      cornerMargin: 32,
+      cornerMargin: 28, // REDUCED: Less margin with better speed calculation
       steerCutThrottle: 0.45,
       searchWindow: 48,
       speedHysteresis: 14,
       cornerEntryFactor: 0.45,
-      minTargetSpeed: 90,
+      minTargetSpeed: 85, // REDUCED: Allow slower speeds to match new corner speed floor
     },
     medium: {
       maxThrottle: 0.95,
-      brakeAggro: 0.9,
+      brakeAggro: 0.88, // SLIGHTLY REDUCED: More balanced with new deceleration calculation
       steerP: 2.1,
       steerD: 0.1,
       lookaheadBase: 40,
       lookaheadSpeed: 0.14,
-      cornerMargin: 22,
+      cornerMargin: 18, // REDUCED: Less margin with better speed calculation
       steerCutThrottle: 0.3,
       searchWindow: 56,
       speedHysteresis: 10,
       cornerEntryFactor: 0.6,
-      minTargetSpeed: 110,
+      minTargetSpeed: 100, // REDUCED: Allow slower speeds to match new corner speed floor
     },
     hard: {
       maxThrottle: 1.2,
-      brakeAggro: 0.62,
+      brakeAggro: 0.7, // INCREASED: Hard AI needs more braking with tighter corner speeds
       steerP: 3.2,
       steerD: 0.16,
       lookaheadBase: 50,
@@ -72,7 +72,7 @@
       searchWindow: 64,
       speedHysteresis: 7,
       cornerEntryFactor: 0.75,
-      minTargetSpeed: 120,
+      minTargetSpeed: 110, // REDUCED: Allow slower speeds to match new corner speed floor
     },
   };
 
