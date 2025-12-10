@@ -381,7 +381,7 @@
       if (r < minRadius) minRadius = r;
       if (r > maxRadius) maxRadius = r;
     }
-    const radiusRange = Math.max(1, maxRadius - minRadius);
+    const radiusRange = maxRadius - minRadius;
 
     // Second pass: calculate target speeds with improved corner detection
     return pointData.map((data, idx) => {
@@ -394,7 +394,8 @@
 
       // 2. Apply corner sharpness factor
       // Normalize radius: 0 = tightest corner, 1 = widest corner/straight
-      const radiusNorm = (radiusPx - minRadius) / radiusRange;
+      // If all corners have same radius (range = 0), treat as straight (norm = 1)
+      const radiusNorm = radiusRange > 0 ? (radiusPx - minRadius) / radiusRange : 1.0;
 
       // Apply power curve to create non-linear speed reduction for tight corners
       // cornerSpeedCurvePower < 1 means tight corners get much slower speeds
@@ -725,7 +726,7 @@
           // Apply cubic power curve for more balanced braking feel
           // Cubic (x³) creates gentler braking for light scenarios but still strong for hard braking
           // This prevents over-braking in gentle corners while maintaining safety in sharp corners
-          let brakingIntensity = rawIntensity * rawIntensity * rawIntensity;
+          let brakingIntensity = Math.pow(rawIntensity, 3);
 
           // Apply anticipatory braking using brakeAggro
           const BRAKE_AMPLIFICATION_FACTOR = 1.15; // Moderate amplification
