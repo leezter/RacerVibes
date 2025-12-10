@@ -701,7 +701,11 @@
             `[ANTICIPATION CHECK] rawCur=${rawCurrent.toFixed(0)} rawMin=${minFutureSpeedRaw.toFixed(0)} speedDrop=${speedDrop.toFixed(0)} brakeDist=${brakingDistance.toFixed(0)}`,
           );
         }
-        if (speedDrop > 0 && brakingDistance > 0) {
+        // Only apply anticipatory braking if:
+        // 1. There's a corner ahead with lower speed (speedDrop > 0)
+        // 2. Current speed is higher than target corner speed (need to slow down)
+        // This prevents braking at race start when speed is near 0
+        if (speedDrop > 0 && brakingDistance > 0 && speed > minFutureSpeed) {
           // Improved deceleration calculation
           // Use kinematic equation: v² = u² + 2as, solve for a = (v² - u²) / (2s)
           // This gives exact required deceleration, not time-based approximation
