@@ -258,33 +258,113 @@
     };
   }
 
+  /**
+   * Build edge curves (inner and outer) from a centerline.
+   * Uses miter-style averaging at corners with curvature-based offset limiting
+   * to prevent self-intersection on sharp turns.
+   */
   function buildEdges(centerline, roadWidth) {
     const inner = [];
     const outer = [];
     const normals = [];
     const half = (roadWidth || 80) * 0.5;
-    for (let i = 0; i < centerline.length - 1; i++) {
+    const n = centerline.length;
+    
+    if (n < 2) return { inner, outer, normals };
+    
+    // Pre-compute segment normals
+    const segNormals = [];
+    for (let i = 0; i < n - 1; i++) {
       const a = centerline[i];
       const b = centerline[i + 1];
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const len = Math.hypot(dx, dy) || 1;
-      const nx = -dy / len;
-      const ny = dx / len;
-      normals.push({ x: nx, y: ny });
-      inner.push({ x: a.x - nx * half, y: a.y - ny * half, nx, ny });
-      outer.push({ x: a.x + nx * half, y: a.y + ny * half, nx, ny });
+      segNormals.push({ x: -dy / len, y: dx / len });
     }
-    const last = centerline[centerline.length - 1];
-    const first = centerline[0];
-    const dx0 = first.x - last.x;
-    const dy0 = first.y - last.y;
-    const len0 = Math.hypot(dx0, dy0) || 1;
-    const nx0 = -dy0 / len0;
-    const ny0 = dx0 / len0;
-    inner.push({ x: last.x - nx0 * half, y: last.y - ny0 * half, nx: nx0, ny: ny0 });
-    outer.push({ x: last.x + nx0 * half, y: last.y + ny0 * half, nx: nx0, ny: ny0 });
-    normals.push({ x: nx0, y: ny0 });
+    // For closed loop: add normal from last to first
+    const lastPt = centerline[n - 1];
+    const firstPt = centerline[0];
+    const dxClose = firstPt.x - lastPt.x;
+    const dyClose = firstPt.y - lastPt.y;
+    const lenClose = Math.hypot(dxClose, dyClose) || 1;
+    segNormals.push({ x: -dyClose / lenClose, y: dxClose / lenClose });
+    
+    for (let i = 0; i < n; i++) {
+      const pt = centerline[i];
+      
+      // Get normals of adjacent segments
+      const prevSegIdx = (i - 1 + n) % n;
+      const currSegIdx = i % segNormals.length;
+      
+      // For first point, use next segment normal; for others, average prev and curr
+      let nx, ny;
+      if (i === 0) {
+        // Average closing segment normal with first segment normal
+        const n1 = segNormals[segNormals.length - 1];
+        const n2 = segNormals[0];
+        nx = (n1.x + n2.x) / 2;
+        ny = (n1.y + n2.y) / 2;
+      } else if (i === n - 1) {
+        // Last point (same as first for closed loop)
+        const n1 = segNormals[i - 1];
+        const n2 = segNormals[segNormals.length - 1];
+        nx = (n1.x + n2.x) / 2;
+        ny = (n1.y + n2.y) / 2;
+      } else {
+        // Average previous and current segment normals
+        const n1 = segNormals[i - 1];
+        const n2 = segNormals[i];
+        nx = (n1.x + n2.x) / 2;
+        ny = (n1.y + n2.y) / 2;
+      }
+      
+      // Normalize the averaged normal
+      const avgLen = Math.hypot(nx, ny) || 1;
+      nx /= avgLen;
+      ny /= avgLen;
+      
+      // Calculate miter factor (how much to extend/contract at corners)
+      // For sharp corners (low avgLen before normalization), this can get very large
+      // Limit it to prevent extreme miter extensions
+      const miterFactor = 1 / (avgLen + 0.001);
+      
+      // For inner curve (negative offset), limit the offset at sharp corners
+      // to prevent self-intersection
+      // The key insight: at sharp inward corners, reduce the inner offset
+      let innerOffset = half;
+      let outerOffset = half;
+      
+      // Check if this is a sharp corner by looking at the angle between normals
+      if (i > 0 && i < n - 1) {
+        const n1 = segNormals[i - 1];
+        const n2 = segNormals[i];
+        const dot = n1.x * n2.x + n1.y * n2.y;
+        
+        // dot < 1 means there's an angle; dot < 0 means > 90 degree turn
+        if (dot < 0.7) {
+          // Sharp corner - limit the inner offset to prevent overlap
+          // For very sharp corners, use a smaller offset
+          const sharpness = Math.max(0.3, dot);
+          innerOffset = half * Math.max(0.3, (sharpness + 0.3));
+          // Outer can extend slightly more
+          outerOffset = half * Math.min(1.5, 1 / Math.max(0.5, avgLen));
+        }
+      }
+      
+      normals.push({ x: nx, y: ny });
+      inner.push({ 
+        x: pt.x - nx * innerOffset, 
+        y: pt.y - ny * innerOffset, 
+        nx, ny 
+      });
+      outer.push({ 
+        x: pt.x + nx * outerOffset, 
+        y: pt.y + ny * outerOffset, 
+        nx, ny 
+      });
+    }
+    
     return { inner, outer, normals };
   }
 
@@ -309,15 +389,51 @@
     return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
   }
 
+  /**
+   * Check if two line segments intersect (excluding endpoints)
+   */
+  function segmentsIntersect(p1, p2, p3, p4) {
+    const d1x = p2.x - p1.x, d1y = p2.y - p1.y;
+    const d2x = p4.x - p3.x, d2y = p4.y - p3.y;
+    const cross = d1x * d2y - d1y * d2x;
+    if (Math.abs(cross) < 0.0001) return false;
+    const t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / cross;
+    const u = ((p3.x - p1.x) * d1y - (p3.y - p1.y) * d1x) / cross;
+    return t > 0.01 && t < 0.99 && u > 0.01 && u < 0.99;
+  }
+
   function paintKerbMetadata(edgePoints, curvature, params, side) {
     const stripes = [];
     const stripeLength = 18;
     const kerbWidth = Math.max(6, 0.14 * params.roadWidth * params.kerbWidthScale);
     let acc = 0;
+    
+    // First pass: collect all potential stripes
+    const potentialStripes = [];
     for (let i = 0; i < edgePoints.length - 1; i++) {
       const a = edgePoints[i];
       const b = edgePoints[i + 1];
       const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+      
+      // Skip very short segments (can cause issues at sharp corners)
+      if (segLen < 2) continue;
+      
+      // Check for "folded" segments at sharp corners (inner edge crossing itself)
+      // by comparing direction with previous segment
+      if (i > 0) {
+        const prevA = edgePoints[i - 1];
+        const prevDir = { x: a.x - prevA.x, y: a.y - prevA.y };
+        const currDir = { x: b.x - a.x, y: b.y - a.y };
+        const cross = prevDir.x * currDir.y - prevDir.y * currDir.x;
+        const dot = prevDir.x * currDir.x + prevDir.y * currDir.y;
+        
+        // If the segment has reversed direction significantly, skip it
+        // This happens when the inner edge folds back on itself at sharp corners
+        if (dot < 0 && side === "inner") {
+          continue;
+        }
+      }
+      
       const segAngle = Math.atan2(b.y - a.y, b.x - a.x);
       let t = 0;
       while (t < segLen) {
@@ -326,7 +442,7 @@
         const p1 = lerpPoint(a, b, t / segLen);
         const p2 = lerpPoint(a, b, next / segLen);
         const curveBoost = 1 + Math.min(0.8, Math.abs(curvature[i]) * 2.2);
-        stripes.push({
+        potentialStripes.push({
           x1: p1.x,
           y1: p1.y,
           x2: p2.x,
@@ -335,11 +451,39 @@
           width: kerbWidth * curveBoost,
           stripeIndex: ((acc / stripeLength) & 1) === 0 ? 0 : 1,
           side,
+          segIdx: i,
         });
         t = next;
         acc += stripeLength;
       }
     }
+    
+    // Second pass: filter out stripes that would cause visual artifacts
+    // Check for stripes from non-adjacent segments that intersect
+    for (let i = 0; i < potentialStripes.length; i++) {
+      const s1 = potentialStripes[i];
+      let hasIntersection = false;
+      
+      // Check against nearby (but not adjacent) stripes
+      for (let j = i + 3; j < Math.min(i + 20, potentialStripes.length); j++) {
+        const s2 = potentialStripes[j];
+        // Skip if from same or adjacent segments
+        if (Math.abs(s1.segIdx - s2.segIdx) <= 2) continue;
+        
+        if (segmentsIntersect(
+          { x: s1.x1, y: s1.y1 }, { x: s1.x2, y: s1.y2 },
+          { x: s2.x1, y: s2.y1 }, { x: s2.x2, y: s2.y2 }
+        )) {
+          hasIntersection = true;
+          break;
+        }
+      }
+      
+      if (!hasIntersection) {
+        stripes.push(s1);
+      }
+    }
+    
     return stripes;
   }
 

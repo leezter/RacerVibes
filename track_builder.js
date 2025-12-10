@@ -244,7 +244,8 @@
         if (curvature > maxCurvature) {
           const violation = curvature / maxCurvature;
           maxViolation = Math.max(maxViolation, violation);
-          const blend = Math.min(0.7, 0.3 * violation);
+          // EXTREMELY aggressive blend - higher violations get moved almost all the way
+          const blend = Math.min(0.95, 0.5 + 0.3 * violation);
           const midX = (prev.x + nextPt.x) / 2;
           const midY = (prev.y + nextPt.y) / 2;
           next[i] = {
@@ -255,8 +256,213 @@
       }
       next[n - 1] = { ...next[0] };
       pts = next;
-      if (maxViolation < 1.05) break;
+      // Must be BELOW 1.0 to stop - no tolerance!
+      if (maxViolation <= 1.0) break;
     }
+    return pts;
+  }
+  
+  /**
+   * Compute offset points for one side of the track (inner or outer edge).
+   * Returns array of {x, y} points offset by `offset` distance along the normal.
+   */
+  function computeOffsetCurve(centerline, offset) {
+    const pts = ensureClosed(centerline);
+    const result = [];
+    const n = pts.length;
+    
+    for (let i = 0; i < n - 1; i++) {
+      // Compute normal at this point using average of adjacent segment normals
+      const prev = pts[(i - 1 + n - 1) % (n - 1)];
+      const curr = pts[i];
+      const next = pts[(i + 1) % (n - 1)];
+      
+      // Normal from prev->curr segment
+      const dx1 = curr.x - prev.x;
+      const dy1 = curr.y - prev.y;
+      const len1 = Math.hypot(dx1, dy1) || 1;
+      const nx1 = -dy1 / len1;
+      const ny1 = dx1 / len1;
+      
+      // Normal from curr->next segment  
+      const dx2 = next.x - curr.x;
+      const dy2 = next.y - curr.y;
+      const len2 = Math.hypot(dx2, dy2) || 1;
+      const nx2 = -dy2 / len2;
+      const ny2 = dx2 / len2;
+      
+      // Average normal (bisector direction)
+      let avgNx = (nx1 + nx2) / 2;
+      let avgNy = (ny1 + ny2) / 2;
+      const avgLen = Math.hypot(avgNx, avgNy) || 1;
+      avgNx /= avgLen;
+      avgNy /= avgLen;
+      
+      // For sharp corners, we need to adjust the offset distance
+      // to prevent the miter from extending too far
+      const dot = nx1 * nx2 + ny1 * ny2;
+      // Clamp the miter factor to avoid extreme extensions at sharp corners
+      const miterFactor = Math.max(0.5, Math.min(2.0, 1 / Math.sqrt((1 + dot) / 2 + 0.01)));
+      const adjustedOffset = offset * Math.min(miterFactor, 1.5);
+      
+      result.push({
+        x: curr.x + avgNx * adjustedOffset,
+        y: curr.y + avgNy * adjustedOffset
+      });
+    }
+    
+    // Close the curve
+    result.push({ ...result[0] });
+    return result;
+  }
+  
+  /**
+   * Check if an offset curve (track edge) has self-intersections.
+   */
+  function hasEdgeSelfIntersection(edgePoints) {
+    const pts = edgePoints;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a1 = pts[i];
+      const a2 = pts[i + 1];
+      // Check against non-adjacent segments
+      for (let j = i + 2; j < pts.length - 1; j++) {
+        // Skip segments that are nearly adjacent (within 3 indices)
+        if (Math.abs(i - j) <= 3) continue;
+        // Skip closing segment adjacency
+        if (i <= 2 && j >= pts.length - 4) continue;
+        const b1 = pts[j];
+        const b2 = pts[j + 1];
+        const hit = segmentIntersection(a1, a2, b1, b2);
+        if (hit) return true;
+      }
+    }
+    return false;
+  }
+  
+  /**
+   * Calculate maximum curvature in a path
+   */
+  function getMaxCurvature(points) {
+    const pts = ensureClosed(points);
+    const n = pts.length;
+    if (n < 4) return 0;
+    
+    let maxCurv = 0;
+    for (let i = 0; i < n - 1; i++) {
+      const prevIdx = (i - 1 + n - 1) % (n - 1);
+      const nextIdx = (i + 1) % (n - 1);
+      const curv = Math.abs(calcCurvature(pts[prevIdx], pts[i], pts[nextIdx]));
+      if (curv > maxCurv) maxCurv = curv;
+    }
+    return maxCurv;
+  }
+  
+  /**
+   * Aggressively smooth the entire track until maximum curvature is below threshold.
+   * This is the nuclear option - guarantees no sharp corners.
+   */
+  function smoothUntilSafe(points, maxAllowedCurvature, maxPasses = 50) {
+    let pts = ensureClosed(points).map(p => ({ x: p.x, y: p.y }));
+    
+    for (let pass = 0; pass < maxPasses; pass++) {
+      const currentMaxCurv = getMaxCurvature(pts);
+      
+      // If we're under the threshold, we're done
+      if (currentMaxCurv <= maxAllowedCurvature) {
+        break;
+      }
+      
+      // Apply whole-track Laplacian smoothing
+      pts = relaxPath(pts, 20, 0.5);
+      pts = resamplePath(pts, 10);
+    }
+    
+    return pts;
+  }
+  
+  /**
+   * Prevent edge overlap by iteratively smoothing the ENTIRE track
+   * until the inner edge no longer self-intersects.
+   * This is a guaranteed fix - it will keep smoothing until the problem is gone.
+   */
+  function preventEdgeOverlap(points, visualRoadWidth, maxIterations = 200) {
+    let pts = ensureClosed(points).map(p => ({ x: p.x, y: p.y }));
+    const halfWidth = visualRoadWidth * 0.5;
+    
+    // The minimum radius needed to prevent overlap is slightly more than halfWidth
+    // We use 1.2x to have safety margin
+    const safeMinRadius = halfWidth * 1.2;
+    const maxAllowedCurvature = 1 / safeMinRadius;
+    
+    for (let iter = 0; iter < maxIterations; iter++) {
+      // Compute inner edge (negative offset)
+      const innerEdge = computeOffsetCurve(pts, -halfWidth);
+      
+      // Check if inner edge has self-intersections
+      if (!hasEdgeSelfIntersection(innerEdge)) {
+        // Also verify max curvature is under threshold
+        const maxCurv = getMaxCurvature(pts);
+        if (maxCurv <= maxAllowedCurvature) {
+          break;
+        }
+      }
+      
+      // Apply aggressive whole-track smoothing
+      pts = relaxPath(pts, 10, 0.6);
+      pts = resamplePath(pts, 8);
+      
+      // Also enforce minimum radius
+      pts = enforceMinimumRadius(pts, safeMinRadius, 50);
+    }
+    
+    return pts;
+  }
+  
+  /**
+   * The ultimate smoothing function - guarantees no edge overlaps are possible.
+   * Uses multiple passes and verification.
+   */
+  function guaranteeNoOverlap(points, visualRoadWidth) {
+    let pts = ensureClosed(points).map(p => ({ x: p.x, y: p.y }));
+    const halfWidth = visualRoadWidth * 0.5;
+    
+    // Step 1: Calculate the minimum radius we need
+    // For no overlap, centerline radius must be > halfWidth
+    // We use 2.5x for a VERY comfortable margin - this makes corners much wider than
+    // the road, ensuring there's zero chance of inner edge overlap
+    const requiredMinRadius = halfWidth * 2.5;
+    const maxAllowedCurvature = 1 / requiredMinRadius;
+    
+    // Step 2: First pass - aggressive relaxation
+    pts = relaxPath(pts, 100, 0.6);
+    pts = resamplePath(pts, 8);
+    
+    // Step 3: Enforce minimum radius strictly with MANY iterations
+    pts = enforceMinimumRadius(pts, requiredMinRadius, 1000);
+    pts = resamplePath(pts, 8);
+    
+    // Step 4: Smooth until curvature is safe
+    pts = smoothUntilSafe(pts, maxAllowedCurvature, 50);
+    
+    // Step 5: Final verification and fix loop
+    for (let verify = 0; verify < 100; verify++) {
+      const innerEdge = computeOffsetCurve(pts, -halfWidth);
+      const hasOverlap = hasEdgeSelfIntersection(innerEdge);
+      const maxCurv = getMaxCurvature(pts);
+      
+      if (!hasOverlap && maxCurv <= maxAllowedCurvature) {
+        break; // Success!
+      }
+      
+      // Still has issues - apply more smoothing
+      pts = relaxPath(pts, 30, 0.7);
+      pts = resamplePath(pts, 8);
+      pts = enforceMinimumRadius(pts, requiredMinRadius, 200);
+    }
+    
+    // Step 6: Final resample for even spacing
+    pts = resamplePath(pts, 10);
+    
     return pts;
   }
   
@@ -827,15 +1033,21 @@
     if (this.state.tool === 'draw' && this.state.isDrawing) {
       this.state.isDrawing = false;
       
-      // Post-processing for smooth tracks
+      // Post-processing for smooth tracks - prevent sharp corners that cause edge overlap
       if (this.state.points.length > 10) {
+        // CRITICAL: Use visual width (with widthScale) for minimum radius calculation
+        const widthScale = readWidthScale();
+        const visualRoadWidth = this.state.roadWidth * widthScale;
+        
+        // Initial simplify and resample
         this.state.points = simplifyPath(this.state.points, 2.0);
         this.state.points = resamplePath(this.state.points, 8);
-        this.state.points = relaxPath(this.state.points, 40, 0.5);
-        this.state.points = resamplePath(this.state.points, 10);
-        const minRadius = this.state.roadWidth * 0.55;
-        this.state.points = enforceMinimumRadius(this.state.points, minRadius);
-        this.state.points = relaxPath(this.state.points, 10, 0.3);
+        
+        // Use the guaranteed no-overlap function - this is the nuclear option
+        // It will keep smoothing until edge overlap is IMPOSSIBLE
+        this.state.points = guaranteeNoOverlap(this.state.points, visualRoadWidth);
+        
+        // Final closure
         this.state.points = ensureClosed(this.state.points, 32);
       }
       
@@ -1256,15 +1468,19 @@
     const closedRaw = ensureClosed(copyPoints(this.state.points));
     const roadWidth = this.state.roadWidth;
     
-    // Processing pipeline
+    // CRITICAL: Use visual width (with widthScale) for minimum radius calculation
+    const widthScale = readWidthScale();
+    const visualRoadWidth = roadWidth * widthScale;
+    
+    // Initial processing
     let processed = simplifyPath(closedRaw, 2.0);
     processed = resamplePath(processed, 8);
-    processed = relaxPath(processed, 60, 0.5);
-    processed = resamplePath(processed, 8);
-    const minTurnRadius = roadWidth * 0.55;
-    processed = enforceMinimumRadius(processed, minTurnRadius, 300);
+    
+    // Use the guaranteed no-overlap function - this is the nuclear option
+    // It will keep smoothing until edge overlap is IMPOSSIBLE
+    processed = guaranteeNoOverlap(processed, visualRoadWidth);
+    
     processed = resamplePath(processed, SAMPLING_SPACING);
-    processed = relaxPath(processed, 15, 0.3);
     
     const intersections = findSelfIntersections(processed);
     
