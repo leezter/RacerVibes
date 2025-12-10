@@ -716,15 +716,16 @@
           // Normalize deceleration to brake intensity
           // Typical car can decelerate at ~250-350 px/s² with good braking
           const MAX_DECEL_THRESHOLD = 280; // Realistic braking deceleration
-          let brakingIntensity = clamp(
+          let rawIntensity = clamp(
             (requiredDecel * sharpnessMultiplier) / MAX_DECEL_THRESHOLD,
             0,
             1,
           );
 
-          // Apply square root power curve for progressive braking feel
-          // This makes braking ramp up smoothly rather than being too aggressive early
-          brakingIntensity = Math.sqrt(brakingIntensity);
+          // Apply cubic power curve for more balanced braking feel
+          // Cubic (x³) creates gentler braking for light scenarios but still strong for hard braking
+          // This prevents over-braking in gentle corners while maintaining safety in sharp corners
+          let brakingIntensity = rawIntensity * rawIntensity * rawIntensity;
 
           // Apply anticipatory braking using brakeAggro
           const BRAKE_AMPLIFICATION_FACTOR = 1.15; // Moderate amplification
@@ -735,13 +736,13 @@
           brake = Math.max(brake, anticipation);
 
           // Throttle management during braking
-          // Cut throttle progressively based on braking intensity
-          if (brakingIntensity > 0.25) {
+          // Cut throttle progressively based on raw intensity (not cubed) for smoother response
+          if (rawIntensity > 0.5) {
             // Significant braking needed - cut throttle completely
             throttle = 0;
-          } else if (brakingIntensity > 0.1) {
-            // Light braking - reduce throttle proportionally
-            throttle *= 1 - brakingIntensity * 2; // 2x multiplier for smoother reduction
+          } else if (rawIntensity > 0.2) {
+            // Moderate braking - reduce throttle proportionally
+            throttle *= 1 - rawIntensity;
           }
         }
 
