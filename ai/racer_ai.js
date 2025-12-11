@@ -551,6 +551,9 @@
         // Distance needed to brake: d = (v² - v_target²) / (2 * a_brake)
         // Add safety margin based on difficulty
         const BRAKE_DECEL_ESTIMATE = 400; // Estimated braking deceleration (px/s²) - conservative
+        const MIN_SPEED_DROP_THRESHOLD = 20; // Minimum speed difference to trigger anticipatory braking (px/s)
+        const HARD_BRAKE_THROTTLE_CUT_THRESHOLD = 0.3; // Brake intensity threshold for complete throttle cut
+        const MODERATE_BRAKE_THROTTLE_CUT_THRESHOLD = 0.1; // Brake intensity threshold for proportional throttle reduction
         const brakingLookaheadBase = 150; // Minimum lookahead distance
         const brakingLookaheadSpeedFactor = 0.85; // Scale with speed for anticipation time
         const brakingLookahead = brakingLookaheadBase + speed * brakingLookaheadSpeedFactor;
@@ -646,9 +649,9 @@
         let brake = baseBrake;
 
         // Calculate required braking using physics-based kinematic equations
-        // CRITICAL: Compare RAW racing line speeds to detect corners properly
-        // Using RAW speeds prevents issues where both get scaled/clamped to same value
-        const speedDrop = speed - minFutureSpeed; // Actual speed we need to shed
+        // We use actual car speed vs scaled target speed for the upcoming corner
+        // This correctly accounts for how fast the car needs to slow down
+        const speedDrop = speed - minFutureSpeed; // Actual speed difference we need to shed
         if (enableDebug) {
           console.log(
             `[ANTICIPATION CHECK] speed=${speed.toFixed(0)} targetFuture=${minFutureSpeed.toFixed(0)} speedDrop=${speedDrop.toFixed(0)} brakeDist=${brakingDistance.toFixed(0)}`,
@@ -656,7 +659,7 @@
         }
         
         // Only apply anticipatory braking if we need to slow down AND corner is approaching
-        if (speedDrop > 20 && brakingDistance > 0) {
+        if (speedDrop > MIN_SPEED_DROP_THRESHOLD && brakingDistance > 0) {
           // Use kinematic equation: v_f² = v_i² + 2*a*d
           // Solving for required deceleration: a = (v_f² - v_i²) / (2*d)
           // Negative because it's deceleration
@@ -678,10 +681,10 @@
 
           // Throttle management during braking
           // Cut throttle progressively as braking increases
-          if (brakingIntensity > 0.3) {
+          if (brakingIntensity > HARD_BRAKE_THROTTLE_CUT_THRESHOLD) {
             // Hard braking - cut throttle completely
             throttle = 0;
-          } else if (brakingIntensity > 0.1) {
+          } else if (brakingIntensity > MODERATE_BRAKE_THROTTLE_CUT_THRESHOLD) {
             // Moderate braking - reduce throttle proportionally
             throttle *= 1 - brakingIntensity;
           }
