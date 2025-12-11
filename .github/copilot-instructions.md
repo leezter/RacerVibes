@@ -241,7 +241,6 @@ Open: `http://localhost:8080/racer_start_menu.html`
 ## Keeping This Document Updated
 
 **Important for AI agents**: After making significant changes to the codebase, update this document to reflect:
-
 1. **New files/modules**: Add to folder structure and describe purpose
 2. **New global APIs**: Add to the APIs table
 3. **Config changes**: Update relevant config object documentation
