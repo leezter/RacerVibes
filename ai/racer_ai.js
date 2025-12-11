@@ -31,7 +31,7 @@
   const SKILL_PRESETS = {
     easy: {
       maxThrottle: 0.85,
-      brakeAggro: 0.65,
+      brakeAggro: 1.15, // Brake earlier and harder (more conservative)
       steerP: 1.6,
       steerD: 0.06,
       lookaheadBase: 35,
@@ -45,7 +45,7 @@
     },
     medium: {
       maxThrottle: 0.95,
-      brakeAggro: 0.9,
+      brakeAggro: 1.0, // Balanced braking (reference point)
       steerP: 2.1,
       steerD: 0.1,
       lookaheadBase: 40,
@@ -59,7 +59,7 @@
     },
     hard: {
       maxThrottle: 1.2,
-      brakeAggro: 0.62,
+      brakeAggro: 0.85, // Brake later and lighter (more aggressive)
       steerP: 3.2,
       steerD: 0.16,
       lookaheadBase: 50,
@@ -547,11 +547,15 @@
         const scaledCurrent = Math.min(MAX_TARGET_SPEED, rawCurrent * speedScale);
 
         // Enhanced corner braking anticipation - look further ahead for sharp corners
-        // Use longer braking lookahead that scales linearly with speed (increased anticipation time)
-        // This allows AI to detect and brake for sharp corners well in advance
-        // Balanced for appropriate braking without over-braking
-        const brakingLookaheadBase = 170; // Minimum braking lookahead distance (balanced)
-        const brakingLookaheadSpeedFactor = 0.7; // Scale with speed for high-speed braking (balanced)
+        // Use physics-based braking lookahead that accounts for actual stopping distance
+        // Distance needed to brake: d = (v² - v_target²) / (2 * a_brake)
+        // Add safety margin based on difficulty
+        const BRAKE_DECEL_ESTIMATE = 400; // Estimated braking deceleration (px/s²) - conservative
+        const MIN_SPEED_DROP_THRESHOLD = 20; // Minimum speed difference to trigger anticipatory braking (px/s)
+        const HARD_BRAKE_THROTTLE_CUT_THRESHOLD = 0.3; // Brake intensity threshold for complete throttle cut
+        const MODERATE_BRAKE_THROTTLE_CUT_THRESHOLD = 0.1; // Brake intensity threshold for proportional throttle reduction
+        const brakingLookaheadBase = 150; // Minimum lookahead distance
+        const brakingLookaheadSpeedFactor = 0.85; // Scale with speed for anticipation time
         const brakingLookahead = brakingLookaheadBase + speed * brakingLookaheadSpeedFactor;
 
         // Sample multiple points ahead to find the minimum speed requirement
@@ -644,48 +648,51 @@
 
         let brake = baseBrake;
 
-        // Calculate required deceleration and braking intensity
-        // CRITICAL: Compare RAW racing line speeds to detect corners properly
-        // If corner ahead requires 150 px/s but current line is 500 px/s, need to slow down by 350
-        // Using RAW speeds prevents the issue where both get scaled/clamped to same value
-        const speedDrop = rawCurrent - minFutureSpeedRaw;
+        // Calculate required braking using physics-based kinematic equations
+        // We use actual car speed vs scaled target speed for the upcoming corner
+        // This correctly accounts for how fast the car needs to slow down
+        const speedDrop = speed - minFutureSpeed; // Actual speed difference we need to shed
         if (enableDebug) {
           console.log(
-            `[ANTICIPATION CHECK] rawCur=${rawCurrent.toFixed(0)} rawMin=${minFutureSpeedRaw.toFixed(0)} speedDrop=${speedDrop.toFixed(0)} brakeDist=${brakingDistance.toFixed(0)}`,
+            `[ANTICIPATION CHECK] speed=${speed.toFixed(0)} targetFuture=${minFutureSpeed.toFixed(0)} speedDrop=${speedDrop.toFixed(0)} brakeDist=${brakingDistance.toFixed(0)}`,
           );
         }
-        if (speedDrop > 0 && brakingDistance > 0) {
-          // Use approximation: a = Δv / Δt where Δt = distance / average_speed
-          // This estimates time to reach corner and calculates required average deceleration
-          // Use actual car speed for time calculation
-          const avgSpeed = (speed + minFutureSpeed) / 2;
-          const timeToCorner = avgSpeed > 10 ? brakingDistance / avgSpeed : 1.0;
-          const requiredDecel = speedDrop / Math.max(timeToCorner, 0.1);
-
-          // Normalize deceleration to brake intensity with balanced scaling
-          // Balanced threshold for appropriate braking response
-          const MAX_DECEL_THRESHOLD = 200; // Balanced threshold for reasonable braking
-          let brakingIntensity = clamp(requiredDecel / MAX_DECEL_THRESHOLD, 0, 1);
-
-          // Apply square root power curve for balanced amplification
-          // This amplifies moderate values while keeping brake values reasonable
-          brakingIntensity = Math.sqrt(brakingIntensity);
-
-          // Apply balanced anticipatory braking using brakeAggro
-          // Amplify appropriately but clamp to 1.0 since physics input is clamped
-          const BRAKE_AMPLIFICATION_FACTOR = 1.2; // Balanced amplification for appropriate braking
-          const anticipation = Math.min(
-            1.0,
-            brakingIntensity * skill.brakeAggro * BRAKE_AMPLIFICATION_FACTOR,
-          );
+        
+        // Only apply anticipatory braking if we need to slow down AND corner is approaching
+        if (speedDrop > MIN_SPEED_DROP_THRESHOLD && brakingDistance > 0) {
+          // Use kinematic equation: v_f² = v_i² + 2*a*d
+          // Solving for required deceleration: a = (v_f² - v_i²) / (2*d)
+          // Negative because it's deceleration
+          const v_i_sq = speed * speed;
+          const v_f_sq = minFutureSpeed * minFutureSpeed;
+          const requiredDecel = Math.abs((v_f_sq - v_i_sq) / (2 * brakingDistance));
+          
+          // Normalize against estimated braking capability
+          // AI braking capability is approximately: brakeForce / mass ≈ 600 / 2.2 ≈ 273 px/s²
+          // But tire friction limits it further, and we want conservative estimate
+          // BRAKE_DECEL_ESTIMATE = 400 px/s² is our safety threshold
+          let brakingIntensity = clamp(requiredDecel / BRAKE_DECEL_ESTIMATE, 0, 1);
+          
+          // Apply skill-based braking aggression scaling
+          // Easy: more conservative (brake earlier/harder)
+          // Hard: more aggressive (brake later/lighter) 
+          const anticipation = Math.min(1.0, brakingIntensity * skill.brakeAggro);
           brake = Math.max(brake, anticipation);
 
-          // CUT throttle completely when significant braking is needed
-          if (brakingIntensity > 0.2) {
-            // Cut throttle during hard braking
-            throttle = 0; // Complete throttle cut
-          } else {
+          // Throttle management during braking
+          // Cut throttle progressively as braking increases
+          if (brakingIntensity > HARD_BRAKE_THROTTLE_CUT_THRESHOLD) {
+            // Hard braking - cut throttle completely
+            throttle = 0;
+          } else if (brakingIntensity > MODERATE_BRAKE_THROTTLE_CUT_THRESHOLD) {
+            // Moderate braking - reduce throttle proportionally
             throttle *= 1 - brakingIntensity;
+          }
+          
+          if (enableDebug) {
+            console.log(
+              `[BRAKE CALC] reqDecel=${requiredDecel.toFixed(1)} intensity=${brakingIntensity.toFixed(3)} brake=${brake.toFixed(3)} thr=${throttle.toFixed(3)}`,
+            );
           }
         }
 
