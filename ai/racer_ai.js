@@ -9,7 +9,7 @@
     apexAggression: 0.7, // 0 = conservative (60% track width), 1 = aggressive (95% track width)
     maxOffset: 0.9, // Maximum fraction of half-width to use
     minRadius: 12,
-    roadFriction: 1.35, // Increased to better match actual car physics (muLatRoad ~1.4)
+    roadFriction: 1.25, // Increased from 1.1 for more realistic cornering speeds (conservative vs muLatRoad ~1.4)
     gravity: 750, // px/s^2 to roughly match RacerPhysics defaults
     straightSpeed: 520, // px/s cap before scaling
     cornerSpeedFloor: 140,
@@ -662,9 +662,9 @@
           const requiredDecel = (currentSpeedSq - targetSpeedSq) / (2 * brakingDistance);
 
           // Estimate maximum deceleration capability (based on typical braking physics)
-          // With brakeForce ~600, mass ~2.2, and friction ~1.4, max decel is roughly 300-400 px/s²
-          // Use a slightly conservative estimate to ensure we can actually achieve it
-          const MAX_DECEL_CAPABILITY = 350; // px/s² - realistic maximum braking deceleration
+          // With brakeForce ~600 and mass ~2.2, max decel is brakeForce/mass ≈ 273 px/s²
+          // Use a slightly higher value to account for aerodynamic drag at high speeds
+          const MAX_DECEL_CAPABILITY = 300; // px/s² - realistic maximum braking deceleration
           
           // Calculate braking intensity as fraction of maximum capability
           // Use linear scaling (no sqrt) for more predictable braking response
