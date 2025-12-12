@@ -12,7 +12,10 @@
     roadFriction: 1.1,
     gravity: 750, // px/s^2 to roughly match RacerPhysics defaults
     straightSpeed: 520, // px/s cap before scaling
-    cornerSpeedFloor: 140,
+    cornerSpeedFloor: 80, // REDUCED: Allow slower speeds for very tight corners
+    // New: Corner speed curve parameters for better sharp corner detection
+    cornerSpeedCurvePower: 0.6, // Power curve for corner speed (< 1 = more aggressive speed reduction for tight corners)
+    maxCornerSpeed: 480, // Maximum speed for any corner (below straight speed for safety margin)
   };
   const MAX_TARGET_SPEED = 2600; // ~190 mph with ppm ≈ 30
 
@@ -31,35 +34,35 @@
   const SKILL_PRESETS = {
     easy: {
       maxThrottle: 0.85,
-      brakeAggro: 0.65,
+      brakeAggro: 0.7, // INCREASED: More braking for improved corner handling
       steerP: 1.6,
       steerD: 0.06,
       lookaheadBase: 35,
       lookaheadSpeed: 0.12,
-      cornerMargin: 32,
+      cornerMargin: 28, // REDUCED: Less margin with better speed calculation
       steerCutThrottle: 0.45,
       searchWindow: 48,
       speedHysteresis: 14,
       cornerEntryFactor: 0.45,
-      minTargetSpeed: 90,
+      minTargetSpeed: 85, // REDUCED: Allow slower speeds to match new corner speed floor
     },
     medium: {
       maxThrottle: 0.95,
-      brakeAggro: 0.9,
+      brakeAggro: 0.88, // SLIGHTLY REDUCED: More balanced with new deceleration calculation
       steerP: 2.1,
       steerD: 0.1,
       lookaheadBase: 40,
       lookaheadSpeed: 0.14,
-      cornerMargin: 22,
+      cornerMargin: 18, // REDUCED: Less margin with better speed calculation
       steerCutThrottle: 0.3,
       searchWindow: 56,
       speedHysteresis: 10,
       cornerEntryFactor: 0.6,
-      minTargetSpeed: 110,
+      minTargetSpeed: 100, // REDUCED: Allow slower speeds to match new corner speed floor
     },
     hard: {
       maxThrottle: 1.2,
-      brakeAggro: 0.62,
+      brakeAggro: 0.7, // INCREASED: Hard AI needs more braking with tighter corner speeds
       steerP: 3.2,
       steerD: 0.16,
       lookaheadBase: 50,
@@ -69,7 +72,7 @@
       searchWindow: 64,
       speedHysteresis: 7,
       cornerEntryFactor: 0.75,
-      minTargetSpeed: 120,
+      minTargetSpeed: 110, // REDUCED: Allow slower speeds to match new corner speed floor
     },
   };
 
@@ -357,17 +360,61 @@
     // 15. Calculate metadata (speed, curvature, etc.)
     const g = cfg.gravity;
     let arc = 0;
-    return path.map((pt, idx) => {
+
+    // First pass: calculate curvatures and radii for all points
+    const pointData = path.map((pt, idx) => {
       const prev = path[(idx - 1 + n) % n];
       const next = path[(idx + 1) % n];
       const segLen = Math.hypot(next.x - pt.x, next.y - pt.y) || 1;
-      arc += segLen;
       const tangent = { x: (next.x - pt.x) / segLen, y: (next.y - pt.y) / segLen };
       const normal = { x: -tangent.y, y: tangent.x };
       const curvature = signedCurvature(prev, pt, next);
       const radiusPx = Math.max(cfg.minRadius, Math.abs(1 / (curvature || 1e-4)));
-      const rawSpeed = Math.sqrt(Math.max(0, cfg.roadFriction * g * radiusPx));
-      const targetSpeed = clamp(rawSpeed, cfg.cornerSpeedFloor, cfg.straightSpeed);
+      return { pt, segLen, tangent, normal, curvature, radiusPx };
+    });
+
+    // Find min and max radii for normalization
+    let minRadius = Infinity;
+    let maxRadius = -Infinity;
+    for (let i = 0; i < n; i++) {
+      const r = pointData[i].radiusPx;
+      if (r < minRadius) minRadius = r;
+      if (r > maxRadius) maxRadius = r;
+    }
+    const radiusRange = maxRadius - minRadius;
+
+    // Second pass: calculate target speeds with improved corner detection
+    return pointData.map((data, idx) => {
+      arc += data.segLen;
+      const { pt, segLen, tangent, normal, curvature, radiusPx } = data;
+
+      // Enhanced corner speed calculation:
+      // 1. Use physics formula as baseline
+      const baseSpeed = Math.sqrt(Math.max(0, cfg.roadFriction * g * radiusPx));
+
+      // 2. Apply corner sharpness factor
+      // Normalize radius: 0 = tightest corner, 1 = widest corner/straight
+      // If all corners have same radius (range = 0), treat as straight (norm = 1)
+      const radiusNorm = radiusRange > 0 ? (radiusPx - minRadius) / radiusRange : 1.0;
+
+      // Apply power curve to create non-linear speed reduction for tight corners
+      // cornerSpeedCurvePower < 1 means tight corners get much slower speeds
+      // Example: radiusNorm=0.5 with power=0.6 becomes 0.66, so tighter corners get more speed reduction
+      const speedFactor = Math.pow(radiusNorm, cfg.cornerSpeedCurvePower || 0.6);
+
+      // 3. Calculate final target speed
+      // For straight sections (large radius), allow up to straightSpeed
+      // For corners, blend between cornerSpeedFloor and maxCornerSpeed based on sharpness
+      const maxAllowedSpeed = lerp(
+        cfg.cornerSpeedFloor,
+        Math.min(cfg.maxCornerSpeed || cfg.straightSpeed, cfg.straightSpeed),
+        speedFactor,
+      );
+
+      // Use the minimum of physics-based speed and sharpness-based speed
+      // This ensures we don't exceed physics limits OR take tight corners too fast
+      const targetSpeed = Math.min(baseSpeed, maxAllowedSpeed);
+
       return {
         index: idx,
         s: arc,
@@ -549,9 +596,9 @@
         // Enhanced corner braking anticipation - look further ahead for sharp corners
         // Use longer braking lookahead that scales linearly with speed (increased anticipation time)
         // This allows AI to detect and brake for sharp corners well in advance
-        // Balanced for appropriate braking without over-braking
-        const brakingLookaheadBase = 170; // Minimum braking lookahead distance (balanced)
-        const brakingLookaheadSpeedFactor = 0.7; // Scale with speed for high-speed braking (balanced)
+        // Improved parameters for better corner detection with new speed calculation
+        const brakingLookaheadBase = 140; // Minimum braking lookahead distance
+        const brakingLookaheadSpeedFactor = 0.65; // Scale with speed for high-speed braking
         const brakingLookahead = brakingLookaheadBase + speed * brakingLookaheadSpeedFactor;
 
         // Sample multiple points ahead to find the minimum speed requirement
@@ -654,38 +701,53 @@
             `[ANTICIPATION CHECK] rawCur=${rawCurrent.toFixed(0)} rawMin=${minFutureSpeedRaw.toFixed(0)} speedDrop=${speedDrop.toFixed(0)} brakeDist=${brakingDistance.toFixed(0)}`,
           );
         }
-        if (speedDrop > 0 && brakingDistance > 0) {
-          // Use approximation: a = Δv / Δt where Δt = distance / average_speed
-          // This estimates time to reach corner and calculates required average deceleration
-          // Use actual car speed for time calculation
-          const avgSpeed = (speed + minFutureSpeed) / 2;
-          const timeToCorner = avgSpeed > 10 ? brakingDistance / avgSpeed : 1.0;
-          const requiredDecel = speedDrop / Math.max(timeToCorner, 0.1);
+        // Only apply anticipatory braking if:
+        // 1. There's a corner ahead with lower speed (speedDrop > 0)
+        // 2. Current speed is higher than target corner speed (need to slow down)
+        // This prevents braking at race start when speed is near 0
+        if (speedDrop > 0 && brakingDistance > 0 && speed > minFutureSpeed) {
+          // Improved deceleration calculation
+          // Use kinematic equation: v² = u² + 2as, solve for a = (v² - u²) / (2s)
+          // This gives exact required deceleration, not time-based approximation
+          const currentSpeedSq = speed * speed;
+          const targetSpeedSq = minFutureSpeed * minFutureSpeed;
+          const requiredDecel =
+            Math.abs(targetSpeedSq - currentSpeedSq) / (2 * Math.max(brakingDistance, 1));
 
-          // Normalize deceleration to brake intensity with balanced scaling
-          // Balanced threshold for appropriate braking response
-          const MAX_DECEL_THRESHOLD = 200; // Balanced threshold for reasonable braking
-          let brakingIntensity = clamp(requiredDecel / MAX_DECEL_THRESHOLD, 0, 1);
+          // Additional safety factor: if corner is very sharp (large speed drop), be more aggressive
+          const speedDropRatio = speedDrop / Math.max(rawCurrent, 1);
+          const sharpnessMultiplier = 1 + Math.min(speedDropRatio * 0.5, 0.5); // Up to 1.5x for very sharp corners
 
-          // Apply square root power curve for balanced amplification
-          // This amplifies moderate values while keeping brake values reasonable
-          brakingIntensity = Math.sqrt(brakingIntensity);
+          // Normalize deceleration to brake intensity
+          // Typical car can decelerate at ~250-350 px/s² with good braking
+          const MAX_DECEL_THRESHOLD = 280; // Realistic braking deceleration
+          let rawIntensity = clamp(
+            (requiredDecel * sharpnessMultiplier) / MAX_DECEL_THRESHOLD,
+            0,
+            1,
+          );
 
-          // Apply balanced anticipatory braking using brakeAggro
-          // Amplify appropriately but clamp to 1.0 since physics input is clamped
-          const BRAKE_AMPLIFICATION_FACTOR = 1.2; // Balanced amplification for appropriate braking
+          // Apply cubic power curve for more balanced braking feel
+          // Cubic (x³) creates gentler braking for light scenarios but still strong for hard braking
+          // This prevents over-braking in gentle corners while maintaining safety in sharp corners
+          let brakingIntensity = Math.pow(rawIntensity, 3);
+
+          // Apply anticipatory braking using brakeAggro
+          const BRAKE_AMPLIFICATION_FACTOR = 1.15; // Moderate amplification
           const anticipation = Math.min(
             1.0,
             brakingIntensity * skill.brakeAggro * BRAKE_AMPLIFICATION_FACTOR,
           );
           brake = Math.max(brake, anticipation);
 
-          // CUT throttle completely when significant braking is needed
-          if (brakingIntensity > 0.2) {
-            // Cut throttle during hard braking
-            throttle = 0; // Complete throttle cut
-          } else {
-            throttle *= 1 - brakingIntensity;
+          // Throttle management during braking
+          // Cut throttle progressively based on raw intensity (not cubed) for smoother response
+          if (rawIntensity > 0.5) {
+            // Significant braking needed - cut throttle completely
+            throttle = 0;
+          } else if (rawIntensity > 0.2) {
+            // Moderate braking - reduce throttle proportionally
+            throttle *= 1 - rawIntensity;
           }
         }
 
