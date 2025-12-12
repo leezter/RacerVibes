@@ -444,6 +444,44 @@
     let idx = 0;
     let prevError = 0;
 
+    // --- Runtime Line Sanitization ---
+    // Re-calculate speeds to ensure they match physics, regardless of how the line was saved.
+    // This fixes issues where saved lines have excessive speeds (e.g., 2600 everywhere).
+    if (line.length > 3) {
+      const n = line.length;
+      // 1. Calculate raw curvatures with a window to reduce noise
+      const curvatures = new Float32Array(n);
+      const windowSize = Math.max(3, Math.floor(n / 30));
+      for (let i = 0; i < n; i++) {
+        const prev = line[(i - windowSize + n) % n];
+        const next = line[(i + windowSize) % n];
+        curvatures[i] = signedCurvature(prev, line[i], next);
+      }
+
+      // 2. Smooth curvatures for stability
+      const sm = smoothValues(Array.from(curvatures), 4, 0.5);
+
+      // 3. Apply physics limits
+      // Standard physics: friction 1.1, gravity 750 (approx)
+      const FRICTION_LIMIT = 1.25; // Slightly higher than 1.1 to allow aggressive cornering
+      const GRAVITY = 750;
+      const MAX_SPEED_CAP = 1200; // Reasonable cap for gameplay (2600 is too fast)
+
+      for (let i = 0; i < n; i++) {
+        const k = Math.abs(sm[i]);
+        const radius = k > 1e-4 ? 1 / k : 10000;
+        const limit = Math.sqrt(FRICTION_LIMIT * GRAVITY * radius);
+        line[i].targetSpeed = clamp(limit, 120, MAX_SPEED_CAP);
+      }
+
+      // 4. Smooth speeds to prevent abrupt braking changes
+      const speeds = line.map(p => p.targetSpeed);
+      const smoothSpeeds = smoothValues(speeds, 12, 0.5); // Heavy smoothing for velocity profile
+      for (let i = 0; i < n; i++) {
+        line[i].targetSpeed = smoothSpeeds[i];
+      }
+    }
+
     const resolveSkill = (level) => {
       if (typeof level === 'string' && SKILL_PRESETS[level]) {
         return { ...SKILL_PRESETS[level], id: level };
@@ -460,6 +498,7 @@
       setLine(newLine) {
         line = Array.isArray(newLine) ? newLine : [];
         idx = 0;
+        // Note: ideally sanitize would be called here too, but for now we focus on init
       },
       setDifficulty(level) {
         skill = resolveSkill(level);
@@ -488,7 +527,6 @@
         const lookaheadHeading = Math.atan2(targetY, targetX);
 
         // Get the racing line's tangent direction at current position
-        // This tells us where the racing line is actually pointing right now
         const tangent = currentNode.tangent;
         let tangentHeading = car.angle; // fallback
         if (tangent && Number.isFinite(tangent.x) && Number.isFinite(tangent.y)) {
@@ -505,19 +543,16 @@
         }
 
         // Blend tangent direction (following the line) with lookahead direction (anticipating turns)
-        // Use primarily lookahead direction for smoother steering (racing line as guide, not strict path)
         const tangentError = normalizeAngle(tangentHeading - car.angle);
         const lookaheadError = normalizeAngle(lookaheadHeading - car.angle);
 
         // Lateral correction: only apply when significantly off the line (deadband)
-        // Also reduce correction at higher speeds to avoid oscillation
         const LATERAL_DEADBAND = 15; // pixels - ignore small offsets
         const absOffset = Math.abs(lateralOffset);
         let lateralCorrection = 0;
         if (absOffset > LATERAL_DEADBAND) {
-          // Apply gentle correction only for significant deviations
           const excessOffset = absOffset - LATERAL_DEADBAND;
-          const speedFactor = clamp(1 - speed / 800, 0.2, 1); // Reduce correction at high speed
+          const speedFactor = clamp(1 - speed / 800, 0.2, 1);
           lateralCorrection = clamp(
             -Math.sign(lateralOffset) * excessOffset * LATERAL_CORRECTION_GAIN * speedFactor,
             -0.15,
@@ -525,7 +560,7 @@
           );
         }
 
-        // Blend: use lookahead primarily for smooth steering, tangent helps follow the line shape
+        // Blend: use lookahead primarily for smooth steering
         const blendedError =
           tangentError * TANGENT_BLEND_WEIGHT +
           lookaheadError * LOOKAHEAD_BLEND_WEIGHT +
@@ -539,205 +574,98 @@
         );
         prevError = error;
 
-        const rawCurrent =
-          currentNode && Number.isFinite(currentNode.targetSpeed)
-            ? currentNode.targetSpeed
-            : skill.minTargetSpeed;
-        const speedScale = mapThrottleToSpeedScale(skill.maxThrottle);
-        const scaledCurrent = Math.min(MAX_TARGET_SPEED, rawCurrent * speedScale);
+        // --- Speed Control ---
+        // Get target speed from the line (Sanitized, so it's a real physics limit)
+        const targetSpeedRaw = currentNode.targetSpeed;
 
-        // Enhanced corner braking anticipation - look further ahead for sharp corners
-        // Use longer braking lookahead that scales linearly with speed (increased anticipation time)
-        // This allows AI to detect and brake for sharp corners well in advance
-        // Balanced for appropriate braking without over-braking
-        const brakingLookaheadBase = 170; // Minimum braking lookahead distance (balanced)
-        const brakingLookaheadSpeedFactor = 0.7; // Scale with speed for high-speed braking (balanced)
-        const brakingLookahead = brakingLookaheadBase + speed * brakingLookaheadSpeedFactor;
+        // Apply difficulty scaling only to max cap, NOT to corner limits
+        // We trust the line speed is the corner limit.
+        const difficultyMax = 1000 * mapThrottleToSpeedScale(skill.maxThrottle);
+        const targetSpeed = Math.min(difficultyMax, targetSpeedRaw);
 
-        // Sample multiple points ahead to find the minimum speed requirement
-        // This is used both for target speed calculation AND for anticipatory braking
-        // Increased samples for better corner detection at high speed
-        const numBrakingSamples = 8;
-        let minFutureSpeedRaw = Infinity; // Track RAW (unscaled) minimum speed for corner detection
-        let minFutureSpeed = Infinity; // Track SCALED minimum speed for target speed calculation
-        let brakingDistance = brakingLookahead; // Default to full lookahead distance
-
-        // Debug logging for sampling
-        const enableDebug =
-          typeof window !== 'undefined' && window.DEBUG_AI_BRAKING && Math.random() < 0.01;
-        if (enableDebug) {
-          console.log(
-            `[SAMPLE START] speed=${speed.toFixed(0)} brakingLookahead=${brakingLookahead.toFixed(0)} rawCur=${rawCurrent.toFixed(0)}`,
-          );
-        }
-
-        for (let i = 1; i <= numBrakingSamples; i++) {
-          const sampleDist = (brakingLookahead / numBrakingSamples) * i;
-          const futureSample = sampleAlongLine(line, idx, sampleDist);
-          if (futureSample && Number.isFinite(futureSample.targetSpeed)) {
-            // Track BOTH raw and scaled speeds
-            // Raw speed is for corner detection (comparing racing line speeds)
-            // Scaled speed is for target speed calculation (actual driving speed)
-            const rawSpeed = futureSample.targetSpeed;
-            const scaledSpeed = rawSpeed * speedScale;
-            if (enableDebug) {
-              console.log(
-                `  Sample ${i}: dist=${sampleDist.toFixed(0)} rawSpeed=${rawSpeed.toFixed(0)} scaled=${scaledSpeed.toFixed(0)}`,
-              );
-            }
-            if (rawSpeed < minFutureSpeedRaw) {
-              minFutureSpeedRaw = rawSpeed;
-              minFutureSpeed = scaledSpeed;
-              brakingDistance = sampleDist;
-              if (enableDebug) {
-                console.log(
-                  `    ^^ NEW MIN: rawMin=${minFutureSpeedRaw.toFixed(0)} scaledMin=${minFutureSpeed.toFixed(0)} brakeDist=${brakingDistance.toFixed(0)}`,
-                );
-              }
-            }
-          }
-        }
-
-        // If no valid samples found, use current speed as fallback
-        if (!Number.isFinite(minFutureSpeedRaw) || minFutureSpeedRaw === Infinity) {
-          minFutureSpeedRaw = rawCurrent;
-          minFutureSpeed = scaledCurrent;
-          brakingDistance = 0;
-          if (enableDebug) {
-            console.log(`[SAMPLE END] NO VALID SAMPLES - fallback to current`);
-          }
-        } else if (enableDebug) {
-          console.log(
-            `[SAMPLE END] rawMin=${minFutureSpeedRaw.toFixed(0)} scaledMin=${minFutureSpeed.toFixed(0)} brakeDist=${brakingDistance.toFixed(0)}`,
-          );
-        }
-
-        // Use the minimum speed found in braking lookahead for target speed calculation
-        // This ensures AI sees sharp corners coming and starts slowing down early
-        const scaledFuture = minFutureSpeed;
-        const targetSpeed = Math.max(
-          skill.minTargetSpeed,
-          Math.min(scaledCurrent, scaledFuture) - skill.cornerMargin,
-        );
         const speedError = targetSpeed - speed;
         const throttleGain = clamp(skill.maxThrottle ?? 1, 0.1, 2);
         let throttle =
           speedError > 0 ? clamp(speedError / Math.max(targetSpeed, 60), 0, 1) * throttleGain : 0;
 
-        // Calculate base brake from speed error with balanced scaling
-        let baseBrake = 0;
-        if (speedError < 0) {
-          // Make base brake appropriately aggressive - use square root to amplify values
-          const baseIntensity = clamp(-speedError / Math.max(targetSpeed, 60), 0, 1);
-          // Apply square root for balanced power curve
-          // This amplifies moderate errors while keeping brake values reasonable
-          const BRAKE_BASE_MULTIPLIER = 1.0; // Standard multiplier, no extra amplification
-          baseBrake = Math.sqrt(baseIntensity) * skill.brakeAggro * BRAKE_BASE_MULTIPLIER;
-          baseBrake = Math.min(1.0, baseBrake); // Clamp to max
+        // Enhanced corner braking anticipation
+        const brakingLookaheadBase = 170;
+        const brakingLookaheadSpeedFactor = 1.2;
+        const brakingLookahead = brakingLookaheadBase + speed * brakingLookaheadSpeedFactor;
 
-          if (enableDebug) {
-            console.log(
-              `[BASE BRAKE] speedErr=${speedError.toFixed(0)} baseInt=${baseIntensity.toFixed(3)} baseBrk=${baseBrake.toFixed(3)}`,
-            );
+        // Sample multiple points ahead
+        const numBrakingSamples = 8;
+        let minFutureSpeed = Infinity;
+        let brakingDistance = brakingLookahead;
+
+        const enableDebug = typeof window !== 'undefined' && window.DEBUG_AI_BRAKING && Math.random() < 0.01;
+
+        for (let i = 1; i <= numBrakingSamples; i++) {
+          const sampleDist = (brakingLookahead / numBrakingSamples) * i;
+          const futureSample = sampleAlongLine(line, idx, sampleDist);
+          if (futureSample && Number.isFinite(futureSample.targetSpeed)) {
+            // Use raw line speed (limit). No scaling.
+            const limit = futureSample.targetSpeed;
+            if (limit < minFutureSpeed) {
+              minFutureSpeed = limit;
+              brakingDistance = sampleDist;
+            }
           }
         }
 
-        let brake = baseBrake;
+        // Fallback
+        if (minFutureSpeed === Infinity) minFutureSpeed = targetSpeed;
 
-        // Calculate required deceleration and braking intensity
-        // CRITICAL: Compare RAW racing line speeds to detect corners properly
-        // If corner ahead requires 150 px/s but current line is 500 px/s, need to slow down by 350
-        // Using RAW speeds prevents the issue where both get scaled/clamped to same value
-        const speedDrop = rawCurrent - minFutureSpeedRaw;
+        const speedExcess = speed - minFutureSpeed;
+
         if (enableDebug) {
-          console.log(
-            `[ANTICIPATION CHECK] rawCur=${rawCurrent.toFixed(0)} rawMin=${minFutureSpeedRaw.toFixed(0)} speedDrop=${speedDrop.toFixed(0)} brakeDist=${brakingDistance.toFixed(0)}`,
-          );
+          console.log(`[AI] spd=${speed.toFixed(0)} minF=${minFutureSpeed.toFixed(0)} exc=${speedExcess.toFixed(0)}`);
         }
-        if (speedDrop > 0 && brakingDistance > 0) {
-          // Use approximation: a = Δv / Δt where Δt = distance / average_speed
-          // This estimates time to reach corner and calculates required average deceleration
-          // Use actual car speed for time calculation
+
+        let brake = 0;
+        let baseBrake = 0;
+
+        // 1. Reactive Braking (if we are currently over speed)
+        if (speedError < 0) {
+          const baseIntensity = clamp(-speedError / 150, 0, 1);
+          baseBrake = Math.sqrt(baseIntensity) * skill.brakeAggro;
+        }
+
+        // 2. Anticipatory Braking (corner ahead)
+        if (speedExcess > 0 && brakingDistance > 0 && minFutureSpeed < speed) {
           const avgSpeed = (speed + minFutureSpeed) / 2;
           const timeToCorner = avgSpeed > 10 ? brakingDistance / avgSpeed : 1.0;
-          const requiredDecel = speedDrop / Math.max(timeToCorner, 0.1);
+          // Decel needed: (current - target) / time
+          const requiredDecel = speedExcess / Math.max(timeToCorner, 0.2);
 
-          // Normalize deceleration to brake intensity with balanced scaling
-          // Balanced threshold for appropriate braking response
-          const MAX_DECEL_THRESHOLD = 200; // Balanced threshold for reasonable braking
-          let brakingIntensity = clamp(requiredDecel / MAX_DECEL_THRESHOLD, 0, 1);
+          // Max braking decel (approx 400-600 px/s^2 depending on friction)
+          const MAX_BRAKE_DECEL = 350; // Conservative estimate
+          let brakingIntensity = clamp(requiredDecel / MAX_BRAKE_DECEL, 0, 1);
 
-          // Apply square root power curve for balanced amplification
-          // This amplifies moderate values while keeping brake values reasonable
-          brakingIntensity = Math.sqrt(brakingIntensity);
+          // Scale by aggression
+          const anticipation = brakingIntensity * skill.brakeAggro * 1.5;
+          brake = Math.max(baseBrake, anticipation);
 
-          // Apply balanced anticipatory braking using brakeAggro
-          // Amplify appropriately but clamp to 1.0 since physics input is clamped
-          const BRAKE_AMPLIFICATION_FACTOR = 1.2; // Balanced amplification for appropriate braking
-          const anticipation = Math.min(
-            1.0,
-            brakingIntensity * skill.brakeAggro * BRAKE_AMPLIFICATION_FACTOR,
-          );
-          brake = Math.max(brake, anticipation);
-
-          // CUT throttle completely when significant braking is needed
-          if (brakingIntensity > 0.2) {
-            // Cut throttle during hard braking
-            throttle = 0; // Complete throttle cut
+          // Cut throttle if we need to brake hard for corner
+          if (brakingIntensity > 0.3) {
+            throttle = 0;
           } else {
-            throttle *= 1 - brakingIntensity;
+            throttle *= (1 - brakingIntensity);
           }
+        } else {
+          brake = baseBrake;
         }
 
-        const steerMag = Math.abs(steer);
-        if (steerMag > skill.steerCutThrottle) {
-          const cut = clamp(
-            (steerMag - skill.steerCutThrottle) / (1 - skill.steerCutThrottle),
-            0,
-            1,
-          );
-          // Reduce throttle cut at low speeds so AI cars can accelerate even when steering significantly
-          // This prevents AI from sitting idle when they need to steer toward the racing line at startup
-          const LOW_SPEED_THRESHOLD = 150; // px/s - below this speed, allow more throttle while steering
-          const LOW_SPEED_CUT_REDUCTION = 0.8; // At 0 speed, only (1 - 0.8) = 20% of throttle cut applies
-          const speedCutReduction = 1 - clamp(speed / LOW_SPEED_THRESHOLD, 0, 1);
-          const effectiveCut = cut * (1 - speedCutReduction * LOW_SPEED_CUT_REDUCTION);
-          throttle *= 1 - effectiveCut;
+        brake = Math.min(1, brake);
+
+        // Anti-reverse / Low speed clamp
+        if (speed < 20 && speedExcess < 10) {
+          brake = 0;
         }
 
-        // Apply hysteresis to prevent oscillation ONLY for throttle when going too fast
-        // Do NOT apply hysteresis to brake - we want full braking power for corners
-        const HYSTERESIS_LIMIT = 0.2; // Max throttle allowed when significantly over target speed
-        const hyst = skill.speedHysteresis;
-        if (speedError < -hyst) {
-          // Going too fast - reduce throttle to avoid oscillation
-          throttle = Math.min(throttle, HYSTERESIS_LIMIT);
-        }
-
-        // Debug logging (enable by setting window.DEBUG_AI_BRAKING = car.id to debug specific car)
-        // or window.DEBUG_AI_BRAKING = true to debug first AI car
-        if (typeof window !== 'undefined' && window.DEBUG_AI_BRAKING) {
-          const shouldLog =
-            window.DEBUG_AI_BRAKING === true ||
-            (car && car.id && window.DEBUG_AI_BRAKING === car.id);
-          if (shouldLog && Math.random() < 0.02) {
-            // Log 2% of frames to avoid console spam
-            console.log(
-              `AI[${car?.id || '?'}]: ` +
-                `spd=${speed.toFixed(0)} cur=${scaledCurrent.toFixed(0)} ` +
-                `minF=${minFutureSpeed.toFixed(0)} tgt=${targetSpeed.toFixed(0)} ` +
-                `err=${speedError.toFixed(0)} dst=${brakingDistance.toFixed(0)} ` +
-                `base=${baseBrake.toFixed(2)} fin=${brake.toFixed(2)} thr=${throttle.toFixed(2)}`,
-            );
-          }
-        }
-
-        // ALWAYS log when brake is significant - helps diagnose if braking is even happening
-        if (typeof window !== 'undefined' && brake > 0.5 && Math.random() < 0.05) {
-          console.log(
-            `[BRAKE!] AI braking: ${brake.toFixed(2)} at speed ${speed.toFixed(0)} ` +
-              `(target=${targetSpeed.toFixed(0)}, minFuture=${minFutureSpeed.toFixed(0)})`,
-          );
+        // Hysteresis for throttle at high speed (prevent stutter)
+        if (speedError < -10 && brake < 0.1) {
+          throttle = 0;
         }
 
         return {
