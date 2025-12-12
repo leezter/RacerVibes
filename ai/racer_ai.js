@@ -679,14 +679,17 @@
           // Complete cut for hard braking, gradual reduction for moderate braking
           const HARD_BRAKE_THRESHOLD = 0.3; // Above this, cut throttle completely
           const MODERATE_BRAKE_THRESHOLD = 0.1; // Above this, reduce throttle proportionally
-          const THROTTLE_REDUCTION_SCALE = 2.0; // Scale 0.1-0.3 intensity to 0.2-0.6 reduction
+          const THROTTLE_REDUCTION_SCALE = 2.0; // Maps intensity to reduction fraction
+          // At intensity 0.1: reduction = 0.1 * 2.0 = 0.2 (20% throttle cut)
+          // At intensity 0.3: reduction = 0.3 * 2.0 = 0.6 (60% throttle cut)
           
           if (brakingIntensity > HARD_BRAKE_THRESHOLD) {
             // Hard braking - cut throttle completely
             throttle = 0;
           } else if (brakingIntensity > MODERATE_BRAKE_THRESHOLD) {
             // Moderate braking - reduce throttle proportionally
-            throttle *= 1 - (brakingIntensity * THROTTLE_REDUCTION_SCALE);
+            const reductionFactor = clamp(brakingIntensity * THROTTLE_REDUCTION_SCALE, 0, 1);
+            throttle *= 1 - reductionFactor;
           }
 
           if (enableDebug) {
