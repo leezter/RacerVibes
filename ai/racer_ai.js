@@ -9,7 +9,9 @@
     apexAggression: 0.7, // 0 = conservative (60% track width), 1 = aggressive (95% track width)
     maxOffset: 0.9, // Maximum fraction of half-width to use
     minRadius: 12,
-    roadFriction: 1.25, // Increased from 1.1 for more realistic cornering speeds (conservative vs muLatRoad ~1.4)
+    roadFriction: 1.25, // Cornering speed multiplier (v = sqrt(μ × g × r))
+    // Increased from 1.1 for more realistic speeds. Conservative relative to car's
+    // lateral tire friction coefficient (muLatRoad ~1.4 in physics.js VEHICLE_DEFAULTS)
     gravity: 750, // px/s^2 to roughly match RacerPhysics defaults
     straightSpeed: 520, // px/s cap before scaling
     cornerSpeedFloor: 140,
@@ -662,8 +664,10 @@
           const requiredDecel = (currentSpeedSq - targetSpeedSq) / (2 * brakingDistance);
 
           // Estimate maximum deceleration capability (based on typical braking physics)
-          // With brakeForce ~600 and mass ~2.2, max decel is brakeForce/mass ≈ 273 px/s²
-          // Use a slightly higher value to account for aerodynamic drag at high speeds
+          // Typical values from physics.js VEHICLE_DEFAULTS: brakeForce ~600, mass ~2.2
+          // Pure brake limit: brakeForce/mass ≈ 273 px/s²
+          // Set slightly higher (300) to account for aerodynamic drag at high speeds
+          // This conservative estimate ensures AI doesn't expect impossible braking
           const MAX_DECEL_CAPABILITY = 300; // px/s² - realistic maximum braking deceleration
           
           // Calculate braking intensity as fraction of maximum capability
@@ -679,7 +683,9 @@
           // Complete cut for hard braking, gradual reduction for moderate braking
           const HARD_BRAKE_THRESHOLD = 0.3; // Above this, cut throttle completely
           const MODERATE_BRAKE_THRESHOLD = 0.1; // Above this, reduce throttle proportionally
-          const THROTTLE_REDUCTION_SCALE = 2.0; // Maps intensity to reduction fraction
+          const THROTTLE_REDUCTION_SCALE = 2.0; // Amplifies reduction for responsive throttle-brake coordination
+          // Chosen to provide smooth transition: moderate braking gets significant throttle reduction
+          // while still allowing some power, preventing abrupt on-off throttle oscillation
           // At intensity 0.1: reduction = 0.1 * 2.0 = 0.2 (20% throttle cut)
           // At intensity 0.3: reduction = 0.3 * 2.0 = 0.6 (60% throttle cut)
           
