@@ -16,6 +16,11 @@ Braking is completely physics-based and does not use artificial speed scaling.
 - **Trigger**: Braking is triggered when `currentSpeed > futureCornerLimit`.
 - **Intensity**: Deceleration is calculated to reach the target speed by the time the car reaches the corner.
 
+### 3. Throttle Control (Corner Exit)
+To prevent understeer when exiting corners, the AI cuts throttle if the steering angle is too high.
+- **Mechanism**: If `steerMagnitude > skill.steerCutThrottle`, throttle is reduced aggressively (non-linear curve).
+- **Goal**: Ensures the car straightens out before applying full power, preventing it from washing out into the outer wall.
+
 ## Tuning Guide (How to Adjust)
 
 If you need to change AI behavior, look for `createController` in `ai/racer_ai.js`.

@@ -668,6 +668,22 @@
           throttle = 0;
         }
 
+        // --- Throttle Cut on Steering ---
+        // Prevent understeer by cutting throttle when steering is significant.
+        // This ensures the car finishes the turn before accelerating.
+        const steerMag = Math.abs(steer);
+        if (steerMag > skill.steerCutThrottle) {
+          const excess = steerMag - skill.steerCutThrottle;
+          // Normalize excess (0 to 1) based on remaining steer range
+          const range = Math.max(0.01, 1.0 - skill.steerCutThrottle);
+          const cutFactor = clamp(excess / range, 0, 1);
+
+          // Apply non-linear power curve to cut throttle aggressively
+          // If cutFactor is 0.5, we cut 75% of throttle. If 1.0, cut 100%.
+          const aggressiveCut = Math.pow(cutFactor, 0.5);
+          throttle *= (1.0 - aggressiveCut);
+        }
+
         return {
           throttle,
           brake,
