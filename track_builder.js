@@ -1,36 +1,36 @@
-(function(global){
+(function (global) {
   'use strict';
-  
+
   // ===== Constants =====
   const DEFAULT_ROAD_WIDTH = 120;
   const ROAD_WIDTH_RANGE = [60, 140];
   const MIN_POINTS = 32;
   const SAMPLING_SPACING = 10;
   const ERASE_RADIUS = 24;
-  
+
   // Fixed world size - same drawing area on all devices
   // Sized to match desktop at zoom 0.25 (~1600px canvas / 0.25 = 6400px world)
   const WORLD_WIDTH = 6400;
   const WORLD_HEIGHT = 4800;
-  
+
   // Width scale from racer.html - used to show accurate preview
   // NOTE: These values must match SCALE_MIN/SCALE_MAX/SCALE_DEFAULT in racer.html
   const RACE_WIDTH_SCALE_DEFAULT = 2.5;
   const RACE_WIDTH_SCALE_MIN = 0.5;
   const RACE_WIDTH_SCALE_MAX = 3.0;
-  
+
   // Car profiles matching racer.html for starting grid visualization
   // NOTE: Only visual properties (width, length, color) are needed here
   // These values must match CarProfiles in racer.html
   const CAR_PROFILES = {
-    "GT":    { width: 24, length: 45, color: "#3949ab" },
-    "F1":    { width: 18, length: 44, color: "#d32f2f" },
+    "GT": { width: 24, length: 45, color: "#3949ab" },
+    "F1": { width: 18, length: 44, color: "#d32f2f" },
     "Rally": { width: 18, length: 34, color: "#2e7d32" },
     "Truck": { width: 29, length: 60, color: "#f97316" }
   };
   const DEFAULT_CAR_PROFILE = CAR_PROFILES.GT;
   const DEFAULT_AI_CAR_COUNT = 9;
-  
+
   // Read width scale from localStorage (same key as racer.html)
   function readWidthScale() {
     try {
@@ -40,7 +40,7 @@
       if (Number.isFinite(parsed)) {
         return Math.min(RACE_WIDTH_SCALE_MAX, Math.max(RACE_WIDTH_SCALE_MIN, parsed));
       }
-    } catch (_) {}
+    } catch (_) { }
     return RACE_WIDTH_SCALE_DEFAULT;
   }
 
@@ -61,7 +61,7 @@
       if (typeof window !== 'undefined' && window.PlanckWorld && typeof window.PlanckWorld.PPM_DEFAULT === 'number') {
         return px / window.PlanckWorld.PPM_DEFAULT;
       }
-    } catch (e) {}
+    } catch (e) { }
     // Last-resort fallback
     const fallbackPpm = 30;
     return px / fallbackPpm;
@@ -76,7 +76,7 @@
     if (m >= 1) return m.toFixed(2) + ' m';
     return (m * 100).toFixed(1) + ' cm';
   }
-  
+
   // Surface types matching the reference image
   const SURFACE_TYPES = [
     { id: 'tarmac-pro', name: 'Tarmac Pro', color: '#4a5568', roadColor: '#6b7280' },
@@ -85,20 +85,20 @@
     { id: 'neon-city', name: 'Neon City', color: '#1e1b4b', roadColor: '#8b5cf6' },
     { id: 'glacier', name: 'Glacier', color: '#164e63', roadColor: '#67e8f9' }
   ];
-  
+
   // ===== Helper Functions =====
   function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
-  
+
   function distance(a, b) {
     const dx = a.x - b.x;
     const dy = a.y - b.y;
     return Math.hypot(dx, dy);
   }
-  
+
   function copyPoints(points) {
     return points.map(p => ({ x: p.x, y: p.y }));
   }
-  
+
   function ensureClosed(points, tolerance = 12) {
     if (!points.length) return points;
     const first = points[0];
@@ -112,7 +112,7 @@
     closed.push({ x: first.x, y: first.y });
     return closed;
   }
-  
+
   function simplifyPath(points, tolerance) {
     if (points.length < 3) return points;
     const closed = ensureClosed(points);
@@ -121,14 +121,14 @@
     result.push({ ...result[0] });
     return result;
   }
-  
+
   function rdpSimplify(points, epsilon) {
     if (points.length <= 2) return points.slice();
     const first = points[0];
     const last = points[points.length - 1];
     let index = -1;
     let maxDist = -1;
-    
+
     for (let i = 1; i < points.length - 1; i++) {
       const d = pointLineDistance(points[i], first, last);
       if (d > maxDist) {
@@ -136,7 +136,7 @@
         maxDist = d;
       }
     }
-    
+
     if (maxDist > epsilon) {
       const left = rdpSimplify(points.slice(0, index + 1), epsilon);
       const right = rdpSimplify(points.slice(index), epsilon);
@@ -144,18 +144,18 @@
     }
     return [first, last];
   }
-  
+
   function pointLineDistance(point, a, b) {
     const num = Math.abs((b.y - a.y) * point.x - (b.x - a.x) * point.y + b.x * a.y - b.y * a.x);
     const den = Math.hypot(b.y - a.y, b.x - a.x) || 1;
     return num / den;
   }
-  
+
   function relaxPath(points, iterations = 1, strength = 0.5) {
     let pts = ensureClosed(points).map(p => ({ x: p.x, y: p.y }));
     const n = pts.length;
     if (n < 4) return pts;
-    
+
     for (let k = 0; k < iterations; k++) {
       const next = new Array(n);
       for (let i = 0; i < n - 1; i++) {
@@ -176,7 +176,7 @@
     }
     return pts;
   }
-  
+
   function resamplePath(points, spacing) {
     const pts = ensureClosed(points);
     if (pts.length < 2) return pts;
@@ -208,7 +208,7 @@
     }
     return result;
   }
-  
+
   function calcCurvature(prev, curr, next) {
     const v1x = curr.x - prev.x;
     const v1y = curr.y - prev.y;
@@ -222,17 +222,17 @@
     const avgLen = (len1 + len2) / 2;
     return angle / avgLen;
   }
-  
+
   function enforceMinimumRadius(points, minRadius, maxIterations = 200) {
     let pts = ensureClosed(points).map(p => ({ x: p.x, y: p.y }));
     const n = pts.length;
     if (n < 4) return pts;
     const maxCurvature = 1 / minRadius;
-    
+
     for (let iter = 0; iter < maxIterations; iter++) {
       let maxViolation = 0;
       const next = pts.map(p => ({ x: p.x, y: p.y }));
-      
+
       for (let i = 0; i < n - 1; i++) {
         const prevIdx = (i - 1 + n - 1) % (n - 1);
         const nextIdx = (i + 1) % (n - 1);
@@ -240,7 +240,7 @@
         const curr = pts[i];
         const nextPt = pts[nextIdx];
         const curvature = Math.abs(calcCurvature(prev, curr, nextPt));
-        
+
         if (curvature > maxCurvature) {
           const violation = curvature / maxCurvature;
           maxViolation = Math.max(maxViolation, violation);
@@ -261,7 +261,7 @@
     }
     return pts;
   }
-  
+
   /**
    * Compute offset points for one side of the track (inner or outer edge).
    * Returns array of {x, y} points offset by `offset` distance along the normal.
@@ -270,52 +270,52 @@
     const pts = ensureClosed(centerline);
     const result = [];
     const n = pts.length;
-    
+
     for (let i = 0; i < n - 1; i++) {
       // Compute normal at this point using average of adjacent segment normals
       const prev = pts[(i - 1 + n - 1) % (n - 1)];
       const curr = pts[i];
       const next = pts[(i + 1) % (n - 1)];
-      
+
       // Normal from prev->curr segment
       const dx1 = curr.x - prev.x;
       const dy1 = curr.y - prev.y;
       const len1 = Math.hypot(dx1, dy1) || 1;
       const nx1 = -dy1 / len1;
       const ny1 = dx1 / len1;
-      
+
       // Normal from curr->next segment  
       const dx2 = next.x - curr.x;
       const dy2 = next.y - curr.y;
       const len2 = Math.hypot(dx2, dy2) || 1;
       const nx2 = -dy2 / len2;
       const ny2 = dx2 / len2;
-      
+
       // Average normal (bisector direction)
       let avgNx = (nx1 + nx2) / 2;
       let avgNy = (ny1 + ny2) / 2;
       const avgLen = Math.hypot(avgNx, avgNy) || 1;
       avgNx /= avgLen;
       avgNy /= avgLen;
-      
+
       // For sharp corners, we need to adjust the offset distance
       // to prevent the miter from extending too far
       const dot = nx1 * nx2 + ny1 * ny2;
       // Clamp the miter factor to avoid extreme extensions at sharp corners
       const miterFactor = Math.max(0.5, Math.min(2.0, 1 / Math.sqrt((1 + dot) / 2 + 0.01)));
       const adjustedOffset = offset * Math.min(miterFactor, 1.5);
-      
+
       result.push({
         x: curr.x + avgNx * adjustedOffset,
         y: curr.y + avgNy * adjustedOffset
       });
     }
-    
+
     // Close the curve
     result.push({ ...result[0] });
     return result;
   }
-  
+
   /**
    * Check if an offset curve (track edge) has self-intersections.
    */
@@ -338,7 +338,7 @@
     }
     return false;
   }
-  
+
   /**
    * Calculate maximum curvature in a path
    */
@@ -346,7 +346,7 @@
     const pts = ensureClosed(points);
     const n = pts.length;
     if (n < 4) return 0;
-    
+
     let maxCurv = 0;
     for (let i = 0; i < n - 1; i++) {
       const prevIdx = (i - 1 + n - 1) % (n - 1);
@@ -356,30 +356,30 @@
     }
     return maxCurv;
   }
-  
+
   /**
    * Aggressively smooth the entire track until maximum curvature is below threshold.
    * This is the nuclear option - guarantees no sharp corners.
    */
   function smoothUntilSafe(points, maxAllowedCurvature, maxPasses = 50) {
     let pts = ensureClosed(points).map(p => ({ x: p.x, y: p.y }));
-    
+
     for (let pass = 0; pass < maxPasses; pass++) {
       const currentMaxCurv = getMaxCurvature(pts);
-      
+
       // If we're under the threshold, we're done
       if (currentMaxCurv <= maxAllowedCurvature) {
         break;
       }
-      
+
       // Apply whole-track Laplacian smoothing
       pts = relaxPath(pts, 20, 0.5);
       pts = resamplePath(pts, 10);
     }
-    
+
     return pts;
   }
-  
+
   /**
    * Prevent edge overlap by iteratively smoothing the ENTIRE track
    * until the inner edge no longer self-intersects.
@@ -388,16 +388,16 @@
   function preventEdgeOverlap(points, visualRoadWidth, maxIterations = 200) {
     let pts = ensureClosed(points).map(p => ({ x: p.x, y: p.y }));
     const halfWidth = visualRoadWidth * 0.5;
-    
+
     // The minimum radius needed to prevent overlap is slightly more than halfWidth
     // We use 1.2x to have safety margin
     const safeMinRadius = halfWidth * 1.2;
     const maxAllowedCurvature = 1 / safeMinRadius;
-    
+
     for (let iter = 0; iter < maxIterations; iter++) {
       // Compute inner edge (negative offset)
       const innerEdge = computeOffsetCurve(pts, -halfWidth);
-      
+
       // Check if inner edge has self-intersections
       if (!hasEdgeSelfIntersection(innerEdge)) {
         // Also verify max curvature is under threshold
@@ -406,18 +406,18 @@
           break;
         }
       }
-      
+
       // Apply aggressive whole-track smoothing
       pts = relaxPath(pts, 10, 0.6);
       pts = resamplePath(pts, 8);
-      
+
       // Also enforce minimum radius
       pts = enforceMinimumRadius(pts, safeMinRadius, 50);
     }
-    
+
     return pts;
   }
-  
+
   /**
    * The ultimate smoothing function - guarantees no edge overlaps are possible.
    * Uses multiple passes and verification.
@@ -425,47 +425,48 @@
   function guaranteeNoOverlap(points, visualRoadWidth) {
     let pts = ensureClosed(points).map(p => ({ x: p.x, y: p.y }));
     const halfWidth = visualRoadWidth * 0.5;
-    
+
     // Step 1: Calculate the minimum radius we need
     // For no overlap, centerline radius must be > halfWidth
-    // We use 2.5x for a VERY comfortable margin - this makes corners much wider than
-    // the road, ensuring there's zero chance of inner edge overlap
-    const requiredMinRadius = halfWidth * 2.5;
+    // Reduced from 2.5x to 1.3x to preserve track shape better while still preventing overlap
+    const requiredMinRadius = halfWidth * 1.3;
     const maxAllowedCurvature = 1 / requiredMinRadius;
-    
-    // Step 2: First pass - aggressive relaxation
-    pts = relaxPath(pts, 100, 0.6);
+
+    // Step 2: First pass - moderate relaxation (was aggressive)
+    // drastic reduction (100 -> 10) to keep original drawn shape
+    pts = relaxPath(pts, 10, 0.5);
     pts = resamplePath(pts, 8);
-    
-    // Step 3: Enforce minimum radius strictly with MANY iterations
-    pts = enforceMinimumRadius(pts, requiredMinRadius, 1000);
+
+    // Step 3: Enforce minimum radius
+    // Reduced iterations as we don't need to be as aggressive with the smaller radius
+    pts = enforceMinimumRadius(pts, requiredMinRadius, 200);
     pts = resamplePath(pts, 8);
-    
+
     // Step 4: Smooth until curvature is safe
-    pts = smoothUntilSafe(pts, maxAllowedCurvature, 50);
-    
+    pts = smoothUntilSafe(pts, maxAllowedCurvature, 20);
+
     // Step 5: Final verification and fix loop
-    for (let verify = 0; verify < 100; verify++) {
+    for (let verify = 0; verify < 50; verify++) {
       const innerEdge = computeOffsetCurve(pts, -halfWidth);
       const hasOverlap = hasEdgeSelfIntersection(innerEdge);
       const maxCurv = getMaxCurvature(pts);
-      
+
       if (!hasOverlap && maxCurv <= maxAllowedCurvature) {
         break; // Success!
       }
-      
-      // Still has issues - apply more smoothing
-      pts = relaxPath(pts, 30, 0.7);
+
+      // Still has issues - apply more smoothing but gently
+      pts = relaxPath(pts, 10, 0.6);
       pts = resamplePath(pts, 8);
-      pts = enforceMinimumRadius(pts, requiredMinRadius, 200);
+      pts = enforceMinimumRadius(pts, requiredMinRadius, 50);
     }
-    
+
     // Step 6: Final resample for even spacing
     pts = resamplePath(pts, 10);
-    
+
     return pts;
   }
-  
+
   function findSelfIntersections(points) {
     const pts = ensureClosed(points);
     const intersections = [];
@@ -483,7 +484,7 @@
     }
     return intersections;
   }
-  
+
   function segmentIntersection(a1, a2, b1, b2) {
     const det = (a2.x - a1.x) * (b2.y - b1.y) - (a2.y - a1.y) * (b2.x - b1.x);
     if (Math.abs(det) < 1e-6) return null;
@@ -492,21 +493,21 @@
     if (ua <= 0 || ua >= 1 || ub <= 0 || ub >= 1) return null;
     return { x: a1.x + ua * (a2.x - a1.x), y: a1.y + ua * (a2.y - a1.y) };
   }
-  
+
   function tangentFromSegment(a, b) {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const len = Math.hypot(dx, dy) || 1;
     return { x: dx / len, y: dy / len, len };
   }
-  
+
   function normalFromSegment(a, b) {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const len = Math.hypot(dx, dy) || 1;
     return { x: -dy / len, y: dx / len };
   }
-  
+
   function computeTrackMeta(centerline, roadWidth) {
     const first = centerline[0];
     const second = centerline[1] || first;
@@ -532,7 +533,7 @@
     const checkpoints = buildCheckpoints(centerline, roadWidth);
     return { startLine, spawn: { player: spawnPlayer, ai: spawnAIBase }, checkpoints, bounds: bbox };
   }
-  
+
   function boundingBox(points) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const p of points) {
@@ -543,7 +544,7 @@
     }
     return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
   }
-  
+
   function buildCheckpoints(centerline, roadWidth) {
     const checkpoints = [];
     const total = Math.max(6, Math.floor(centerline.length / 12));
@@ -562,7 +563,7 @@
     }
     return checkpoints;
   }
-  
+
   function makeMask(centerline, roadWidth, worldWidth, worldHeight) {
     const canvas = document.createElement('canvas');
     canvas.width = worldWidth;
@@ -586,7 +587,7 @@
     ctx.restore();
     return { width: canvas.width, height: canvas.height, pngData: canvas.toDataURL('image/png') };
   }
-  
+
   function makeThumbnail(centerline, worldWidth, worldHeight) {
     const thumb = document.createElement('canvas');
     const THUMB_W = 320;
@@ -615,18 +616,18 @@
     ctx.restore();
     return { width: thumb.width, height: thumb.height, pngData: thumb.toDataURL('image/png') };
   }
-  
+
   function estimateTurns(points) {
     if (points.length < 3) return 0;
     let turns = 0;
     let prevAngle = null;
     const threshold = Math.PI / 6; // ~30 degrees
-    
+
     for (let i = 0; i < points.length - 1; i++) {
       const curr = points[i];
       const next = points[(i + 1) % points.length];
       const angle = Math.atan2(next.y - curr.y, next.x - curr.x);
-      
+
       if (prevAngle !== null) {
         let diff = angle - prevAngle;
         while (diff > Math.PI) diff -= Math.PI * 2;
@@ -639,7 +640,7 @@
     }
     return Math.floor(turns / 3); // Roughly count significant turns
   }
-  
+
   function calculateTrackLength(points) {
     if (points.length < 2) return 0;
     let length = 0;
@@ -648,14 +649,14 @@
     }
     return Math.round(length);
   }
-  
+
   // ===== Track Builder Class =====
   function TrackBuilder(options) {
     this.options = options || {};
-    this.onSaved = typeof options.onSaved === 'function' ? options.onSaved : () => {};
-    this.onTestDrive = typeof options.onTestDrive === 'function' ? options.onTestDrive : () => {};
-    this.onClose = typeof options.onClose === 'function' ? options.onClose : () => {};
-    
+    this.onSaved = typeof options.onSaved === 'function' ? options.onSaved : () => { };
+    this.onTestDrive = typeof options.onTestDrive === 'function' ? options.onTestDrive : () => { };
+    this.onClose = typeof options.onClose === 'function' ? options.onClose : () => { };
+
     this.state = {
       tool: 'draw',
       points: [],
@@ -669,31 +670,31 @@
       isClosed: false,
       trackName: 'Grand Prix 1'
     };
-    
+
     // View transform - calculated on resize to fit fixed world to screen
     this.viewScale = 1;
     this.viewOffsetX = 0;
     this.viewOffsetY = 0;
-    
+
     this.init();
   }
-  
-  TrackBuilder.prototype.init = function() {
+
+  TrackBuilder.prototype.init = function () {
     this.buildUI();
     this.attachEvents();
     this.pushHistory();
     this.render();
   };
-  
-  TrackBuilder.prototype.buildUI = function() {
-    const surfaceButtonsHtml = SURFACE_TYPES.map(s => 
+
+  TrackBuilder.prototype.buildUI = function () {
+    const surfaceButtonsHtml = SURFACE_TYPES.map(s =>
       `<button class="tb-surface-btn ${s.id === this.state.surfaceType ? 'active' : ''}" data-surface="${s.id}">${s.name}</button>`
     ).join('');
-    
+
     // Calculate initial visual road width
     const initialWidthScale = readWidthScale();
     const initialVisualWidth = Math.round(DEFAULT_ROAD_WIDTH * initialWidthScale);
-    
+
     const overlay = document.createElement('div');
     overlay.className = 'track-builder-overlay hidden';
     overlay.innerHTML = `
@@ -858,7 +859,7 @@
         </button>
       </div>
     `;
-    
+
     document.body.appendChild(overlay);
     this.overlay = overlay;
     this.container = overlay.querySelector('.track-builder-container');
@@ -871,44 +872,44 @@
     this.lengthStat = overlay.querySelector('[data-stat="length"]');
     this.turnsStat = overlay.querySelector('[data-stat="turns"]');
     this.propertiesPanel = overlay.querySelector('.tb-properties-panel');
-    
+
     this.resizeCanvas();
   };
-  
-  TrackBuilder.prototype.resizeCanvas = function() {
+
+  TrackBuilder.prototype.resizeCanvas = function () {
     const canvasArea = this.overlay.querySelector('.tb-canvas-area');
     if (!canvasArea) return;
-    
+
     const rect = canvasArea.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
-    
+
     this.canvas.width = rect.width * dpr;
     this.canvas.height = rect.height * dpr;
     this.canvas.style.width = rect.width + 'px';
     this.canvas.style.height = rect.height + 'px';
-    
+
     this.ctx.scale(dpr, dpr);
     this.displayWidth = rect.width;
     this.displayHeight = rect.height;
-    
+
     // Calculate view scale to fit fixed world in screen
     const scaleX = rect.width / WORLD_WIDTH;
     const scaleY = rect.height / WORLD_HEIGHT;
     this.viewScale = Math.min(scaleX, scaleY);
-    
+
     // Center the world in the viewport
     this.viewOffsetX = (rect.width - WORLD_WIDTH * this.viewScale) / 2;
     this.viewOffsetY = (rect.height - WORLD_HEIGHT * this.viewScale) / 2;
-    
+
     this.render();
   };
-  
-  TrackBuilder.prototype.attachEvents = function() {
+
+  TrackBuilder.prototype.attachEvents = function () {
     const overlay = this.overlay;
-    
+
     // Close button
     overlay.querySelector('[data-action="close"]').addEventListener('click', () => this.close());
-    
+
     // Escape key
     window.addEventListener('keydown', (e) => {
       if (this.overlay.classList.contains('hidden')) return;
@@ -922,7 +923,7 @@
         this.redo();
       }
     }, { passive: false });
-    
+
     // Header actions
     overlay.querySelector('[data-action="undo"]').addEventListener('click', () => this.undo());
     overlay.querySelector('[data-action="redo"]').addEventListener('click', () => this.redo());
@@ -930,7 +931,7 @@
     overlay.querySelector('[data-action="bake"]').addEventListener('click', () => this.bake());
     overlay.querySelector('[data-action="fit"]').addEventListener('click', () => this.fitToView());
     overlay.querySelector('[data-action="toggle-panel"]').addEventListener('click', () => this.togglePanel());
-    
+
     // Tool buttons
     overlay.querySelectorAll('.tb-tool-btn[data-tool]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -939,7 +940,7 @@
         this.state.tool = btn.dataset.tool;
       });
     });
-    
+
     // Surface buttons
     overlay.querySelectorAll('.tb-surface-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -949,7 +950,7 @@
         this.render();
       });
     });
-    
+
     // Sliders
     this.roadWidthSlider.addEventListener('input', () => {
       const value = clamp(parseFloat(this.roadWidthSlider.value) || DEFAULT_ROAD_WIDTH, ROAD_WIDTH_RANGE[0], ROAD_WIDTH_RANGE[1]);
@@ -961,19 +962,19 @@
       this.roadWidthLabel.textContent = formatMeters(meters);
       this.render();
     });
-    
+
     // Track name
     this.trackNameInput.addEventListener('input', () => {
       this.state.trackName = this.trackNameInput.value || 'Grand Prix 1';
     });
-    
+
     // Canvas events
     this.canvas.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     this.canvas.addEventListener('pointermove', (e) => this.onPointerMove(e));
     this.canvas.addEventListener('pointerup', (e) => this.onPointerUp(e));
     this.canvas.addEventListener('pointercancel', (e) => this.onPointerUp(e));
     this.canvas.addEventListener('pointerleave', (e) => this.onPointerUp(e));
-    
+
     // Resize handler
     window.addEventListener('resize', () => {
       if (!this.overlay.classList.contains('hidden')) {
@@ -981,8 +982,8 @@
       }
     });
   };
-  
-  TrackBuilder.prototype.getCanvasPos = function(e) {
+
+  TrackBuilder.prototype.getCanvasPos = function (e) {
     const rect = this.canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
@@ -992,13 +993,13 @@
       y: (screenY - this.viewOffsetY) / this.viewScale
     };
   };
-  
-  TrackBuilder.prototype.onPointerDown = function(e) {
+
+  TrackBuilder.prototype.onPointerDown = function (e) {
     e.preventDefault();
     this.canvas.setPointerCapture(e.pointerId);
     this.state.pointerId = e.pointerId;
     const pos = this.getCanvasPos(e);
-    
+
     if (this.state.tool === 'draw') {
       if (!this.state.isDrawing) this.pushHistory();
       this.state.isDrawing = true;
@@ -1009,11 +1010,11 @@
     }
     this.render();
   };
-  
-  TrackBuilder.prototype.onPointerMove = function(e) {
+
+  TrackBuilder.prototype.onPointerMove = function (e) {
     if (this.state.pointerId !== e.pointerId) return;
     const pos = this.getCanvasPos(e);
-    
+
     if (this.state.tool === 'draw' && this.state.isDrawing) {
       if (this.state.points.length > 0) {
         const last = this.state.points[this.state.points.length - 1];
@@ -1026,40 +1027,40 @@
       this.render();
     }
   };
-  
-  TrackBuilder.prototype.onPointerUp = function(e) {
+
+  TrackBuilder.prototype.onPointerUp = function (e) {
     if (this.state.pointerId !== e.pointerId) return;
-    
+
     if (this.state.tool === 'draw' && this.state.isDrawing) {
       this.state.isDrawing = false;
-      
+
       // Post-processing for smooth tracks - prevent sharp corners that cause edge overlap
       if (this.state.points.length > 10) {
         // CRITICAL: Use visual width (with widthScale) for minimum radius calculation
         const widthScale = readWidthScale();
         const visualRoadWidth = this.state.roadWidth * widthScale;
-        
+
         // Initial simplify and resample
         this.state.points = simplifyPath(this.state.points, 2.0);
         this.state.points = resamplePath(this.state.points, 8);
-        
+
         // Use the guaranteed no-overlap function - this is the nuclear option
         // It will keep smoothing until edge overlap is IMPOSSIBLE
         this.state.points = guaranteeNoOverlap(this.state.points, visualRoadWidth);
-        
+
         // Final closure
         this.state.points = ensureClosed(this.state.points, 32);
       }
-      
+
       this.updateCircuitStatus();
       this.pushHistory();
       this.render();
     }
-    
+
     this.state.pointerId = null;
   };
-  
-  TrackBuilder.prototype.addPoint = function(point, force) {
+
+  TrackBuilder.prototype.addPoint = function (point, force) {
     const pts = this.state.points;
     if (!pts.length || force) {
       pts.push({ x: point.x, y: point.y });
@@ -1070,8 +1071,8 @@
       pts.push({ x: point.x, y: point.y });
     }
   };
-  
-  TrackBuilder.prototype.eraseAt = function(point) {
+
+  TrackBuilder.prototype.eraseAt = function (point) {
     const pts = this.state.points;
     if (!pts.length) return;
     const next = pts.filter(p => distance(p, point) > ERASE_RADIUS);
@@ -1081,50 +1082,50 @@
       this.pushHistory();
     }
   };
-  
-  TrackBuilder.prototype.updateCircuitStatus = function() {
+
+  TrackBuilder.prototype.updateCircuitStatus = function () {
     const pts = this.state.points;
     if (pts.length < MIN_POINTS) {
       this.state.isClosed = false;
       this.circuitStatus.classList.add('hidden');
       return;
     }
-    
+
     const first = pts[0];
     const last = pts[pts.length - 1];
     const isClosed = distance(first, last) < 50;
     this.state.isClosed = isClosed;
-    
+
     if (isClosed) {
       this.circuitStatus.classList.remove('hidden');
     } else {
       this.circuitStatus.classList.add('hidden');
     }
-    
+
     // Update stats
     const pxLen = calculateTrackLength(pts);
     const km = pxToKilometres(pxLen);
     this.lengthStat.innerHTML = km.toFixed(2) + ' <small>km</small>';
     this.turnsStat.textContent = estimateTurns(pts);
   };
-  
-  TrackBuilder.prototype.undo = function() {
+
+  TrackBuilder.prototype.undo = function () {
     if (this.state.historyIndex <= 0) return;
     this.state.historyIndex -= 1;
     this.state.points = copyPoints(this.state.history[this.state.historyIndex]);
     this.updateCircuitStatus();
     this.render();
   };
-  
-  TrackBuilder.prototype.redo = function() {
+
+  TrackBuilder.prototype.redo = function () {
     if (this.state.historyIndex >= this.state.history.length - 1) return;
     this.state.historyIndex += 1;
     this.state.points = copyPoints(this.state.history[this.state.historyIndex]);
     this.updateCircuitStatus();
     this.render();
   };
-  
-  TrackBuilder.prototype.clear = function() {
+
+  TrackBuilder.prototype.clear = function () {
     this.state.points = [];
     this.state.history = [];
     this.state.historyIndex = -1;
@@ -1135,85 +1136,85 @@
     this.updateCircuitStatus();
     this.render();
   };
-  
-  TrackBuilder.prototype.pushHistory = function() {
+
+  TrackBuilder.prototype.pushHistory = function () {
     const snapshot = copyPoints(this.state.points);
     this.state.history = this.state.history.slice(0, this.state.historyIndex + 1);
     this.state.history.push(snapshot);
     this.state.historyIndex = this.state.history.length - 1;
   };
-  
-  TrackBuilder.prototype.fitToView = function() {
+
+  TrackBuilder.prototype.fitToView = function () {
     // With fixed world size, fitToView centers the track in the world
     const pts = this.state.points;
     if (!pts.length) {
       this.render();
       return;
     }
-    
+
     const bbox = boundingBox(pts);
     const centerX = (bbox.minX + bbox.maxX) / 2;
     const centerY = (bbox.minY + bbox.maxY) / 2;
     const worldCenterX = WORLD_WIDTH / 2;
     const worldCenterY = WORLD_HEIGHT / 2;
-    
+
     // Move all points to center of world
     const dx = worldCenterX - centerX;
     const dy = worldCenterY - centerY;
-    
+
     this.pushHistory();
     for (let i = 0; i < pts.length; i++) {
       pts[i].x += dx;
       pts[i].y += dy;
     }
-    
+
     this.render();
   };
-  
-  TrackBuilder.prototype.togglePanel = function() {
+
+  TrackBuilder.prototype.togglePanel = function () {
     this.propertiesPanel.classList.toggle('collapsed');
     const toggle = this.overlay.querySelector('.tb-panel-toggle');
     toggle.classList.toggle('collapsed');
   };
-  
-  TrackBuilder.prototype.render = function() {
+
+  TrackBuilder.prototype.render = function () {
     if (!this.ctx || !this.displayWidth) return;
-    
+
     const ctx = this.ctx;
     const dpr = window.devicePixelRatio || 1;
-    
+
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    
+
     // Background
     const surface = SURFACE_TYPES.find(s => s.id === this.state.surfaceType) || SURFACE_TYPES[0];
     ctx.fillStyle = '#0a1628';
     ctx.fillRect(0, 0, this.displayWidth, this.displayHeight);
-    
+
     // Apply view transform to fit fixed world in screen
     ctx.translate(this.viewOffsetX, this.viewOffsetY);
     ctx.scale(this.viewScale, this.viewScale);
-    
+
     // Draw world boundary
     ctx.strokeStyle = 'rgba(255,255,255,0.1)';
     ctx.lineWidth = 2 / this.viewScale;
     ctx.strokeRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-    
+
     // Draw grid
     this.drawGrid(ctx);
-    
+
     // Draw track
     this.drawTrack(ctx, surface);
-    
+
     ctx.restore();
   };
-  
-  TrackBuilder.prototype.drawGrid = function(ctx) {
+
+  TrackBuilder.prototype.drawGrid = function (ctx) {
     const gridSize = 100;
-    
+
     ctx.strokeStyle = 'rgba(255,255,255,0.03)';
     ctx.lineWidth = 1 / this.viewScale;
-    
+
     // Draw grid within fixed world bounds
     for (let x = 0; x <= WORLD_WIDTH; x += gridSize) {
       ctx.beginPath();
@@ -1221,7 +1222,7 @@
       ctx.lineTo(x, WORLD_HEIGHT);
       ctx.stroke();
     }
-    
+
     for (let y = 0; y <= WORLD_HEIGHT; y += gridSize) {
       ctx.beginPath();
       ctx.moveTo(0, y);
@@ -1229,19 +1230,19 @@
       ctx.stroke();
     }
   };
-  
-  TrackBuilder.prototype.drawTrack = function(ctx, surface) {
+
+  TrackBuilder.prototype.drawTrack = function (ctx, surface) {
     const pts = this.state.points;
     if (!pts.length) return;
-    
+
     // Get the width scale from localStorage to match race appearance
     const widthScale = readWidthScale();
     const visualRoadWidth = this.state.roadWidth * widthScale;
-    
+
     ctx.save();
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    
+
     // Track outline (darker edge)
     ctx.lineWidth = visualRoadWidth + 8;
     ctx.strokeStyle = 'rgba(255,255,255,0.2)';
@@ -1252,7 +1253,7 @@
     }
     if (this.state.isClosed) ctx.closePath();
     ctx.stroke();
-    
+
     // Road surface
     ctx.lineWidth = visualRoadWidth;
     ctx.strokeStyle = surface.roadColor;
@@ -1263,7 +1264,7 @@
     }
     if (this.state.isClosed) ctx.closePath();
     ctx.stroke();
-    
+
     // Center line (dashed)
     ctx.lineWidth = 2;
     ctx.strokeStyle = 'rgba(255,255,255,0.6)';
@@ -1276,30 +1277,30 @@
     if (this.state.isClosed) ctx.closePath();
     ctx.stroke();
     ctx.setLineDash([]);
-    
+
     // Start marker
     ctx.fillStyle = '#10b981';
     ctx.beginPath();
     ctx.arc(pts[0].x, pts[0].y, 8, 0, Math.PI * 2);
     ctx.fill();
-    
+
     // Draw starting grid when track is closed
     if (this.state.isClosed && pts.length >= 2) {
       this.drawStartingGrid(ctx, pts, visualRoadWidth);
     }
-    
+
     ctx.restore();
   };
-  
+
   // Draw visual representation of car lineup at starting line
   // pts: track centerline points
   // visualRoadWidth: road width scaled by width scale
-  TrackBuilder.prototype.drawStartingGrid = function(ctx, pts, visualRoadWidth) {
+  TrackBuilder.prototype.drawStartingGrid = function (ctx, pts, visualRoadWidth) {
     if (!pts || pts.length < 2) return;
-    
+
     const first = pts[0];
     const second = pts[1];
-    
+
     // Calculate forward direction (tangent at start)
     const dx = second.x - first.x;
     const dy = second.y - first.y;
@@ -1307,17 +1308,17 @@
     const tangent = { x: dx / len, y: dy / len };
     const normal = { x: -tangent.y, y: tangent.x };
     const angle = Math.atan2(tangent.y, tangent.x);
-    
+
     // Get car profile (use GT as reference)
     // Car dimensions are NOT scaled - they remain at their true pixel size
     // This matches how cars are rendered in the actual race
     const car = DEFAULT_CAR_PROFILE;
     const carWidth = car.width;
     const carLength = car.length;
-    
+
     // Calculate grid layout to match racer.html buildGridSlots logic
     const totalCars = 1 + DEFAULT_AI_CAR_COUNT; // player + AI cars
-    
+
     // Match the slot sizing logic from racer.html buildGridSlots
     const baseWidth = visualRoadWidth;
     const slotWidth = clamp(baseWidth * 0.22, 14, Math.min(baseWidth * 0.5, 48));
@@ -1327,9 +1328,9 @@
     const laneSpacing = totalCars === 1 ? 0 : Math.max(slotWidth + 8, Math.min(baseWidth * 0.45, slotWidth * 1.8));
     const columns = totalCars === 1 ? 1 : 2;
     const lateralOffsets = columns === 1 ? [0] : [-laneSpacing * 0.5, laneSpacing * 0.5];
-    
+
     ctx.save();
-    
+
     // Draw start/finish line
     const halfWidth = visualRoadWidth * 0.5;
     ctx.strokeStyle = '#ffffff';
@@ -1339,7 +1340,7 @@
     ctx.moveTo(first.x + normal.x * halfWidth, first.y + normal.y * halfWidth);
     ctx.lineTo(first.x - normal.x * halfWidth, first.y - normal.y * halfWidth);
     ctx.stroke();
-    
+
     // Draw checkered pattern on start line
     const checkSize = 8;
     const numChecks = Math.floor(visualRoadWidth / checkSize);
@@ -1356,52 +1357,52 @@
       ctx.arc(px, py, checkSize * 0.4, 0, Math.PI * 2);
       ctx.fill();
     }
-    
+
     // Draw cars in grid formation
     const colors = ["#3949ab", "#1e88e5", "#43a047", "#f4511e", "#8e24aa", "#00897b", "#fdd835", "#f97316", "#00acc1", "#c0ca33"];
-    
+
     for (let i = 0; i < Math.min(totalCars, 10); i++) {
       const row = Math.floor(i / columns);
       const column = columns === 1 ? 0 : (i % columns);
-      
+
       // Position car behind the start line, matching racer.html logic
       const forwardOffset = -(row * rowGap + slotLength * 0.6 + startGap);
       const lateralOffset = lateralOffsets[column] || 0;
-      
+
       const carX = first.x - tangent.x * (-forwardOffset) + normal.x * lateralOffset;
       const carY = first.y - tangent.y * (-forwardOffset) + normal.y * lateralOffset;
-      
+
       // Draw car body
       ctx.save();
       ctx.translate(carX, carY);
       ctx.rotate(angle);
-      
+
       // Car shadow
       ctx.fillStyle = 'rgba(0,0,0,0.3)';
       ctx.fillRect(-carLength / 2 + 2, -carWidth / 2 + 2, carLength, carWidth);
-      
+
       // Car body
       ctx.fillStyle = colors[i % colors.length];
       ctx.fillRect(-carLength / 2, -carWidth / 2, carLength, carWidth);
-      
+
       // Windshield area (darker)
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(carLength * 0.1, -carWidth / 2 + 3, carLength * 0.25, carWidth - 6);
-      
+
       // Highlight stripe
       ctx.fillStyle = 'rgba(255,255,255,0.2)';
       ctx.fillRect(-carLength / 2, -2, carLength, 4);
-      
+
       // Player indicator (first car)
       if (i === 0) {
         ctx.strokeStyle = '#ffd700';
         ctx.lineWidth = 2;
         ctx.strokeRect(-carLength / 2 - 2, -carWidth / 2 - 2, carLength + 4, carWidth + 4);
       }
-      
+
       ctx.restore();
     }
-    
+
     // Draw "START" label
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 12px sans-serif';
@@ -1409,23 +1410,23 @@
     ctx.textBaseline = 'middle';
     const labelOffset = halfWidth + 20;
     ctx.fillText('START', first.x + normal.x * labelOffset, first.y + normal.y * labelOffset);
-    
+
     ctx.restore();
   };
-  
-  TrackBuilder.prototype.open = function() {
+
+  TrackBuilder.prototype.open = function () {
     this.overlay.classList.remove('hidden');
     setTimeout(() => this.resizeCanvas(), 50);
   };
-  
-  TrackBuilder.prototype.close = function() {
+
+  TrackBuilder.prototype.close = function () {
     this.overlay.classList.add('hidden');
     this.state.isDrawing = false;
     this.state.pointerId = null;
     this.onClose();
   };
-  
-  TrackBuilder.prototype.reset = function() {
+
+  TrackBuilder.prototype.reset = function () {
     this.state.points = [];
     this.state.history = [];
     this.state.historyIndex = -1;
@@ -1434,7 +1435,7 @@
     this.state.roadWidth = DEFAULT_ROAD_WIDTH;
     this.state.surfaceType = 'tarmac-pro';
     this.state.trackName = 'Grand Prix 1';
-    
+
     this.roadWidthSlider.value = DEFAULT_ROAD_WIDTH;
     // Show the visual width that will appear in the race
     const widthScale = readWidthScale();
@@ -1442,64 +1443,64 @@
     const meters = pxToMeters(visualWidth);
     this.roadWidthLabel.textContent = formatMeters(meters);
     this.trackNameInput.value = this.state.trackName;
-    
+
     this.overlay.querySelectorAll('.tb-surface-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.surface === 'tarmac-pro');
     });
-    
+
     this.circuitStatus.classList.add('hidden');
     this.pushHistory();
     this.updateCircuitStatus();
     this.render();
   };
-  
-  TrackBuilder.prototype.bake = async function() {
+
+  TrackBuilder.prototype.bake = async function () {
     if (!this.state.isClosed) {
       alert('Please close the circuit loop before baking.');
       return;
     }
-    
+
     if (this.state.points.length < MIN_POINTS) {
       alert('Need more detail. Draw a longer loop before baking.');
       return;
     }
-    
+
     const name = this.state.trackName || 'Custom Circuit';
     const closedRaw = ensureClosed(copyPoints(this.state.points));
     const roadWidth = this.state.roadWidth;
-    
+
     // CRITICAL: Use visual width (with widthScale) for minimum radius calculation
     const widthScale = readWidthScale();
     const visualRoadWidth = roadWidth * widthScale;
-    
+
     // Initial processing
     let processed = simplifyPath(closedRaw, 2.0);
     processed = resamplePath(processed, 8);
-    
+
     // Use the guaranteed no-overlap function - this is the nuclear option
     // It will keep smoothing until edge overlap is IMPOSSIBLE
     processed = guaranteeNoOverlap(processed, visualRoadWidth);
-    
+
     processed = resamplePath(processed, SAMPLING_SPACING);
-    
+
     const intersections = findSelfIntersections(processed);
-    
+
     const bbox = boundingBox(processed);
     const worldWidth = Math.round(bbox.width + roadWidth * 4);
     const worldHeight = Math.round(bbox.height + roadWidth * 4);
-    
+
     // Offset points to fit in world
     const offsetX = -bbox.minX + roadWidth * 2;
     const offsetY = -bbox.minY + roadWidth * 2;
     const offsetPoints = processed.map(p => ({ x: p.x + offsetX, y: p.y + offsetY }));
-    
+
     const meta = computeTrackMeta(offsetPoints, roadWidth);
     const mask = makeMask(offsetPoints, roadWidth, worldWidth, worldHeight);
     const thumbnail = makeThumbnail(offsetPoints, worldWidth, worldHeight);
     const racingLine = (window.RacerAI && typeof window.RacerAI.buildRacingLine === 'function')
       ? window.RacerAI.buildRacingLine(offsetPoints, roadWidth)
       : [];
-    
+
     const data = {
       name,
       world: { width: worldWidth, height: worldHeight },
@@ -1513,7 +1514,7 @@
       warnings: intersections.length ? { intersections: intersections.length } : null,
       createdAt: Date.now()
     };
-    
+
     const entry = {
       id: TrackStore.uuid(),
       name,
@@ -1525,24 +1526,24 @@
     };
     entry.data.mask = mask;
     entry.data.thumbnail = thumbnail;
-    
+
     await TrackStore.saveTrack(entry);
     this.state.lastBakeResult = entry;
-    
+
     const msg = intersections.length
       ? `${name} saved with ${intersections.length} warning${intersections.length > 1 ? 's' : ''}.`
       : `${name} saved and ready to race!`;
     alert(msg);
-    
+
     this.onSaved(entry);
     this.close();
   };
-  
+
   // ===== Factory =====
   function create(options) {
     return new TrackBuilder(options);
   }
-  
+
   global.TrackBuilder = { create };
-  
+
 })(typeof window !== 'undefined' ? window : this);
