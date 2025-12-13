@@ -61,15 +61,15 @@
       minTargetSpeed: 110,
     },
     hard: {
-      maxThrottle: 1.2,
-      brakeAggro: 0.62,
+      maxThrottle: 1.25,
+      brakeAggro: 0.55,
       steerP: 3.2,
       steerD: 0.16,
       lookaheadBase: 50,
-      lookaheadSpeed: 0.16,
+      lookaheadSpeed: 0.17,
 
       cornerMargin: 0,
-      steerCutThrottle: 0.18,
+      steerCutThrottle: 0.4,
       searchWindow: 64,
       speedHysteresis: 7,
       cornerEntryFactor: 0.75,
@@ -243,14 +243,26 @@
 
     // 7. Calculate base offset based on curvature (apex positioning)
     // At apex, we want to be on the INSIDE of the turn
-    // UPDATED: Use FIXED saturation threshold (0.001) - compromise between track usage and smoothness
+    // UPDATED: Use FIXED saturation threshold (0.001) with SOFT NOISE GATE
+    // This creates a smooth transitions from straight to cornering, avoiding "ripples"
     const baseOffsets = [];
     const saturationCurv = 0.001; // Fixed physical threshold (Radius ~1000px)
+    const noiseGate = 0.0003; // Radius ~3300px. Below this is ignored.
+
+    const activeRange = Math.max(0.0001, saturationCurv - noiseGate);
 
     for (let i = 0; i < n; i++) {
       const curv = smoothCurvatures[i];
-      // Normalize with saturation: clamp(c / saturation)
-      const normalizedCurv = clamp(curv / saturationCurv, -1, 1);
+      const absCurv = Math.abs(curv);
+
+      // Soft Fade: Subtract noise floor, then scale what remains
+      const effectiveCurvMag = Math.max(0, absCurv - noiseGate);
+      const sign = Math.sign(curv);
+
+      // Normalize: (effective / range). 
+      // Result is 0 when curv <= noiseGate, and ramp up smoothly to 1 at saturation.
+      const normalizedCurv = clamp((sign * effectiveCurvMag) / activeRange, -1, 1);
+
       baseOffsets[i] = normalizedCurv * usableWidth;
     }
 
@@ -488,9 +500,9 @@
 
       // 3. Apply physics limits
       // Standard physics: friction 1.1, gravity 750 (approx)
-      const FRICTION_LIMIT = 1.25; // Slightly higher than 1.1 to allow aggressive cornering
+      const FRICTION_LIMIT = 1.6; // Aggressive tires for maximum cornering speed
       const GRAVITY = 750;
-      const MAX_SPEED_CAP = 1200; // Reasonable cap for gameplay (2600 is too fast)
+      const MAX_SPEED_CAP = 2400; // Unlocked speed for maximum performance
 
       for (let i = 0; i < n; i++) {
         const k = Math.abs(sm[i]);
