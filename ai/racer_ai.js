@@ -24,6 +24,9 @@
   // Steering blend weights for following the racing line
   // Higher lookahead weight = smoother steering, car uses line as a guide
   // Lower lookahead weight = stricter line following but can cause oscillation
+  // Steering blend weights for following the racing line
+  // Higher lookahead weight = smoother steering, car uses line as a guide
+  // Lower lookahead weight = stricter line following but can cause oscillation
   const TANGENT_BLEND_WEIGHT = 0.35; // Weight for following the racing line's tangent direction
   const LOOKAHEAD_BLEND_WEIGHT = 0.65; // Weight for looking ahead to anticipate turns (smoother)
   const LATERAL_CORRECTION_GAIN = 0.003; // Very gentle correction to avoid oscillation
@@ -64,6 +67,7 @@
       steerD: 0.16,
       lookaheadBase: 50,
       lookaheadSpeed: 0.16,
+
       cornerMargin: 0,
       steerCutThrottle: 0.18,
       searchWindow: 64,
@@ -239,12 +243,21 @@
 
     // 7. Calculate base offset based on curvature (apex positioning)
     // At apex, we want to be on the INSIDE of the turn
+    // UPDATED: Use FIXED saturation threshold (0.001) - compromise between track usage and smoothness
     const baseOffsets = [];
+    const saturationCurv = 0.001; // Fixed physical threshold (Radius ~1000px)
+
     for (let i = 0; i < n; i++) {
       const curv = smoothCurvatures[i];
-      const normalizedCurv = curv / maxAbsCurv; // -1 to 1
+      // Normalize with saturation: clamp(c / saturation)
+      const normalizedCurv = clamp(curv / saturationCurv, -1, 1);
       baseOffsets[i] = normalizedCurv * usableWidth;
     }
+
+    // Smooth the base offsets to prevent "stepping" artifacts from the hard clamp
+    // This ensures that even if curvature fluctuates across the threshold, the target offset changes gradually
+    const smoothedBaseOffsets = smoothValues(baseOffsets, 8, 0.5);
+    for (let i = 0; i < n; i++) baseOffsets[i] = smoothedBaseOffsets[i];
 
     // 8. Apply lookahead/lookbehind for outside-inside-outside pattern
     // This creates smooth entry and exit trajectories
@@ -281,17 +294,29 @@
 
       let offset = baseOffsets[i];
 
-      // Approaching a corner - position on the outside
-      if (maxFutureCurv > currentAbsCurv * 1.3 && maxFutureCurv > 0.25 * maxAbsCurv) {
-        const setupOffset = -futureApexOffset * (CORNER_BLEND_FACTOR + 0.25 * aggression);
-        const blend = clamp((maxFutureCurv - currentAbsCurv) / maxAbsCurv, 0, 0.85);
+      // UPDATED Logic (Strict Turn-In):
+      // If approaching sharp turn, SNAP to outside. use ratio test.
+
+      // UPDATED Logic: Local Relative Blending
+      // Condition: Future is sharper than current 
+      if (maxFutureCurv > currentAbsCurv * 1.1 && maxFutureCurv > 0.002) {
+        const setupOffset = -futureApexOffset * (CORNER_BLEND_FACTOR + 0.3 * aggression);
+
+        // Blend based on proximity to the local peak
+        const denominator = Math.max(maxFutureCurv, 0.001);
+        const blend = clamp((maxFutureCurv - currentAbsCurv) / denominator, 0, 1.0);
+
+        // Apply blend
         offset = lerp(offset, setupOffset, blend * CORNER_BLEND_FACTOR);
       }
 
       // Exiting a corner - track out to the outside
-      if (maxPastCurv > currentAbsCurv * 1.3 && maxPastCurv > 0.25 * maxAbsCurv) {
-        const exitOffset = -pastApexOffset * (CORNER_BLEND_FACTOR + 0.25 * aggression);
-        const blend = clamp((maxPastCurv - currentAbsCurv) / maxAbsCurv, 0, 0.85);
+      if (maxPastCurv > currentAbsCurv * 1.1 && maxPastCurv > 0.002) {
+        const exitOffset = -pastApexOffset * (CORNER_BLEND_FACTOR + 0.3 * aggression);
+
+        const denominator = Math.max(maxPastCurv, 0.001);
+        const blend = clamp((maxPastCurv - currentAbsCurv) / denominator, 0, 1.0);
+
         offset = lerp(offset, exitOffset, blend * CORNER_BLEND_FACTOR);
       }
 
