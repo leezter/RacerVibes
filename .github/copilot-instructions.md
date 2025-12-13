@@ -188,6 +188,7 @@ Configured in `.prettierrc`:
 - **Difficulty**: Edit `SKILL_PRESETS` in `ai/racer_ai.js`
 - **Recovery**: Edit `AI_RECOVERY_CFG` in `racer.html` (~line 612)
 - **Collision avoidance**: Edit `AI_COLLISION_AVOIDANCE_CFG` in `racer.html`
+- **Logic & Braking**: See [AI Racer Logic & Tuning](../docs/ai-racer-logic-and-tuning.md) for details on speed sanitization and physics-based braking.
 
 ### Tuning Vehicle Physics
 Edit `VEHICLE_DEFAULTS` in `physics.js`. Key relationships:
