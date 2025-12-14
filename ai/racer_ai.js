@@ -11,7 +11,7 @@
     minRadius: 12,
     roadFriction: 1.1,
     gravity: 750, // px/s^2 to roughly match RacerPhysics defaults
-    straightSpeed: 520, // px/s cap before scaling
+    straightSpeed: 2600, // px/s cap before scaling
     cornerSpeedFloor: 140,
   };
   const MAX_TARGET_SPEED = 2600; // ~190 mph with ppm ≈ 30
@@ -502,7 +502,7 @@
       // Standard physics: friction 1.1, gravity 750 (approx)
       const FRICTION_LIMIT = 1.6; // Aggressive tires for maximum cornering speed
       const GRAVITY = 750;
-      const MAX_SPEED_CAP = 2400; // Unlocked speed for maximum performance
+      const MAX_SPEED_CAP = 2600; // Unlocked speed for maximum performance
 
       for (let i = 0; i < n; i++) {
         const k = Math.abs(sm[i]);
@@ -626,8 +626,8 @@
           speedError > 0 ? clamp(speedError / Math.max(targetSpeed, 60), 0, 1) * throttleGain : 0;
 
         // Enhanced corner braking anticipation
-        const brakingLookaheadBase = 170;
-        const brakingLookaheadSpeedFactor = 1.2;
+        const brakingLookaheadBase = 100;
+        const brakingLookaheadSpeedFactor = 0.7;
         const brakingLookahead = brakingLookaheadBase + speed * brakingLookaheadSpeedFactor;
 
         // Sample multiple points ahead
