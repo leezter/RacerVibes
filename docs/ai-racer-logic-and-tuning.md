@@ -1,37 +1,45 @@
 # AI Racer Logic & Tuning Guide
 
 ## Overview
-The AI racer logic (`ai/racer_ai.js`) controls opponent behavior, specifically how they follow the racing line and manage speed.
+The AI racer logic (`ai/racer_ai.js`) controls opponent behavior, specifically how they generate racing lines, manage speed, and brake.
 
-## Key Behaviors
+## 1. Racing Line Generation ("Anchor-Based")
+The AI uses an **Anchor-Based** algorithm to generate the optimal racing line. This replaces previous continuous-curvature methods to ensure a smooth, professional line.
 
-### 1. Runtime Speed Sanitization
-Racing line metadata (target speeds) saved with tracks can sometimes be unreliable or unphysically fast. To prevent AI from crashing, the controller **recalculates safe cornering speeds** when it initializes.
-- **Mechanism**: Scans the racing line, calculates signed curvature, and applies a max speed limit based on physics (Friction ~1.25, Gravity 750).
-- **Impact**: AI will always respect the physical curvature of the track, regardless of what the "target speed" property of the waypoint says.
+### How it Works
+1.  **Apex Detection**: The algorithm identifies "events" (corners) by finding local maxima in the track's curvature.
+2.  **Anchor Placement**: For each corner, it places three key anchors:
+    *   **Entry**: Outside of the track.
+    *   **Apex**: Inside of the track (flipped based on turn direction).
+    *   **Exit**: Outside of the track.
+3.  **Linear Interpolation**: The algorithm linearly interpolates between these anchors. This creates **Straight Diagonal Lines** between corners, which is the mathematically shortest path and prevents wobbling/center-hugging.
+4.  **Smoothing & Relaxation**: A final physics-based "elastic band" pass smooths the sharp corners at the anchors.
 
-### 2. Braking Logic
-Braking is completely physics-based and does not use artificial speed scaling.
-- **Anticipation**: The AI looks ahead by a distance calculated as `base + speed * brakingLookaheadSpeedFactor`.
-- **Trigger**: Braking is triggered when `currentSpeed > futureCornerLimit`.
-- **Intensity**: Deceleration is calculated to reach the target speed by the time the car reaches the corner.
+## 2. Speed & Grip Logic
+AI speed is primarily limited by physics (friction), not artificial caps.
 
-### 3. Throttle Control (Corner Exit)
-To prevent understeer when exiting corners, the AI cuts throttle if the steering angle is too high.
-- **Mechanism**: If `steerMagnitude > skill.steerCutThrottle`, throttle is reduced aggressively (non-linear curve).
-- **Goal**: Ensures the car straightens out before applying full power, preventing it from washing out into the outer wall.
+### Runtime Speed Sanitization
+When the AI initializes, it scans the racing line and calculates the maximum potential speed for every point based on the corner radius.
+*   **Formula**: `MaxSpeed = Sqrt(FRICTION_LIMIT * GRAVITY * Radius)`
+*   **Difficulty Scaling**: The `FRICTION_LIMIT` is scaled by the `corneringGrip` parameter in `SKILL_PRESETS`.
 
-## Tuning Guide (How to Adjust)
+### Difficulty Tuning (`SKILL_PRESETS`)
+*   **Easier AI**: Lower `corneringGrip` (e.g., 0.85). They slow down more for corners.
+*   **Hard AI**: Higher `corneringGrip` (e.g., 2.5). They assume "arcade-like" grip levels, allowing them to take corners significantly faster than the player physics might normally allow.
 
-If you need to change AI behavior, look for `createController` in `ai/racer_ai.js`.
+## 3. Braking Logic
+Braking is reactive and physics-based.
+*   **Anticipation**: The AI looks ahead a certain distance (`base + speed * factor`).
+*   **Trigger**: If the current speed > the target speed of a future point, braking begins.
+*   **Aggression**: Adjusted via `brakingLookaheadBase` and `brakingLookaheadSpeedFactor`.
+    *   **Lower values** (e.g., Base 100, Factor 0.7) = Later, harder braking (More aggressive).
+    *   **Higher values** = Earlier, softer braking.
+
+## Tuning Cheatsheet
 
 | Parameter | Location | Effect |
 | :--- | :--- | :--- |
-| **`brakingLookaheadSpeedFactor`** | `createController.update` | **Increase (e.g. 1.2 -> 1.5)**: AI sees corners sooner, brakes earlier and softer. <br>**Decrease**: AI brakes later and harder. |
-| **`FRICTION_LIMIT`** | `createController` (Sanitization) | **Increase (1.25 -> 1.4)**: AI takes corners faster (riskier). <br>**Decrease**: AI slows down more for corners (safer). |
-| **`SKILL_PRESETS`** | `ai/racer_ai.js` top-level | Adjust `brakeAggro`, `cornerMargin`, and `maxThrottle` per difficulty level. |
-
-### Common Issues & Fixes
-- **AI braking too late/skidding**: Increase `brakingLookaheadSpeedFactor`.
-- **AI stopping/reversing**: Ensure the "Anti-reverse clamp" (checks speed < 20) remains active in the braking block.
-- **AI taking corners too slowly**: Increase `FRICTION_LIMIT` in the sanitization block.
+| **`corneringGrip`** | `SKILL_PRESETS` | **Increase (e.g. 2.5)**: AI corners much faster (Hard mode). <br>**Decrease (e.g. 0.85)**: AI corners slower. |
+| **`maxThrottle`** | `SKILL_PRESETS` | Global throttle multiplier. Increase to make AI accelerate faster. |
+| **`straightSpeed`** | `DEFAULT_LINE_CFG` | **Must be 2600**. Caps the raw speed on straights. |
+| **`brakingLookaheadSpeedFactor`** | `createController` | **Decrease**: AI brakes later. **Increase**: AI brakes earlier. |
