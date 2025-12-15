@@ -277,6 +277,43 @@
     // Initialize with null to signify "undefined/interpolate"
     const targetOffsets = new Array(n).fill(null);
 
+    // Identify Compound Turns: if two apices are same-direction and connected by a curve,
+    // we should NOT go to the outside wall between them.
+    apices.forEach(a => { a.skipEntry = false; a.skipExit = false; });
+
+    if (apices.length > 1) { // Only relevant if we have multiple corners
+      for (let i = 0; i < apices.length; i++) {
+        const curr = apices[i];
+        const next = apices[(i + 1) % apices.length];
+
+        if (curr.sign === next.sign) {
+          // Check curvature between them
+          let minK = Infinity;
+          let dist = 0;
+          let idx = curr.index;
+          const target = next.index;
+
+          // Scan the interval between apices
+          // Safety: Limit scan to track length to prevent infinite loops (though shouldn't happen)
+          while (idx !== target && dist < n) {
+            idx = (idx + 1) % n;
+            if (idx === target) break;
+            const k = Math.abs(smoothCurvatures[idx]);
+            if (k < minK) minK = k;
+            dist++;
+          }
+
+          // Threshold: if curvature stays above 0.00025 (radius < ~4000px)
+          // and they are reasonably close (not opposite sides of a giant circle)
+          // we treat them as a single compound turn.
+          if (minK > 0.00025 && dist < n / 4) {
+            curr.skipExit = true;
+            next.skipEntry = true;
+          }
+        }
+      }
+    }
+
     // Define turn geometry based on curvature
     // Tighter turns cover less distance but require wider entry/exit Setup
     apices.forEach(apex => {
@@ -301,10 +338,14 @@
       // 2. Entry Point (Turn-in) -> Outside
       // We want to be on the OUTSIDE before turning in.
       // Outside = -Inside = -(-Sign) = Sign
-      targetOffsets[entryIdx] = -apexSide * usableWidth;
+      if (!apex.skipEntry) {
+        targetOffsets[entryIdx] = -apexSide * usableWidth;
+      }
 
       // 3. Exit Point (Track-out) -> Outside
-      targetOffsets[exitIdx] = -apexSide * usableWidth;
+      if (!apex.skipExit) {
+        targetOffsets[exitIdx] = -apexSide * usableWidth;
+      }
     });
 
     // C. Interpolate gaps (Linear "Connect the dots")
