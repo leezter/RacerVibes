@@ -2292,7 +2292,7 @@ const { useEffect, useRef, useState } = React;
             }
             const preset = buildControllerPreset();
             for (const car of aiCars){
-              car.aiController = window.RacerAI.createController(racingLine, preset);
+              car.aiController = window.RacerAI.createController(racingLine, preset, car);
             }
           }
           // Sync AI car gearboxes to match player's gearbox config when "Clone Player Gearbox" is enabled

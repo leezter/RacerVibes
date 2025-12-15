@@ -510,6 +510,25 @@
     return best;
   }
 
+  function findClosestIndexGlobal(line, x, y, step = 10) {
+    if (!line || !line.length) return 0;
+    let bestIdx = 0;
+    let bestDist = Infinity;
+    // Scan the entire line with a stride to find the approximate closest point
+    for (let i = 0; i < line.length; i += step) {
+      const node = line[i];
+      const dx = node.x - x;
+      const dy = node.y - y;
+      const d = dx * dx + dy * dy;
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = i;
+      }
+    }
+    // Refine search locally around the best coarse index
+    return nearestIndex(line, bestIdx, x, y, step * 2);
+  }
+
   function normalizeAngle(angle) {
     let a = angle;
     while (a > Math.PI) a -= Math.PI * 2;
@@ -517,10 +536,15 @@
     return a;
   }
 
-  function createController(initialLine, preset = 'medium') {
+  function createController(initialLine, preset = 'medium', initialState = null) {
     let line = Array.isArray(initialLine) ? initialLine : [];
     let idx = 0;
     let prevError = 0;
+
+    // Use initial state (if provided) to snap to the correct part of the track immediately
+    if (initialState && line.length > 0) {
+      idx = findClosestIndexGlobal(line, initialState.x, initialState.y);
+    }
 
     const resolveSkill = (level) => {
       if (typeof level === 'string' && SKILL_PRESETS[level]) {
@@ -579,9 +603,13 @@
 
 
     const api = {
-      setLine(newLine) {
+      setLine(newLine, carState) {
         line = Array.isArray(newLine) ? newLine : [];
-        idx = 0;
+        if (carState) {
+          idx = findClosestIndexGlobal(line, carState.x, carState.y);
+        } else {
+          idx = 0;
+        }
         // Note: ideally sanitize would be called here too, but for now we focus on init
       },
       setDifficulty(level) {
@@ -634,6 +662,79 @@
         const LATERAL_DEADBAND = 15; // pixels - ignore small offsets
         const absOffset = Math.abs(lateralOffset);
         let lateralCorrection = 0;
+        let isSeeking = false;
+
+        // --- Smooth Seeking Mode ---
+        // If we are very far from the racing line (e.g., displaced by collision), 
+        // switch to a "Seeking" behavior that smoothly steers back to the line 
+        // rather than snapping aggressively to the lookahead point.
+        // We use a larger threshold (e.g. 120px) to trigger this mode.
+        const SEEK_THRESHOLD = 120;
+
+        if (absOffset > SEEK_THRESHOLD) {
+          isSeeking = true;
+          // Find a merge point further ahead on the line to avoid sharp turns
+          const mergeDistance = Math.max(250, lookahead * 2.5);
+          const mergeSample = sampleAlongLine(line, idx, mergeDistance);
+          const mergePoint = mergeSample ? mergeSample.point : currentNode;
+
+          // Calculate vector to merge point
+          const dxMerge = mergePoint.x - car.x;
+          const dyMerge = mergePoint.y - car.y;
+          const distToMerge = Math.hypot(dxMerge, dyMerge) || 1;
+          const mergeHeading = Math.atan2(dyMerge, dxMerge);
+
+          // Check if we are facing the wrong way relative to track direction
+          // If dot product of car vector and track tangent is very negative, we might be backwards
+          const trackDir = Math.atan2(currentNode.tangent.y, currentNode.tangent.x);
+          const carDir = car.angle;
+          const dirDiff = Math.abs(normalizeAngle(trackDir - carDir));
+
+          if (dirDiff > Math.PI * 0.75) {
+            // We are facing backwards. Don't try to seek normally.
+            // Rely on recovery logic (handled by game loop via AI_RECOVERY_CFG), 
+            // but here we can just target the line immediately to help orient.
+            const error = normalizeAngle(mergeHeading - car.angle);
+            // Aggressive steering to turn around
+            return { throttle: 0.2, brake: 0, steer: Math.sign(error) };
+          }
+
+          // Smooth seek steering
+          // Interpolate between current heading and merge heading
+          // The error is just the angle to the merge point
+          const seekError = normalizeAngle(mergeHeading - car.angle);
+
+          // Use a gentle P-controller for seeking to avoid wobbling
+          // Lower gain than normal racing
+          const seekSteer = clamp(seekError * 1.8, -1, 1);
+
+          // Blend with normal steering based on how far we are? 
+          // actually, just return the seek steer if we are truly far off.
+          // But let's blend it to avoid a snap when crossing the threshold.
+          // Blend factor: 0 at threshold, 1 at threshold + 100
+          const seekBlend = clamp((absOffset - SEEK_THRESHOLD) / 100, 0, 1);
+
+          // Initial calculation of standard steering for blending
+          // (We'll recompute the standard logic and blend)
+          // ... Actually, let's just override the error term used below.
+
+          // Override lookaheadHeading to satisfy seeking
+          // But standard logic blends tangent... 
+          // Let's force the heading error to be the seek error
+          // And set lateralCorrection to 0 because we are handling it via the merge point.
+
+          // Simplified: Direct return for seeking if fully engaged
+          // We use a blend for smooth transition? No, let's just commit if we are this far off.
+          // To prevent snapping, we could lerp the error, but for now direct control is safer
+          // to ensure we actually get back to the track.
+          prevError = seekError; // Reset derivative to prevent d-term spikes
+          return {
+            throttle: 0.5, // Moderate throttle to get back to line safely
+            brake: 0,
+            steer: seekSteer
+          };
+        }
+
         if (absOffset > LATERAL_DEADBAND) {
           const excessOffset = absOffset - LATERAL_DEADBAND;
           const speedFactor = clamp(1 - speed / 800, 0.2, 1);
@@ -706,6 +807,8 @@
           console.log(`[AI] spd=${speed.toFixed(0)} minF=${minFutureSpeed.toFixed(0)} exc=${speedExcess.toFixed(0)}`);
         }
 
+
+
         let brake = 0;
         let baseBrake = 0;
 
@@ -747,6 +850,13 @@
           brake = 0;
         }
 
+        // 3. Start Assist / Low speed recovery
+        // If we are moving very slowly and the path ahead allows speed, ensure we have initial throttle.
+        // This fixes issues where cars on the starting line (with 0 speed) calculate 0 throttle.
+        if (speed < 15 && minFutureSpeed > 30 && throttle < 0.1 && brake < 0.1) {
+          throttle = 1.0 * throttleGain;
+        }
+
         // Hysteresis for throttle at high speed (prevent stutter)
         if (speedError < -10 && brake < 0.1) {
           throttle = 0;
@@ -756,7 +866,7 @@
         // Prevent understeer by cutting throttle when steering is significant.
         // This ensures the car finishes the turn before accelerating.
         const steerMag = Math.abs(steer);
-        if (steerMag > skill.steerCutThrottle) {
+        if (speed > 60 && steerMag > skill.steerCutThrottle) {
           const excess = steerMag - skill.steerCutThrottle;
           // Normalize excess (0 to 1) based on remaining steer range
           const range = Math.max(0.01, 1.0 - skill.steerCutThrottle);
