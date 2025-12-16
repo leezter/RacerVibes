@@ -11,10 +11,10 @@
     minRadius: 12,
     roadFriction: 1.1,
     gravity: 750, // px/s^2 to roughly match RacerPhysics defaults
-    straightSpeed: 2600, // px/s cap before scaling
+    straightSpeed: 3000, // INCREASED: Allow higher top speeds
     cornerSpeedFloor: 140,
   };
-  const MAX_TARGET_SPEED = 2600; // ~190 mph with ppm ≈ 30
+  const MAX_TARGET_SPEED = 3000; // ~220 mph
 
   // Racing line smoothing constants
   // Note: The racing line is computed once when track loads, not per-frame, so
@@ -34,50 +34,51 @@
   const SKILL_PRESETS = {
     easy: {
       maxThrottle: 0.85,
-      brakeAggro: 0.65,
+      brakeAggro: 0.8,
       steerP: 1.6,
       steerD: 0.06,
       lookaheadBase: 35,
       lookaheadSpeed: 0.12,
+      brakingLookaheadFactor: 1.2,
       cornerMargin: 32,
-      steerCutThrottle: 0.45,
       searchWindow: 48,
       speedHysteresis: 14,
       cornerEntryFactor: 0.45,
-      cornerEntryFactor: 0.45,
       minTargetSpeed: 90,
-      corneringGrip: 0.85,
+      corneringGrip: 0.75,
+      slipThreshold: 0.8, // Stay well within limits
     },
     medium: {
-      maxThrottle: 0.95,
-      brakeAggro: 0.9,
+      maxThrottle: 1.0,
+      brakeAggro: 1.0,
       steerP: 2.1,
       steerD: 0.1,
       lookaheadBase: 40,
       lookaheadSpeed: 0.14,
+      brakingLookaheadFactor: 1.4,
       cornerMargin: 22,
-      steerCutThrottle: 0.3,
       searchWindow: 56,
       speedHysteresis: 10,
       cornerEntryFactor: 0.6,
       minTargetSpeed: 110,
-      corneringGrip: 1.05,
+      corneringGrip: 0.95,
+      slipThreshold: 0.95,
     },
     hard: {
-      maxThrottle: 1.25,
-      brakeAggro: 0.55,
-      steerP: 3.2,
-      steerD: 0.16,
-      lookaheadBase: 50,
+      maxThrottle: 1.5,
+      brakeAggro: 1.5, // Reduced from 1.8 (Stop slamming brakes causing lockups)
+      steerP: 3.8, // Reduced from 4.5 (Less twitchy)
+      steerD: 0.22,
+      lookaheadBase: 42, // Increased from 30 (More stable lines)
       lookaheadSpeed: 0.17,
-
+      brakingLookaheadFactor: 1.3, // Brake slightly earlier (Safety margin)
       cornerMargin: 0,
-      steerCutThrottle: 0.4,
-      searchWindow: 64,
-      speedHysteresis: 7,
-      cornerEntryFactor: 0.75,
-      minTargetSpeed: 120,
-      corneringGrip: 2.5, // Significant boost for Hard difficulty
+      searchWindow: 80, // Track line better
+      speedHysteresis: 5,
+      cornerEntryFactor: 0.85,
+      minTargetSpeed: 130,
+      corneringGrip: 0.99, // 99% Confidence (REALISTIC limit) - Fixes sharp bend crashes
+      slipThreshold: 1.0, // 100% Limit (No sliding allowance)
     },
   };
 
@@ -197,6 +198,133 @@
     return angle / avgLen;
   }
 
+  /**
+   * Straighten path sections where the line is "wavering" (weaving back and forth)
+   * without a significant net direction change. This mimics how pro racers cut
+   * straight through lumpy track sections instead of following every undulation.
+   *
+   * @param {Array} path - The racing line path [{x, y}, ...]
+   * @param {Array} centerline - The track centerline for bounds checking
+   * @param {number} maxOffset - Maximum allowed distance from centerline
+   * @returns {Array} - Optimized path with unnecessary weaving removed
+   */
+  function straightenPath(path, centerline, maxOffset) {
+    if (!path || path.length < 20) return path;
+
+    const n = path.length;
+    const result = path.map((p) => ({ x: p.x, y: p.y }));
+
+    // Configuration
+    const MIN_CHORD_LENGTH = 8; // Minimum indices to consider for chord (8 * 12px = ~100px)
+    const MAX_CHORD_LENGTH = 35; // Maximum indices for chord (~420px)
+    const DIRECTION_VARIANCE_LIMIT = 0.15; // Max net direction change (radians) to consider "straight"
+    const WAVERING_THRESHOLD = 0.25; // Min cumulative direction change to consider "wavering"
+
+    // Track which points have been straightened to avoid re-processing
+    const processed = new Array(n).fill(false);
+
+    // Helper: Check if a point is within track bounds
+    const isWithinBounds = (px, py, centerIdx) => {
+      const ci = Math.min(centerIdx, centerline.length - 1);
+      const center = centerline[ci];
+      const dx = px - center.x;
+      const dy = py - center.y;
+      const dist = Math.hypot(dx, dy);
+      return dist <= maxOffset * 1.05; // 5% tolerance
+    };
+
+    // Helper: Get direction angle between two points
+    const getDirection = (from, to) => {
+      return Math.atan2(to.y - from.y, to.x - from.x);
+    };
+
+    // Helper: Normalize angle to [-PI, PI]
+    const normalizeAngle = (a) => {
+      while (a > Math.PI) a -= Math.PI * 2;
+      while (a < -Math.PI) a += Math.PI * 2;
+      return a;
+    };
+
+    // Scan the path looking for straightenable sections
+    for (let startIdx = 0; startIdx < n; startIdx++) {
+      if (processed[startIdx]) continue;
+
+      // Try different chord lengths, preferring longer chords
+      for (let chordLen = MAX_CHORD_LENGTH; chordLen >= MIN_CHORD_LENGTH; chordLen -= 3) {
+        const endIdx = (startIdx + chordLen) % n;
+
+        // Skip if we'd cross the loop boundary awkwardly
+        if (startIdx + chordLen >= n + MIN_CHORD_LENGTH) continue;
+
+        const startPt = result[startIdx];
+        const endPt = result[endIdx];
+
+        // Calculate chord direction
+        const chordDir = getDirection(startPt, endPt);
+
+        // Measure net direction change and cumulative wavering along the path
+        let cumulativeChange = 0;
+        let lastDir = getDirection(startPt, result[(startIdx + 1) % n]);
+
+        for (let j = 1; j < chordLen - 1; j++) {
+          const idx = (startIdx + j) % n;
+          const nextIdx = (startIdx + j + 1) % n;
+          const currDir = getDirection(result[idx], result[nextIdx]);
+          const change = Math.abs(normalizeAngle(currDir - lastDir));
+          cumulativeChange += change;
+          lastDir = currDir;
+        }
+
+        // Net direction change from start to end
+        const netChange = Math.abs(normalizeAngle(chordDir - getDirection(startPt, result[(startIdx + 1) % n])));
+
+        // This section is "wavering" if there's significant cumulative change
+        // but small net change (meaning it's oscillating, not turning)
+        const isWavering = cumulativeChange > WAVERING_THRESHOLD && netChange < DIRECTION_VARIANCE_LIMIT;
+
+        if (!isWavering) continue;
+
+        // Validate that the chord stays within track bounds
+        let chordValid = true;
+        const chordDx = endPt.x - startPt.x;
+        const chordDy = endPt.y - startPt.y;
+
+        for (let j = 1; j < chordLen - 1; j++) {
+          const t = j / chordLen;
+          const chordX = startPt.x + chordDx * t;
+          const chordY = startPt.y + chordDy * t;
+          const centerIdx = Math.floor((startIdx + j) * centerline.length / n) % centerline.length;
+
+          if (!isWithinBounds(chordX, chordY, centerIdx)) {
+            chordValid = false;
+            break;
+          }
+        }
+
+        if (!chordValid) continue;
+
+        // Apply the chord - replace intermediate points with straight line
+        for (let j = 1; j < chordLen - 1; j++) {
+          const idx = (startIdx + j) % n;
+          const t = j / chordLen;
+          result[idx] = {
+            x: startPt.x + chordDx * t,
+            y: startPt.y + chordDy * t,
+          };
+          processed[idx] = true;
+        }
+
+        // Mark endpoints and skip ahead
+        processed[startIdx] = true;
+        startIdx += chordLen - 2; // -1 for loop increment, -1 to check overlap
+        break; // Found a valid chord, move to next section
+      }
+    }
+
+    // Light smoothing pass to blend chord endpoints naturally
+    return gaussianSmooth(result, 2);
+  }
+
   function buildRacingLine(centerline, roadWidth, options = {}) {
     if (!Array.isArray(centerline) || centerline.length < 3) return [];
     const cfg = { ...DEFAULT_LINE_CFG, ...options };
@@ -249,6 +377,12 @@
       return Math.min(d, n - d);
     };
 
+    // Helper to estimate turn length (hoisted)
+    const getTurnLen = (mag) => {
+      const r = 1 / (mag + 1e-6);
+      return Math.min(n / 8, Math.sqrt(r * 20));
+    };
+
     // Simple peak detection
     for (let i = 0; i < n; i++) {
       const c = Math.abs(smoothCurvatures[i]);
@@ -287,26 +421,38 @@
         const next = apices[(i + 1) % apices.length];
 
         if (curr.sign === next.sign) {
-          // Check curvature between them
+          // Calculate distance between apices
+          let dist = next.index - curr.index;
+          if (dist < 0) dist += n;
+
+          // Check curvature continuity
           let minK = Infinity;
-          let dist = 0;
           let idx = curr.index;
           const target = next.index;
+          let scanDist = 0;
 
-          // Scan the interval between apices
-          // Safety: Limit scan to track length to prevent infinite loops (though shouldn't happen)
-          while (idx !== target && dist < n) {
+          while (idx !== target && scanDist < n) {
             idx = (idx + 1) % n;
             if (idx === target) break;
             const k = Math.abs(smoothCurvatures[idx]);
             if (k < minK) minK = k;
-            dist++;
+            scanDist++;
           }
 
-          // Threshold: if curvature stays above 0.00025 (radius < ~4000px)
-          // and they are reasonably close (not opposite sides of a giant circle)
-          // we treat them as a single compound turn.
-          if (minK > 0.00025 && dist < n / 4) {
+          // Gap Heuristic: Calculate the theoretical "Straight" length between turns.
+          const len1 = getTurnLen(curr.mag);
+          const len2 = getTurnLen(next.mag);
+          const gap = dist - len1 - len2;
+
+          // Condition 1: Continuous curvature (Track is actually bending)
+          // Relaxed threshold to 0.0001 (Radius < 10,000px)
+          const isContinuousCurve = minK > 0.0001;
+
+          // Condition 2: Short Gap (Not enough room to safely go Outside and back)
+          // 50 indices * 12px/step = 600px. Track width ~200px. 3x width is a safe margin.
+          const isShortGap = gap < 60;
+
+          if (dist < n / 3 && (isContinuousCurve || isShortGap)) {
             curr.skipExit = true;
             next.skipEntry = true;
           }
@@ -317,8 +463,7 @@
     // Define turn geometry based on curvature
     // Tighter turns cover less distance but require wider entry/exit Setup
     apices.forEach(apex => {
-      const r = 1 / (apex.mag + 1e-6);
-      const turnHalfLength = Math.min(n / 8, Math.sqrt(r * 20)); // Heuristic for turn length based on radius
+      const turnHalfLength = getTurnLen(apex.mag);
 
       const entryIdx = (Math.round(apex.index - turnHalfLength) + n) % n;
       const exitIdx = (Math.round(apex.index + turnHalfLength) + n) % n;
@@ -328,23 +473,33 @@
       // Wait, curvature sign depends on coordinate system. 
       // Let's assume standard: we want to be opposite to the turn direction.
       // If curvature is + (turning one way), we go - (inside).
-      // Let's stick to: Apex Offset = -Sign * UsableWidth
       const apexSide = apex.sign;
+
+      // --- AMPLITUDE SCALING ---
+      // Scale the offset based on curvature severity.
+      // Small curvature (Gentle bend) -> Stay near center.
+      // High curvature (Sharp turn) -> Use full width.
+      // Map 0.0005 (Threshold) -> 0.0025 (Full Width Radius ~400px)
+      const severity = clamp((apex.mag - 0.0005) / 0.002, 0, 1);
+
+      // We square the severity for a non-linear falloff (gentle turns use even less width)
+      const amplitude = Math.max(0.2, severity * severity);
+      const currentWidth = usableWidth * amplitude;
 
       // ANCHOR PLACEMENT
       // 1. Apex
-      targetOffsets[apex.index] = apexSide * usableWidth;
+      targetOffsets[apex.index] = apexSide * currentWidth;
 
       // 2. Entry Point (Turn-in) -> Outside
       // We want to be on the OUTSIDE before turning in.
       // Outside = -Inside = -(-Sign) = Sign
       if (!apex.skipEntry) {
-        targetOffsets[entryIdx] = -apexSide * usableWidth;
+        targetOffsets[entryIdx] = -apexSide * currentWidth;
       }
 
       // 3. Exit Point (Track-out) -> Outside
       if (!apex.skipExit) {
-        targetOffsets[exitIdx] = -apexSide * usableWidth;
+        targetOffsets[exitIdx] = -apexSide * currentWidth;
       }
     });
 
@@ -441,6 +596,9 @@
     // It creates the "Racing Line" flow.
     path = relaxPath(path, 30, 0.2);
     path = gaussianSmooth(path, 5);
+
+    // 7.5 Straighten wavering sections (removes unnecessary weaving on lumpy tracks)
+    path = straightenPath(path, points, usableWidth);
 
     // 8. Constrain to Track Width (Safety check)
     // Relaxation might have pulled it off track (unlikely with 0.2 but possible)
@@ -617,14 +775,14 @@
       const sm = smoothValues(Array.from(curvatures), 4, 0.5);
 
       // 3. Apply physics limits
-      // Standard physics: friction 1.1, gravity 750 (approx)
-      // We start with a base friction of 1.4 and scale by difficulty
+      // Standard physics: friction 1.4 (road), gravity 750 (approx)
+      // MATCHED to physics.js: muLatRoad=1.4
       const BASE_FRICTION = 1.4;
-      const difficultyGrip = skill.corneringGrip || 1.0;
+      const difficultyGrip = skill.corneringGrip || 0.90;
       const FRICTION_LIMIT = BASE_FRICTION * difficultyGrip;
 
       const GRAVITY = 750;
-      const MAX_SPEED_CAP = 2600; // Unlocked speed for maximum performance
+      const MAX_SPEED_CAP = 3000; // Unlocked speed for maximum performance
 
       for (let i = 0; i < n; i++) {
         const k = Math.abs(sm[i]);
@@ -643,6 +801,13 @@
 
 
 
+    // State for input smoothing
+    const inputState = {
+      throttle: 0,
+      brake: 0,
+      steer: 0
+    };
+
     const api = {
       setLine(newLine, carState) {
         line = Array.isArray(newLine) ? newLine : [];
@@ -651,7 +816,6 @@
         } else {
           idx = 0;
         }
-        // Note: ideally sanitize would be called here too, but for now we focus on init
       },
       setDifficulty(level) {
         skill = resolveSkill(level);
@@ -707,9 +871,7 @@
 
         // --- Smooth Seeking Mode ---
         // If we are very far from the racing line (e.g., displaced by collision), 
-        // switch to a "Seeking" behavior that smoothly steers back to the line 
-        // rather than snapping aggressively to the lookahead point.
-        // We use a larger threshold (e.g. 120px) to trigger this mode.
+        // switch to a "Seeking" behavior that smoothly steers back to the line.
         const SEEK_THRESHOLD = 120;
 
         if (absOffset > SEEK_THRESHOLD) {
@@ -719,70 +881,52 @@
           const mergeSample = sampleAlongLine(line, idx, mergeDistance);
           const mergePoint = mergeSample ? mergeSample.point : currentNode;
 
-          // Calculate vector to merge point
           const dxMerge = mergePoint.x - car.x;
           const dyMerge = mergePoint.y - car.y;
-          const distToMerge = Math.hypot(dxMerge, dyMerge) || 1;
           const mergeHeading = Math.atan2(dyMerge, dxMerge);
 
-          // Check if we are facing the wrong way relative to track direction
-          // If dot product of car vector and track tangent is very negative, we might be backwards
+          // Check if we are facing the wrong way
           const trackDir = Math.atan2(currentNode.tangent.y, currentNode.tangent.x);
           const carDir = car.angle;
           const dirDiff = Math.abs(normalizeAngle(trackDir - carDir));
 
+          let seekSteer = 0;
           if (dirDiff > Math.PI * 0.75) {
-            // We are facing backwards. Don't try to seek normally.
-            // Rely on recovery logic (handled by game loop via AI_RECOVERY_CFG), 
-            // but here we can just target the line immediately to help orient.
+            // Backward recovery
             const error = normalizeAngle(mergeHeading - car.angle);
-            // Aggressive steering to turn around
-            return { throttle: 0.2, brake: 0, steer: Math.sign(error) };
+            seekSteer = Math.sign(error);
+            inputState.throttle = 0.2;
+            inputState.brake = 0;
+            inputState.steer = seekSteer; // Direct snap for recovery
+            return { throttle: 0.2, brake: 0, steer: seekSteer };
           }
 
           // Smooth seek steering
-          // Interpolate between current heading and merge heading
-          // The error is just the angle to the merge point
           const seekError = normalizeAngle(mergeHeading - car.angle);
+          seekSteer = clamp(seekError * 1.8, -1, 1);
 
-          // Use a gentle P-controller for seeking to avoid wobbling
-          // Lower gain than normal racing
-          const seekSteer = clamp(seekError * 1.8, -1, 1);
+          prevError = seekError;
 
-          // Blend with normal steering based on how far we are? 
-          // actually, just return the seek steer if we are truly far off.
-          // But let's blend it to avoid a snap when crossing the threshold.
-          // Blend factor: 0 at threshold, 1 at threshold + 100
-          const seekBlend = clamp((absOffset - SEEK_THRESHOLD) / 100, 0, 1);
+          // Apply smoothing to seek inputs for transition
+          const blendSpeed = 5 * dt;
+          inputState.steer += (seekSteer - inputState.steer) * blendSpeed;
+          inputState.throttle += (0.5 - inputState.throttle) * blendSpeed;
+          inputState.brake += (0 - inputState.brake) * blendSpeed;
 
-          // Initial calculation of standard steering for blending
-          // (We'll recompute the standard logic and blend)
-          // ... Actually, let's just override the error term used below.
-
-          // Override lookaheadHeading to satisfy seeking
-          // But standard logic blends tangent... 
-          // Let's force the heading error to be the seek error
-          // And set lateralCorrection to 0 because we are handling it via the merge point.
-
-          // Simplified: Direct return for seeking if fully engaged
-          // We use a blend for smooth transition? No, let's just commit if we are this far off.
-          // To prevent snapping, we could lerp the error, but for now direct control is safer
-          // to ensure we actually get back to the track.
-          prevError = seekError; // Reset derivative to prevent d-term spikes
           return {
-            throttle: 0.5, // Moderate throttle to get back to line safely
-            brake: 0,
-            steer: seekSteer
+            throttle: inputState.throttle,
+            brake: inputState.brake,
+            steer: inputState.steer
           };
         }
 
         if (absOffset > LATERAL_DEADBAND) {
           const excessOffset = absOffset - LATERAL_DEADBAND;
-          const speedFactor = clamp(1 - speed / 800, 0.2, 1);
+          const speedFactor = clamp(1 - speed / 1200, 0.4, 1); // Maintain more correction at speed
           lateralCorrection = clamp(
-            -Math.sign(lateralOffset) * excessOffset * LATERAL_CORRECTION_GAIN * speedFactor,
-            -0.15,
-            0.15,
+            -Math.sign(lateralOffset) * excessOffset * 0.005 * speedFactor, // Increased gain 0.003 -> 0.005
+            -0.25, // Increased max correction
+            0.25
           );
         }
 
@@ -793,7 +937,7 @@
           lateralCorrection;
         const error = normalizeAngle(blendedError);
 
-        const steer = clamp(
+        const targetSteerRaw = clamp(
           error * skill.steerP + ((error - prevError) / Math.max(1e-3, dt)) * skill.steerD,
           -1,
           1,
@@ -801,36 +945,32 @@
         prevError = error;
 
         // --- Speed Control ---
-        // Get target speed from the line (Sanitized, so it's a real physics limit)
         const targetSpeedRaw = currentNode.targetSpeed;
-
-        // Apply difficulty scaling only to max cap, NOT to corner limits
-        // We trust the line speed is the corner limit.
         const difficultyMax = 1000 * mapThrottleToSpeedScale(skill.maxThrottle);
         const targetSpeed = Math.min(difficultyMax, targetSpeedRaw);
 
         const speedError = targetSpeed - speed;
-        const throttleGain = clamp(skill.maxThrottle ?? 1, 0.1, 2);
-        let throttle =
-          speedError > 0 ? clamp(speedError / Math.max(targetSpeed, 60), 0, 1) * throttleGain : 0;
+        const throttleGain = clamp(skill.maxThrottle ?? 1, 0.1, 3.0);
+
+        let targetThrottle = 0;
+        if (speedError > 0) {
+          targetThrottle = clamp(speedError / Math.max(targetSpeed, 60), 0, 1) * throttleGain;
+        }
 
         // Enhanced corner braking anticipation
-        const brakingLookaheadBase = 100;
-        const brakingLookaheadSpeedFactor = 0.7;
+        const brakingLookaheadBase = 150;
+        const brakingLookaheadSpeedFactor = skill.brakingLookaheadFactor || 1.4;
         const brakingLookahead = brakingLookaheadBase + speed * brakingLookaheadSpeedFactor;
 
         // Sample multiple points ahead
-        const numBrakingSamples = 8;
+        const numBrakingSamples = 16;
         let minFutureSpeed = Infinity;
         let brakingDistance = brakingLookahead;
-
-        const enableDebug = typeof window !== 'undefined' && window.DEBUG_AI_BRAKING && Math.random() < 0.01;
 
         for (let i = 1; i <= numBrakingSamples; i++) {
           const sampleDist = (brakingLookahead / numBrakingSamples) * i;
           const futureSample = sampleAlongLine(line, idx, sampleDist);
           if (futureSample && Number.isFinite(futureSample.targetSpeed)) {
-            // Use raw line speed (limit). No scaling.
             const limit = futureSample.targetSpeed;
             if (limit < minFutureSpeed) {
               minFutureSpeed = limit;
@@ -839,90 +979,110 @@
           }
         }
 
-        // Fallback
         if (minFutureSpeed === Infinity) minFutureSpeed = targetSpeed;
-
         const speedExcess = speed - minFutureSpeed;
 
-        if (enableDebug) {
-          console.log(`[AI] spd=${speed.toFixed(0)} minF=${minFutureSpeed.toFixed(0)} exc=${speedExcess.toFixed(0)}`);
-        }
-
-
-
-        let brake = 0;
+        let targetBrake = 0;
         let baseBrake = 0;
 
-        // 1. Reactive Braking (if we are currently over speed)
+        // 1. Reactive Braking
         if (speedError < 0) {
           const baseIntensity = clamp(-speedError / 150, 0, 1);
           baseBrake = Math.sqrt(baseIntensity) * skill.brakeAggro;
         }
 
-        // 2. Anticipatory Braking (corner ahead)
+        // 2. Anticipatory Braking
         if (speedExcess > 0 && brakingDistance > 0 && minFutureSpeed < speed) {
           const avgSpeed = (speed + minFutureSpeed) / 2;
           const timeToCorner = avgSpeed > 10 ? brakingDistance / avgSpeed : 1.0;
-          // Decel needed: (current - target) / time
           const requiredDecel = speedExcess / Math.max(timeToCorner, 0.2);
 
-          // Max braking decel (approx 400-600 px/s^2 depending on friction)
-          const MAX_BRAKE_DECEL = 350; // Conservative estimate
+          // Realistic MAX_BRAKE_DECEL ~600-700
+          // Higher = AI thinks it can stop faster = Brakes Later
+          const MAX_BRAKE_DECEL = 720;
           let brakingIntensity = clamp(requiredDecel / MAX_BRAKE_DECEL, 0, 1);
 
-          // Scale by aggression
-          const anticipation = brakingIntensity * skill.brakeAggro * 1.5;
-          brake = Math.max(baseBrake, anticipation);
+          const anticipation = brakingIntensity * skill.brakeAggro;
+          targetBrake = Math.max(baseBrake, anticipation);
 
-          // Cut throttle if we need to brake hard for corner
-          if (brakingIntensity > 0.3) {
-            throttle = 0;
+          // Basic throttle cut on braking
+          if (brakingIntensity > 0.1) {
+            targetThrottle = 0;
           } else {
-            throttle *= (1 - brakingIntensity);
+            targetThrottle *= (1 - brakingIntensity);
           }
         } else {
-          brake = baseBrake;
+          targetBrake = baseBrake;
         }
 
-        brake = Math.min(1, brake);
+        targetBrake = Math.min(1, targetBrake);
 
         // Anti-reverse / Low speed clamp
         if (speed < 20 && speedExcess < 10) {
-          brake = 0;
+          targetBrake = 0;
+        }
+        // Start assist
+        if (speed < 15 && minFutureSpeed > 30 && targetThrottle < 0.1 && targetBrake < 0.1) {
+          targetThrottle = 1.0 * throttleGain;
         }
 
-        // 3. Start Assist / Low speed recovery
-        // If we are moving very slowly and the path ahead allows speed, ensure we have initial throttle.
-        // This fixes issues where cars on the starting line (with 0 speed) calculate 0 throttle.
-        if (speed < 15 && minFutureSpeed > 30 && throttle < 0.1 && brake < 0.1) {
-          throttle = 1.0 * throttleGain;
+        // --- TRAIL BRAKING & TRACTION CIRCLE LOGIC ---
+        // Implementation of professional grip management.
+        // Formula: AvailableLongitudinal = Sqrt(SlipThreshold^2 - SteerUsage^2) (Simplified)
+
+        const slipThreshold = skill.slipThreshold || 0.9;
+        const steerUsage = Math.abs(inputState.steer); // 0..1
+
+        // Calculate remaining grip for braking/acceleration
+        // If steer is 1.0, we have very little grip left for braking.
+        // We square the inputs to model the traction circle ellipse.
+        const gripUsedSq = steerUsage * steerUsage;
+        const totalGripSq = slipThreshold * slipThreshold;
+
+        // Available grip for longitudinal force (0..1)
+        const tractionAvailable = Math.sqrt(Math.max(0, totalGripSq - gripUsedSq));
+
+        // 1. Apply to Braking
+        // "Pro" Trail Braking: We ask for 100% brake, but physics limits us to 'tractionAvailable'.
+        // If we are going straight (steer=0), tractionAvailable = 1.0 -> Full Brake.
+        // If we represent steering (steer=1.0), tractionAvailable ~ 0 -> No Brake (prevent lockup).
+        if (targetBrake > 0) {
+          targetBrake = Math.min(targetBrake, tractionAvailable);
         }
 
-        // Hysteresis for throttle at high speed (prevent stutter)
-        if (speedError < -10 && brake < 0.1) {
-          throttle = 0;
+        // 2. Apply to Throttle
+        // "Pro" Corner Exit: We can only accelerate as we unwind the wheel.
+        // As steer decreases, tractionAvailable increases -> Throttle increases.
+        if (targetThrottle > 0) {
+          // Strict physics adherence: Don't ask for more grip than exists.
+          // FIX: Added Understeer Prevention. Traction Circle says we HAVE grip, 
+          // but applying torque shifts weight back and causes understeer.
+          // We bias the throttle to be lower when steering is high.
+          const stabilityBias = Math.max(0, 1.0 - steerUsage * 0.6); // 60% penalty at full lock
+          const throttleGrip = tractionAvailable * stabilityBias;
+          targetThrottle = Math.min(targetThrottle, throttleGrip);
         }
 
-        // --- Throttle Cut on Steering ---
-        // Prevent understeer by cutting throttle when steering is significant.
-        // This ensures the car finishes the turn before accelerating.
-        const steerMag = Math.abs(steer);
-        if (speed > 60 && steerMag > skill.steerCutThrottle) {
-          const excess = steerMag - skill.steerCutThrottle;
-          // Normalize excess (0 to 1) based on remaining steer range
-          const range = Math.max(0.01, 1.0 - skill.steerCutThrottle);
-          const cutFactor = clamp(excess / range, 0, 1);
+        // 3. Input Filtering (Low Pass Filter)
+        // Simulates physical speed of pedals/wheel.
+        // Use different speeds for attack vs release for pro feel.
 
-          // Apply non-linear power curve to cut throttle aggressively
-          // If cutFactor is 0.5, we cut 75% of throttle. If 1.0, cut 100%.
-          const aggressiveCut = Math.pow(cutFactor, 0.5);
-          throttle *= (1.0 - aggressiveCut);
-        }
+        // Steer: Quick response
+        const steerAlpha = clamp(15 * dt, 0, 1);
+        inputState.steer += (targetSteerRaw - inputState.steer) * steerAlpha;
+
+        // Throttle: Instant off, smooth on (but much faster now for Pro)
+        const throttleAlpha = targetThrottle < inputState.throttle ? clamp(20 * dt, 0, 1) : clamp(15 * dt, 0, 1);
+        inputState.throttle += (targetThrottle - inputState.throttle) * throttleAlpha;
+
+        // Brake: Fast on, smooth off (trail braking)
+        const brakeAlpha = targetBrake > inputState.brake ? clamp(15 * dt, 0, 1) : clamp(5 * dt, 0, 1);
+        inputState.brake += (targetBrake - inputState.brake) * brakeAlpha;
 
         return {
-          throttle,
-          brake,
-          steer,
+          throttle: inputState.throttle,
+          brake: inputState.brake,
+          steer: inputState.steer,
         };
       },
     };

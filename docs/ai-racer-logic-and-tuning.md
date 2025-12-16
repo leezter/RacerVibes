@@ -8,12 +8,15 @@ The AI uses an **Anchor-Based** algorithm to generate the optimal racing line. T
 
 ### How it Works
 1.  **Apex Detection**: The algorithm identifies "events" (corners) by finding local maxima in the track's curvature.
-2.  **Anchor Placement**: For each corner, it places three key anchors:
-    *   **Entry**: Outside of the track.
-    *   **Apex**: Inside of the track (flipped based on turn direction).
-    *   **Exit**: Outside of the track.
-3.  **Linear Interpolation**: The algorithm linearly interpolates between these anchors. This creates **Straight Diagonal Lines** between corners, which is the mathematically shortest path and prevents wobbling/center-hugging.
-4.  **Smoothing & Relaxation**: A final physics-based "elastic band" pass smooths the sharp corners at the anchors.
+2.  **Compound Turn Detection**: Consecutive turns in the same direction are analyzed. If they are connected by a curve or are very close (gap < ~600px), they are merged into a single compound turn by removing the intermediate "Exit" and "Entry" anchors. This prevents unnecessary side-swapping on lumpy corners.
+3.  **Anchor Placement & Severity Scaling**: For each corner, it places three key anchors (Entry, Apex, Exit).
+    *   **Amplitude Scaling**: The lateral offset of the anchors is scaled by the **Curvature Severity**.
+    *   **Gentle Bends**: Low severity -> Small offset (stay near center).
+    *   **Sharp Turns**: High severity -> Full offset (use full track width).
+    *   **Compound Exits**: As a complex turn opens up, the reduced severity allows the AI to naturally drift away from the inside edge.
+4.  **Linear Interpolation**: The algorithm linearly interpolates between these anchors. This creates **Straight Diagonal Lines** between corners, which is the mathematically shortest path and prevents wobbling/center-hugging.
+5.  **Smoothing & Relaxation**: A physics-based "elastic band" pass smooths the sharp corners at the anchors.
+6.  **Path Straightening**: A chord-based optimization pass eliminates unnecessary weaving on "lumpy" track sections. It identifies segments where direction oscillates without significant net change and replaces them with straight lines when valid.
 
 ## 2. Speed & Grip Logic
 AI speed is primarily limited by physics (friction), not artificial caps.
@@ -24,22 +27,33 @@ When the AI initializes, it scans the racing line and calculates the maximum pot
 *   **Difficulty Scaling**: The `FRICTION_LIMIT` is scaled by the `corneringGrip` parameter in `SKILL_PRESETS`.
 
 ### Difficulty Tuning (`SKILL_PRESETS`)
-*   **Easier AI**: Lower `corneringGrip` (e.g., 0.85). They slow down more for corners.
-*   **Hard AI**: Higher `corneringGrip` (e.g., 2.5). They assume "arcade-like" grip levels, allowing them to take corners significantly faster than the player physics might normally allow.
+### Difficulty Tuning (`SKILL_PRESETS`)
+*   **Easier AI**: Lower `corneringGrip` (e.g., 0.75). They slow down more for corners.
+*   **Hard AI**: **Pro Physics (0.98)**. They drive at 98% of the vehicle's theoretical limit. They no longer cheat with extra grip; instead, they use optimal braking and racing lines.
 
 ## 3. Braking Logic
 Braking is reactive and physics-based.
 *   **Anticipation**: The AI looks ahead a certain distance (`base + speed * factor`).
 *   **Trigger**: If the current speed > the target speed of a future point, braking begins.
-*   **Aggression**: Adjusted via `brakingLookaheadBase` and `brakingLookaheadSpeedFactor`.
-    *   **Lower values** (e.g., Base 100, Factor 0.7) = Later, harder braking (More aggressive).
-    *   **Higher values** = Earlier, softer braking.
+*   **Aggression**: Adjusted via `brakingLookaheadFactor` (in `SKILL_PRESETS`) and `brakeAggro`.
+    *   **brakingLookaheadFactor**: Controls how far ahead the AI looks for corners.
+        *   High Speed requires Higher Factor (e.g. 1.5) to prevent overshooting.
+    *   **brakeAggro**: Multiplier for braking force.
+        *   Higher (> 1.0) = Uses full braking power (Threshold braking).
+        *   Lower (< 0.8) = Gentle/Early braking.
+
+## 4. Pro Control Loop (Smoothing)
+To mimic human pro drivers, the AI uses:
+1.  **Input Filtering**: Outputs are passed through a low-pass filter (LPF) to simulate the physical travel time of pedals and steering wheel, preventing jerky inputs.
+2.  **Trail Braking**: Braking is blended out as steering increases, following the "Traction Circle" concept.
+3.  **Smooth Throttle**: Throttle is rolled off smoothly during high-steering events to prevent understeer, rather than being cut abruptly.
 
 ## Tuning Cheatsheet
 
 | Parameter | Location | Effect |
 | :--- | :--- | :--- |
-| **`corneringGrip`** | `SKILL_PRESETS` | **Increase (e.g. 2.5)**: AI corners much faster (Hard mode). <br>**Decrease (e.g. 0.85)**: AI corners slower. |
-| **`maxThrottle`** | `SKILL_PRESETS` | Global throttle multiplier. Increase to make AI accelerate faster. |
+| **`corneringGrip`** | `SKILL_PRESETS` | **Pro (1.02)**: Optimal. **Easy (0.75)**: Safe. |
+| **`maxThrottle`** | `SKILL_PRESETS` | Global throttle multiplier. **1.5 (Hard)** is max attack. |
 | **`straightSpeed`** | `DEFAULT_LINE_CFG` | **Must be 2600**. Caps the raw speed on straights. |
-| **`brakingLookaheadSpeedFactor`** | `createController` | **Decrease**: AI brakes later. **Increase**: AI brakes earlier. |
+| **`brakingLookaheadFactor`** | `SKILL_PRESETS` | **Safe (1.6+)**. **Late Braking (1.15)**. |
+| **`brakeAggro`** | `SKILL_PRESETS` | **Increase (1.8)**: Very hard braking. **Decrease**: Soft braking. |
