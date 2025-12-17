@@ -2386,6 +2386,33 @@ const { useEffect, useRef, useState } = React;
                 targetSpeed: Math.min(MAX_AI_TARGET_SPEED, (node.targetSpeed || 0) * throttleScale)
               }));
             };
+            // Helper: Generate both racing lines and validation
+            function generateBothRacingLines(opts) {
+              const anchorOpts = { ...opts, mode: 'anchor' };
+              const builtAnchorLine = window.RacerAI.generateRacingLine(centerline, ROAD_WIDTH, anchorOpts) || [];
+              const scaledAnchor = scaleLine(builtAnchorLine);
+              
+              let scaledMcp = scaledAnchor; // Fallback
+              let mcpVal = null;
+              
+              if (window.McpRacingLine && window.McpRacingLine.generateMcpLine) {
+                const mcpOpts = { ...opts, mode: 'mcp' };
+                const builtMcpLine = window.RacerAI.generateRacingLine(centerline, ROAD_WIDTH, mcpOpts) || [];
+                scaledMcp = scaleLine(builtMcpLine);
+                
+                // Validate both lines
+                if (window.RacingLineValidation && window.RacingLineValidation.validateRacingLine) {
+                  mcpVal = window.RacingLineValidation.validateRacingLine(centerline, ROAD_WIDTH, builtMcpLine);
+                }
+              }
+              
+              const anchorVal = window.RacingLineValidation && window.RacingLineValidation.validateRacingLine
+                ? window.RacingLineValidation.validateRacingLine(centerline, ROAD_WIDTH, builtAnchorLine)
+                : null;
+              
+              return { scaledAnchor, scaledMcp, anchorVal, mcpVal };
+            }
+            
             if (canUseBase) {
               racingLine = scaleLine(baseRacingLine);
             } else {
@@ -2397,27 +2424,11 @@ const { useEffect, useRef, useState } = React;
                 if (typeof apex === "number") opts.apexAggression = apex;
                 if (typeof maxOffset === "number") opts.maxOffset = maxOffset;
                 
-                // Generate anchor line
-                const anchorOpts = { ...opts, mode: 'anchor' };
-                const builtAnchorLine = window.RacerAI.generateRacingLine(centerline, ROAD_WIDTH, anchorOpts) || [];
-                anchorRacingLine = scaleLine(builtAnchorLine);
-                
-                // Generate MCP line
-                if (window.McpRacingLine && window.McpRacingLine.generateMcpLine) {
-                  const mcpOpts = { ...opts, mode: 'mcp' };
-                  const builtMcpLine = window.RacerAI.generateRacingLine(centerline, ROAD_WIDTH, mcpOpts) || [];
-                  mcpRacingLine = scaleLine(builtMcpLine);
-                } else {
-                  mcpRacingLine = anchorRacingLine; // Fallback to anchor if MCP not available
-                }
-                
-                // Validate both lines
-                if (window.RacingLineValidation && window.RacingLineValidation.validateRacingLine) {
-                  anchorValidation = window.RacingLineValidation.validateRacingLine(centerline, ROAD_WIDTH, builtAnchorLine);
-                  if (builtMcpLine && builtMcpLine !== builtAnchorLine) {
-                    mcpValidation = window.RacingLineValidation.validateRacingLine(centerline, ROAD_WIDTH, builtMcpLine);
-                  }
-                }
+                const { scaledAnchor, scaledMcp, anchorVal, mcpVal } = generateBothRacingLines(opts);
+                anchorRacingLine = scaledAnchor;
+                mcpRacingLine = scaledMcp;
+                anchorValidation = anchorVal;
+                mcpValidation = mcpVal;
                 
                 // Use the selected mode for active racing line
                 const currentMode = racingLineModeRef.current || 'anchor';
