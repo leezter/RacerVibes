@@ -8,15 +8,24 @@ The AI uses an **Anchor-Based** algorithm to generate the optimal racing line. T
 
 ### How it Works
 1.  **Apex Detection**: The algorithm identifies "events" (corners) by finding local maxima in the track's curvature.
-2.  **Compound Turn Detection**: Consecutive turns in the same direction are analyzed. If they are connected by a curve or are very close (gap < ~600px), they are merged into a single compound turn by removing the intermediate "Exit" and "Entry" anchors. This prevents unnecessary side-swapping on lumpy corners.
-3.  **Anchor Placement & Severity Scaling**: For each corner, it places three key anchors (Entry, Apex, Exit).
+    *   **Threshold**: `apexThreshold = 0.002` (radius < ~500px to qualify as a corner). Gentler bends are ignored.
+    *   **Displacement Filter**: Apices are filtered by lateral displacement (`MIN_DISPLACEMENT_RATIO = 0.15`). Track noise with high curvature but low sideways movement is ignored.
+2.  **Apex Merging**: Consecutive same-direction apices that form a continuous curve (e.g., a hairpin) are merged into a **single apex at their weighted centroid**. This ensures long sweeping turns have ONE apex at the geometric center, producing the classic "outside-inside-outside" racing line.
+3.  **Compound Turn Detection**: Consecutive turns in the same direction are analyzed. If they are connected by a curve or are very close (gap < ~720px), they are merged into a single compound turn by removing the intermediate "Exit" and "Entry" anchors.
+4.  **Smart Entry/Exit Placement**: Entry and exit anchors are moved closer to the apex if they would fall on a straight section (curvature < `MIN_CURVATURE_FOR_ANCHOR = 0.002`). This prevents corner offsets from bleeding into unrelated straight sections.
+5.  **Anchor Placement & Severity Scaling**: For each corner, it places three key anchors (Entry, Apex, Exit).
     *   **Amplitude Scaling**: The lateral offset of the anchors is scaled by the **Curvature Severity**.
-    *   **Gentle Bends**: Low severity -> Small offset (stay near center).
-    *   **Sharp Turns**: High severity -> Full offset (use full track width).
-    *   **Compound Exits**: As a complex turn opens up, the reduced severity allows the AI to naturally drift away from the inside edge.
-4.  **Linear Interpolation**: The algorithm linearly interpolates between these anchors. This creates **Straight Diagonal Lines** between corners, which is the mathematically shortest path and prevents wobbling/center-hugging.
-5.  **Smoothing & Relaxation**: A physics-based "elastic band" pass smooths the sharp corners at the anchors.
-6.  **Path Straightening**: A chord-based optimization pass eliminates unnecessary weaving on "lumpy" track sections. It identifies segments where direction oscillates without significant net change and replaces them with straight lines when valid.
+    *   **Severity Formula**: `severity = clamp((curvature - 0.002) / 0.003, 0, 1)` — maps curvature to 0-1 range.
+    *   **Minimum Floor**: Detected corners always get at least 30% amplitude (`amplitude = max(0.3, severity)`).
+    *   **Sharp Turns**: Higher severity means progressively more offset, up to full track width.
+6.  **Linear Interpolation**: The algorithm linearly interpolates between anchors. This creates **Straight Diagonal Lines** between corners.
+7.  **Anchor-Preserving Smoothing**: A smoothing pass blends the sharp corners at anchors while preserving the anchor positions themselves.
+8.  **Path Straightening**: A chord-based optimization pass eliminates unnecessary weaving on "lumpy" track sections.
+    *   **Corner Protection**: Sections with high curvature (> `CORNER_CURVATURE_THRESHOLD = 0.005`) are skipped.
+    *   **Wavering Threshold**: `0.08` (cumulative direction change to trigger straightening).
+    *   **Max Chord Length**: `60` indices (~720px).
+9.  **Direction Reversal Fix**: A post-processing pass fixes path segments that fold back on themselves, preventing zigzag artifacts.
+10. **Clustered Point Removal**: Near-duplicate points (distance < 3px) are removed to prevent numerical instability in curvature calculations.
 
 ## 2. Speed & Grip Logic
 AI speed is primarily limited by physics (friction), not artificial caps.
@@ -52,8 +61,14 @@ To mimic human pro drivers, the AI uses:
 
 | Parameter | Location | Effect |
 | :--- | :--- | :--- |
+| **`apexThreshold`** | `buildRacingLine()` | **0.002**: Radius < ~500px = corner. Higher = fewer corners detected. |
+| **`MIN_DISPLACEMENT_RATIO`** | `buildRacingLine()` | **0.15**: Minimum lateral displacement as ratio of half-width. Higher = more filtering. |
+| **`MIN_CURVATURE_FOR_ANCHOR`** | `buildRacingLine()` | **0.002**: Entry/exit anchors on straighter sections are moved closer to apex. |
+| **`CORNER_CURVATURE_THRESHOLD`** | `straightenPath()` | **0.005**: Skip straightening sections with curvature above this. |
+| **`WAVERING_THRESHOLD`** | `straightenPath()` | **0.08**: Sensitivity for detecting unnecessary weaving. Lower = more aggressive straightening. |
+| **`GENTLE_CURVE_THRESHOLD`** | `straightenPath()` | **0.0012**: Max curvature to allow S-curve straightening. |
 | **`corneringGrip`** | `SKILL_PRESETS` | **Pro (1.02)**: Optimal. **Easy (0.75)**: Safe. |
 | **`maxThrottle`** | `SKILL_PRESETS` | Global throttle multiplier. **1.5 (Hard)** is max attack. |
-| **`straightSpeed`** | `DEFAULT_LINE_CFG` | **Must be 2600**. Caps the raw speed on straights. |
+| **`straightSpeed`** | `DEFAULT_LINE_CFG` | **3000**: Caps the raw speed on straights. |
 | **`brakingLookaheadFactor`** | `SKILL_PRESETS` | **Safe (1.6+)**. **Late Braking (1.15)**. |
 | **`brakeAggro`** | `SKILL_PRESETS` | **Increase (1.8)**: Very hard braking. **Decrease**: Soft braking. |

@@ -206,19 +206,23 @@
    * @param {Array} path - The racing line path [{x, y}, ...]
    * @param {Array} centerline - The track centerline for bounds checking
    * @param {number} maxOffset - Maximum allowed distance from centerline
+   * @param {Array} curvatures - Smoothed curvature values for each point (optional)
    * @returns {Array} - Optimized path with unnecessary weaving removed
    */
-  function straightenPath(path, centerline, maxOffset) {
+  function straightenPath(path, centerline, maxOffset, curvatures = null) {
     if (!path || path.length < 20) return path;
+    
+    const DEBUG_STRAIGHTEN = false;
 
     const n = path.length;
     const result = path.map((p) => ({ x: p.x, y: p.y }));
+    const smoothCurvatures = curvatures; // Use passed curvatures for gentle curve detection
 
     // Configuration - More aggressive to catch subtle wavering
     const MIN_CHORD_LENGTH = 6; // Detect smaller wavering sections (~72px)
-    const MAX_CHORD_LENGTH = 50; // Allow longer straightening (~600px)
-    const DIRECTION_VARIANCE_LIMIT = 0.25; // Consider more gradual curves as "straight"
-    const WAVERING_THRESHOLD = 0.15; // Detect subtler oscillations
+    const MAX_CHORD_LENGTH = 60; // Allow longer straightening (~720px)
+    const DIRECTION_VARIANCE_LIMIT = 0.3; // Consider more gradual curves as "straight"
+    const WAVERING_THRESHOLD = 0.08; // Detect subtler oscillations
 
     // Track which points have been straightened to avoid re-processing
     const processed = new Array(n).fill(false);
@@ -270,6 +274,7 @@
           // Measure net direction change and cumulative wavering along the path
           let cumulativeChange = 0;
           let lastDir = getDirection(startPt, result[(startIdx + 1) % n]);
+          let maxCurvInChord = 0; // Track maximum curvature within the chord
 
           for (let j = 1; j < chordLen - 1; j++) {
             const idx = (startIdx + j) % n;
@@ -278,6 +283,11 @@
             const change = Math.abs(normalizeAngle(currDir - lastDir));
             cumulativeChange += change;
             lastDir = currDir;
+            
+            // Track curvature if available
+            if (smoothCurvatures) {
+              maxCurvInChord = Math.max(maxCurvInChord, Math.abs(smoothCurvatures[idx]));
+            }
           }
 
           // Net direction change from start to end
@@ -288,6 +298,11 @@
           const isWavering = cumulativeChange > WAVERING_THRESHOLD && netChange < DIRECTION_VARIANCE_LIMIT;
 
           if (!isWavering) continue;
+          
+          // NEW: Skip sections that pass through actual corners (high curvature)
+          // This prevents straightening through hairpins and other real turns
+          const CORNER_CURVATURE_THRESHOLD = 0.005; // Radius < 200px is definitely a corner
+          if (maxCurvInChord > CORNER_CURVATURE_THRESHOLD) continue;
 
           // NEW: Check if this section crosses the track centerline
           // If the path goes from one side of the track to the other, it's a
@@ -318,7 +333,14 @@
           const crossesCenterline = (Math.abs(startOffset) > SIDE_THRESHOLD && Math.abs(endOffset) > SIDE_THRESHOLD &&
             Math.sign(startOffset) !== Math.sign(endOffset));
 
-          if (crossesCenterline) continue; // Don't straighten a real racing line transition
+          // NEW: Even if it crosses centerline, allow straightening if both ends are gentle curves
+          // This prevents S-curves with gentle bends from blocking the straightening pass
+          const startCurv = Math.abs(smoothCurvatures ? smoothCurvatures[startIdx] : 0);
+          const endCurv = Math.abs(smoothCurvatures ? smoothCurvatures[endIdx] : 0);
+          const GENTLE_CURVE_THRESHOLD = 0.0012; // Slightly above apex threshold
+          const isGentleTransition = startCurv < GENTLE_CURVE_THRESHOLD && endCurv < GENTLE_CURVE_THRESHOLD;
+
+          if (crossesCenterline && !isGentleTransition) continue; // Don't straighten a real racing line transition
 
           // Validate that the chord stays within track bounds
           let chordValid = true;
@@ -339,6 +361,9 @@
 
           if (!chordValid) continue;
 
+          if (DEBUG_STRAIGHTEN) {
+            console.log(`STRAIGHTENING: idx ${startIdx} to ${endIdx} (len ${chordLen}), cumChange=${cumulativeChange.toFixed(3)}, netChange=${netChange.toFixed(3)}`);
+          }
 
           // Apply the chord - replace intermediate points with straight line
           for (let j = 1; j < chordLen - 1; j++) {
@@ -359,8 +384,9 @@
       }
     }
 
-    // Light smoothing pass to blend chord endpoints naturally
-    return gaussianSmooth(result, 2);
+    // No final smoothing - it destroys anchor positions
+    // The straightening itself creates clean chords that don't need blending
+    return result;
   }
 
   function buildRacingLine(centerline, roadWidth, options = {}) {
@@ -406,7 +432,7 @@
     // Instead of continuous mapping, we identify "Events" (Corners) and place anchors.
 
     // A. Identify Apices (Local Maxima in Curvature)
-    const apexThreshold = 0.0005; // Ignore very gentle bends (Radius > 2000px)
+    const apexThreshold = 0.002; // Ignore gentle bends (Radius > ~500px)
     const apices = [];
 
     // Helper to find distance between indices
@@ -420,6 +446,51 @@
       const r = 1 / (mag + 1e-6);
       return Math.min(n / 8, Math.sqrt(r * 20));
     };
+
+    // Helper: Calculate lateral displacement of a curve section
+    // This measures how far the track deviates from a straight line between endpoints
+    const measureLateralDisplacement = (startIdx, endIdx) => {
+      const start = points[startIdx];
+      const end = points[endIdx];
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const len = Math.hypot(dx, dy) || 1;
+      
+      let maxDist = 0;
+      let indices = endIdx > startIdx ? 
+        Array.from({length: endIdx - startIdx + 1}, (_, i) => startIdx + i) :
+        [...Array.from({length: n - startIdx}, (_, i) => startIdx + i), 
+         ...Array.from({length: endIdx + 1}, (_, i) => i)];
+      
+      for (const idx of indices) {
+        const pt = points[idx];
+        // Distance from point to line
+        const t = Math.max(0, Math.min(1, ((pt.x - start.x) * dx + (pt.y - start.y) * dy) / (len * len)));
+        const projX = start.x + t * dx;
+        const projY = start.y + t * dy;
+        const dist = Math.hypot(pt.x - projX, pt.y - projY);
+        maxDist = Math.max(maxDist, dist);
+      }
+      return maxDist;
+    };
+
+    // DEBUG: Enable apex detection logging
+    const DEBUG_APEX_DETECTION = false;
+    
+    if (DEBUG_APEX_DETECTION) {
+      console.log(`\n=== APEX DETECTION DEBUG ===`);
+      console.log(`Track has ${n} resampled points`);
+      console.log(`Road width: ${roadWidth}px`);
+      console.log(`Apex threshold: ${apexThreshold} (radius > ${(1/apexThreshold).toFixed(0)}px ignored)`);
+      console.log(`Displacement threshold: ${(roadWidth * 0.5 * 0.15).toFixed(1)}px (15% of half-width)`);
+      
+      // Log curvature range
+      const curvatures = smoothCurvatures.map(c => Math.abs(c));
+      const maxCurv = Math.max(...curvatures);
+      const minCurv = Math.min(...curvatures.filter(c => c > 0));
+      console.log(`Curvature range: ${minCurv.toFixed(5)} to ${maxCurv.toFixed(5)}`);
+      console.log(`Points above threshold: ${curvatures.filter(c => c >= apexThreshold).length}`);
+    }
 
     // Simple peak detection
     for (let i = 0; i < n; i++) {
@@ -441,70 +512,214 @@
             continue;
           }
         }
-        apices.push({ index: i, mag: c, sign: Math.sign(smoothCurvatures[i]) });
+        
+        // FILTER: Check if this apex represents significant lateral displacement
+        // A "real" corner moves the track significantly sideways
+        // Track noise (gentle waves) has high curvature but low displacement
+        // Use a fixed small window to measure local displacement, not the full turn length
+        let windowSize = Math.min(15, Math.round(getTurnLen(c) / 2)); // Small local window
+        let entryIdx = (i - windowSize + n) % n;
+        let exitIdx = (i + windowSize) % n;
+        
+        // Check if window crosses the loop boundary (entry > i or exit < i after wrap)
+        // If so, shrink the window to avoid measuring across the track closure
+        if (entryIdx > i) {
+          // Window wrapped backward past start - clamp to not cross boundary
+          windowSize = i; // Shrink to start from index 0
+          entryIdx = 0;
+        }
+        if (exitIdx < i) {
+          // Window wrapped forward past end - clamp to not cross boundary  
+          const maxForward = n - 1 - i;
+          if (maxForward < windowSize) {
+            windowSize = maxForward;
+            exitIdx = n - 1;
+          }
+        }
+        
+        // If window is too small after clamping, skip this apex (it's at track boundary)
+        if (windowSize < 5) {
+          if (DEBUG_APEX_DETECTION) {
+            console.log(`  Peak at ${i}: SKIPPED (window too small after boundary clamp)`);
+          }
+          continue; // Skip apex at track boundary
+        }
+        
+        const displacement = measureLateralDisplacement(entryIdx, exitIdx);
+        
+        // Only create apex if displacement is at least 15% of road half-width
+        // Lower threshold to catch gentle but significant turns
+        const MIN_DISPLACEMENT_RATIO = 0.15;
+        const threshold = roadWidth * 0.5 * MIN_DISPLACEMENT_RATIO;
+        
+        if (DEBUG_APEX_DETECTION) {
+          console.log(`  Peak at ${i}: curv=${c.toFixed(4)}, disp=${displacement.toFixed(1)}px vs threshold=${threshold.toFixed(1)}px, window=[${entryIdx}-${exitIdx}]`);
+        }
+        
+        if (displacement < threshold) {
+          if (DEBUG_APEX_DETECTION) {
+            console.log(`    -> FILTERED (displacement too low)`);
+          }
+          continue; // Skip this apex - it's just track noise
+        }
+        
+        if (DEBUG_APEX_DETECTION) {
+          console.log(`    -> ACCEPTED`);
+        }
+        
+        // Store displacement for amplitude scaling later
+        apices.push({ index: i, mag: c, sign: Math.sign(smoothCurvatures[i]), displacement });
       }
+    }
+
+    // MERGE CONSECUTIVE SAME-DIRECTION APICES INTO SINGLE APEX
+    // For long sweeping turns (hairpins), multiple apex points are detected along the curve.
+    // A pro driver treats this as ONE turn with ONE apex at the geometric center.
+    // We merge consecutive same-sign apices that are connected by continuous curvature.
+    if (apices.length > 1) {
+      const mergedApices = [];
+      let group = [apices[0]];
+
+      for (let i = 1; i <= apices.length; i++) {
+        const curr = apices[i % apices.length];
+        const prev = group[group.length - 1];
+        
+        // Check if curr should join the group
+        let shouldMerge = false;
+        if (curr.sign === prev.sign && i < apices.length) {
+          // Calculate distance
+          let dist = curr.index - prev.index;
+          if (dist < 0) dist += n;
+          
+          // Check if curvature stays above threshold between them (continuous turn)
+          let minK = Infinity;
+          for (let j = 1; j < dist; j++) {
+            const idx = (prev.index + j) % n;
+            minK = Math.min(minK, Math.abs(smoothCurvatures[idx]));
+          }
+          
+          // Merge if: same direction, continuous curvature, and reasonably close
+          // "Reasonably close" = within 1/4 of track length (covers large hairpins)
+          const isContinuous = minK > apexThreshold * 0.5; // Half the apex threshold
+          const isClose = dist < n / 4;
+          shouldMerge = isContinuous && isClose;
+        }
+
+        if (shouldMerge) {
+          group.push(curr);
+        } else {
+          // Finalize the current group - create single apex at weighted centroid
+          if (group.length === 1) {
+            mergedApices.push(group[0]);
+          } else {
+            // Weighted average by curvature magnitude
+            let totalWeight = 0;
+            let weightedIndex = 0;
+            let maxMag = 0;
+            const baseIndex = group[0].index;
+            
+            for (const apex of group) {
+              let relIdx = apex.index - baseIndex;
+              if (relIdx < 0) relIdx += n; // Handle wrap-around
+              weightedIndex += relIdx * apex.mag;
+              totalWeight += apex.mag;
+              if (apex.mag > maxMag) maxMag = apex.mag;
+            }
+            
+            const centroidIdx = Math.round(baseIndex + weightedIndex / totalWeight) % n;
+            mergedApices.push({
+              index: centroidIdx,
+              mag: maxMag, // Use max magnitude for severity scaling
+              sign: group[0].sign
+            });
+          }
+          
+          // Start new group (if not at the end)
+          if (i < apices.length) {
+            group = [curr];
+          }
+        }
+      }
+      
+      // Replace apices with merged version
+      apices.length = 0;
+      apices.push(...mergedApices);
     }
 
     // B. Create Offset Map (Anchors)
     // Initialize with null to signify "undefined/interpolate"
     const targetOffsets = new Array(n).fill(null);
 
-    // Identify Compound Turns: if two apices are same-direction and connected by a curve,
-    // we should NOT go to the outside wall between them.
+    // Identify Compound Turns: if two DIFFERENT-direction apices are very close,
+    // we may need to skip intermediate anchors (e.g., tight chicanes).
+    // NOTE: Same-direction apices were already merged above, so this mainly handles
+    // left-right or right-left sequences that are too close to fully unwind between.
     apices.forEach(a => { a.skipEntry = false; a.skipExit = false; });
 
-    if (apices.length > 1) { // Only relevant if we have multiple corners
+    if (apices.length > 1) {
       for (let i = 0; i < apices.length; i++) {
         const curr = apices[i];
         const next = apices[(i + 1) % apices.length];
 
-        if (curr.sign === next.sign) {
-          // Calculate distance between apices
-          let dist = next.index - curr.index;
-          if (dist < 0) dist += n;
+        // Calculate distance between apices
+        let dist = next.index - curr.index;
+        if (dist < 0) dist += n;
 
-          // Check curvature continuity
-          let minK = Infinity;
-          let idx = curr.index;
-          const target = next.index;
-          let scanDist = 0;
+        // Gap Heuristic: Calculate the theoretical "Straight" length between turns.
+        const len1 = getTurnLen(curr.mag);
+        const len2 = getTurnLen(next.mag);
+        const gap = dist - len1 - len2;
 
-          while (idx !== target && scanDist < n) {
-            idx = (idx + 1) % n;
-            if (idx === target) break;
-            const k = Math.abs(smoothCurvatures[idx]);
-            if (k < minK) minK = k;
-            scanDist++;
-          }
+        // Only skip entry/exit if there's truly not enough room to go outside and back
+        // This is now VERY conservative - only skip for truly overlapping turn arcs
+        const isVeryShortGap = gap < 5;
 
-          // Gap Heuristic: Calculate the theoretical "Straight" length between turns.
-          const len1 = getTurnLen(curr.mag);
-          const len2 = getTurnLen(next.mag);
-          const gap = dist - len1 - len2;
-
-          // Condition 1: Continuous curvature (Track is actually bending)
-          // Relaxed threshold to 0.0001 (Radius < 10,000px)
-          const isContinuousCurve = minK > 0.0001;
-
-          // Condition 2: Short Gap (Not enough room to safely go Outside and back)
-          // 50 indices * 12px/step = 600px. Track width ~200px. 3x width is a safe margin.
-          const isShortGap = gap < 60;
-
-          if (dist < n / 3 && (isContinuousCurve || isShortGap)) {
-            curr.skipExit = true;
-            next.skipEntry = true;
-          }
+        if (isVeryShortGap && curr.sign === next.sign) {
+          // Same direction, very close - skip intermediate anchors
+          curr.skipExit = true;
+          next.skipEntry = true;
         }
       }
     }
 
     // Define turn geometry based on curvature
     // Tighter turns cover less distance but require wider entry/exit Setup
-    apices.forEach(apex => {
+    const DEBUG_ANCHORS = false; // Set to true to debug anchor placement
+    
+    if (DEBUG_ANCHORS) {
+      console.log(`\n--- ANCHOR DEBUG ---`);
+      console.log(`Resampled points (n): ${n}`);
+      console.log(`Number of apices after merging: ${apices.length}`);
+    }
+    
+    apices.forEach((apex, apexIdx) => {
       const turnHalfLength = getTurnLen(apex.mag);
 
-      const entryIdx = (Math.round(apex.index - turnHalfLength) + n) % n;
-      const exitIdx = (Math.round(apex.index + turnHalfLength) + n) % n;
+      let entryIdx = (Math.round(apex.index - turnHalfLength) + n) % n;
+      let exitIdx = (Math.round(apex.index + turnHalfLength) + n) % n;
+      
+      // SMART ENTRY/EXIT: Don't place anchors on straight sections
+      // If the curvature at entry/exit is very low (straight), move them closer to apex
+      // This prevents corner offsets from bleeding into unrelated straight sections
+      const MIN_CURVATURE_FOR_ANCHOR = 0.002; // Move entry/exit if curvature is this gentle
+      
+      // Move entry closer if it's on a straight
+      while (Math.abs(smoothCurvatures[entryIdx]) < MIN_CURVATURE_FOR_ANCHOR) {
+        const newEntry = (entryIdx + 1) % n;
+        if (newEntry === apex.index) break; // Don't move past apex
+        const distToApex = distIndices(newEntry, apex.index);
+        if (distToApex < 3) break; // Keep minimum separation
+        entryIdx = newEntry;
+      }
+
+      // Move exit closer if it's on a straight
+      while (Math.abs(smoothCurvatures[exitIdx]) < MIN_CURVATURE_FOR_ANCHOR) {
+        const newExit = (exitIdx - 1 + n) % n;
+        if (newExit === apex.index) break; // Don't move past apex
+        const distToApex = distIndices(newExit, apex.index);
+        if (distToApex < 3) break; // Keep minimum separation
+        exitIdx = newExit;
+      }
 
       // APEX ANCHOR: Inside of turn
       // Sign > 0 = Turning Right -> Offset Left (-)
@@ -517,12 +732,31 @@
       // Scale the offset based on curvature severity.
       // Small curvature (Gentle bend) -> Stay near center.
       // High curvature (Sharp turn) -> Use full width.
-      // Map 0.0005 (Threshold) -> 0.0025 (Full Width Radius ~400px)
-      const severity = clamp((apex.mag - 0.0005) / 0.002, 0, 1);
+      // Map 0.002 (Threshold) -> 0.005 (Full Width Radius ~200px)
+      const severity = clamp((apex.mag - 0.002) / 0.003, 0, 1);
 
-      // We square the severity for a non-linear falloff (gentle turns use even less width)
-      const amplitude = Math.max(0.2, severity * severity);
+      // Use severity directly with a minimum floor for detected corners
+      // If an apex passed the displacement filter, it deserves at least 30% amplitude
+      // Sharp turns (high severity) get progressively more offset
+      let amplitude = Math.max(0.3, severity);
+      
       const currentWidth = usableWidth * amplitude;
+      
+      // Skip creating anchors for very small offsets (less than 10px)
+      // These are just track noise, not real corners worth reacting to
+      if (currentWidth < 10) {
+        if (DEBUG_ANCHORS) {
+          console.log(`Apex ${apexIdx}: SKIPPED (offset ${currentWidth.toFixed(1)}px too small)`);
+        }
+        return; // Skip this apex entirely
+      }
+
+      if (DEBUG_ANCHORS) {
+        console.log(`Apex ${apexIdx}: idx=${apex.index}, sign=${apex.sign}, mag=${apex.mag.toFixed(4)}, severity=${severity.toFixed(2)}, amplitude=${amplitude.toFixed(2)}, width=${currentWidth.toFixed(1)}`);
+        console.log(`  Entry: idx=${entryIdx}, skip=${apex.skipEntry}, offset=${(-apexSide * currentWidth).toFixed(1)}`);
+        console.log(`  Apex:  idx=${apex.index}, offset=${(apexSide * currentWidth).toFixed(1)}`);
+        console.log(`  Exit:  idx=${exitIdx}, skip=${apex.skipExit}, offset=${(-apexSide * currentWidth).toFixed(1)}`);
+      }
 
       // ANCHOR PLACEMENT
       // 1. Apex
@@ -594,8 +828,12 @@
     // Better Fill Pass:
     // We have a sparse array. Let's create a list of {index, value} and interpolate between them.
     const anchors = [];
+    const anchorIndices = new Set(); // Track which indices are anchors
     for (let i = 0; i < n; i++) {
-      if (targetOffsets[i] !== null) anchors.push({ index: i, value: targetOffsets[i] });
+      if (targetOffsets[i] !== null) {
+        anchors.push({ index: i, value: targetOffsets[i] });
+        anchorIndices.add(i);
+      }
     }
 
     // Interpolate between anchors
@@ -613,11 +851,50 @@
       }
     }
 
-    // D. Smooth the offsets
+    // D. Smooth the offsets with ANCHOR PRESERVATION
     // The linear interpolation creates sharp corners in the path (e.g. at Turn-in point). 
-    // We smooth these to create nice rounded entries.
-    let finalOffsets = smoothValues(targetOffsets, 15, 0.5); // Initial heavy smoothing
-    finalOffsets = smoothValues(finalOffsets, 10, 0.3); // Refinement
+    // We smooth only the NON-ANCHOR points to preserve the outside-inside-outside pattern.
+    function smoothWithAnchors(values, passes, strength, preserveSet) {
+      let current = values.slice();
+      const len = current.length;
+      for (let k = 0; k < passes; k++) {
+        const next = new Array(len);
+        for (let i = 0; i < len; i++) {
+          if (preserveSet.has(i)) {
+            // Anchor point - keep original value
+            next[i] = current[i];
+          } else {
+            // Non-anchor - smooth normally
+            const prev = current[(i - 1 + len) % len];
+            const curr = current[i];
+            const nextVal = current[(i + 1) % len];
+            const mid = (prev + nextVal) / 2;
+            next[i] = curr + (mid - curr) * strength;
+          }
+        }
+        current = next;
+      }
+      return current;
+    }
+    
+    if (DEBUG_ANCHORS) {
+      console.log(`\nAnchor indices preserved: ${[...anchorIndices].slice(0, 20).join(', ')}${anchorIndices.size > 20 ? '...' : ''}`);
+      console.log(`Total anchors: ${anchorIndices.size}`);
+      console.log(`Is 46 in anchors: ${anchorIndices.has(46)}`);
+      console.log(`Is 70 in anchors: ${anchorIndices.has(70)}`);
+      console.log(`Is 94 in anchors: ${anchorIndices.has(94)}`);
+      console.log(`Offset at 46 before smooth: ${targetOffsets[46]?.toFixed(1)}`);
+      console.log(`Offset at 70 before smooth: ${targetOffsets[70]?.toFixed(1)}`);
+      console.log(`Offset at 94 before smooth: ${targetOffsets[94]?.toFixed(1)}`);
+    }
+    
+    let finalOffsets = smoothWithAnchors(targetOffsets, 8, 0.5, anchorIndices);
+    
+    if (DEBUG_ANCHORS) {
+      console.log(`Offset at 46 after smooth: ${finalOffsets[46]?.toFixed(1)}`);
+      console.log(`Offset at 70 after smooth: ${finalOffsets[70]?.toFixed(1)}`);
+      console.log(`Offset at 94 after smooth: ${finalOffsets[94]?.toFixed(1)}`);
+    }
 
     // 6. Generate Path
     let path = [];
@@ -629,52 +906,131 @@
       });
     }
 
-    // 7. Physics-Based Relaxation (Elastic Band)
-    // This pulls the string tight, naturally cutting corners and smoothing transitions further.
-    // It creates the "Racing Line" flow.
-    path = relaxPath(path, 30, 0.2);
-    path = gaussianSmooth(path, 5);
+    // 7. Path Smoothing
+    // Anchor-preserving offset smoothing already creates smooth curves.
+    // No additional path smoothing needed - it destroys anchor positions.
 
     // 7.5 Straighten wavering sections (removes unnecessary weaving on lumpy tracks)
-    path = straightenPath(path, points, usableWidth);
+    path = straightenPath(path, points, usableWidth, smoothCurvatures);
 
-    // 8. Constrain to Track Width (Safety check)
-    // Relaxation might have pulled it off track (unlikely with 0.2 but possible)
-    for (let iter = 0; iter < 5; iter++) {
-      const next = new Array(n);
-      for (let i = 0; i < n; i++) {
-        const prev = path[(i - 1 + n) % n];
-        const curr = path[i];
-        const nextPt = path[(i + 1) % n];
-        const center = points[i];
-
-        // Smooth toward neighbors
-        const midX = (prev.x + nextPt.x) / 2;
-        const midY = (prev.y + nextPt.y) / 2;
-        let newX = curr.x + (midX - curr.x) * 0.2;
-        let newY = curr.y + (midY - curr.y) * 0.2;
-
-        // Constrain to track width
-        const dx = newX - center.x;
-        const dy = newY - center.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist > usableWidth) {
-          const ratio = usableWidth / dist;
-          newX = center.x + dx * ratio;
-          newY = center.y + dy * ratio;
-        }
-
-        next[i] = { x: newX, y: newY };
+    // 7.6 Fix Direction Reversals (prevent path from folding back on itself)
+    // When anchors are close together with opposite offsets, the path can zigzag
+    // and create direction reversals. This smooths out such artifacts.
+    function fixDirectionReversals(pathArr, centerlineArr) {
+      const len = pathArr.length;
+      if (len < 10) return pathArr;
+      
+      const result = pathArr.map(p => ({ x: p.x, y: p.y }));
+      
+      // Calculate centerline tangent at each point
+      const tangents = [];
+      for (let i = 0; i < len; i++) {
+        const prev = centerlineArr[(i - 1 + len) % len];
+        const next = centerlineArr[(i + 1) % len];
+        const dx = next.x - prev.x;
+        const dy = next.y - prev.y;
+        const mag = Math.hypot(dx, dy) || 1;
+        tangents.push({ x: dx / mag, y: dy / mag });
       }
-      path = next;
+      
+      // Make multiple passes to propagate fixes
+      for (let pass = 0; pass < 3; pass++) {
+        for (let i = 1; i < len - 1; i++) {
+          const prev = result[i - 1];
+          const curr = result[i];
+          const next = result[i + 1];
+          
+          // Direction vectors
+          const dir1x = curr.x - prev.x;
+          const dir1y = curr.y - prev.y;
+          const dir2x = next.x - curr.x;
+          const dir2y = next.y - curr.y;
+          
+          // Dot product - negative means reversal
+          const dot = dir1x * dir2x + dir1y * dir2y;
+          
+          if (dot < 0) {
+            // Reversal detected - blend this point toward its neighbors
+            // This smooths out the kink without destroying the racing line intent
+            const smoothX = (prev.x + 2 * curr.x + next.x) / 4;
+            const smoothY = (prev.y + 2 * curr.y + next.y) / 4;
+            
+            // Ensure we're still moving in the track direction
+            const tan = tangents[i];
+            const newDir1x = smoothX - prev.x;
+            const newDir1y = smoothY - prev.y;
+            const newDir2x = next.x - smoothX;
+            const newDir2y = next.y - smoothY;
+            
+            // Check if smoothed version would still have reversal
+            const newDot = newDir1x * newDir2x + newDir1y * newDir2y;
+            
+            if (newDot >= 0) {
+              result[i] = { x: smoothX, y: smoothY };
+            } else {
+              // Stronger smoothing - interpolate between prev and next
+              result[i] = { x: (prev.x + next.x) / 2, y: (prev.y + next.y) / 2 };
+            }
+          }
+        }
+      }
+      
+      return result;
+    }
+    
+    path = fixDirectionReversals(path, points);
+    
+    // 7.7 Remove Near-Duplicate Points (clustered points cause curvature spikes)
+    // When multiple anchors are placed close together, points can cluster with
+    // distances < 2px, causing numerical instability in curvature calculation
+    function removeClusteredPoints(pathArr, centerlineArr, minDist = 3) {
+      const len = pathArr.length;
+      if (len < 10) return { path: pathArr, centerline: centerlineArr };
+      
+      const newPath = [pathArr[0]];
+      const newCenterline = [centerlineArr[0]];
+      
+      for (let i = 1; i < len; i++) {
+        const prev = newPath[newPath.length - 1];
+        const curr = pathArr[i];
+        const dist = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+        
+        if (dist >= minDist) {
+          newPath.push(curr);
+          newCenterline.push(centerlineArr[i]);
+        }
+      }
+      
+      return { path: newPath, centerline: newCenterline };
+    }
+    
+    const cleaned = removeClusteredPoints(path, points, 3);
+    path = cleaned.path;
+    const cleanedCenterline = cleaned.centerline;
+    const newN = path.length;
+
+    // 8. Constrain to Track Width (Safety check ONLY - no smoothing)
+    // Just ensure points don't exceed track bounds
+    for (let i = 0; i < newN; i++) {
+      const center = cleanedCenterline[i];
+      const dx = path[i].x - center.x;
+      const dy = path[i].y - center.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > usableWidth) {
+        const ratio = usableWidth / dist;
+        path[i] = {
+          x: center.x + dx * ratio,
+          y: center.y + dy * ratio,
+        };
+      }
     }
 
     // 9. Final Metadata Calculation
     const g = cfg.gravity;
     let arc = 0;
     return path.map((pt, idx) => {
-      const prev = path[(idx - 1 + n) % n];
-      const next = path[(idx + 1) % n];
+      const prev = path[(idx - 1 + newN) % newN];
+      const next = path[(idx + 1) % newN];
       const segLen = Math.hypot(next.x - pt.x, next.y - pt.y) || 1;
       arc += segLen;
       const tangent = { x: (next.x - pt.x) / segLen, y: (next.y - pt.y) / segLen };

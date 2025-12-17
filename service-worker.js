@@ -1,7 +1,7 @@
 // Drift mode fully removed in this release.
 // 'racer.html' is the single entry point; Grip is default.
 // Cache version bumped to evict the old drift page.
-const CACHE_VERSION = 'rv-static-v20251120-assets';
+const CACHE_VERSION = 'rv-static-v20250113-racingline-fix';
 const CORE_ASSETS = [
   'racer_start_menu.html',
   'racer.html',
