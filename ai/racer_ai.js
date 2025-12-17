@@ -1483,8 +1483,54 @@
     return api;
   }
 
+  /**
+   * Generate racing line with mode selection
+   * @param {Array} centerline - Track centerline
+   * @param {number} roadWidth - Track width
+   * @param {Object} options - Configuration options
+   * @param {string} options.mode - "anchor" (default) or "mcp"
+   * @returns {Array} - Racing line points with metadata
+   */
+  function generateRacingLine(centerline, roadWidth, options = {}) {
+    const mode = options.mode || 'anchor';
+
+    if (mode === 'mcp') {
+      // Use MCP algorithm if available
+      if (global.McpRacingLine && global.McpRacingLine.generateMcpLine) {
+        const result = global.McpRacingLine.generateMcpLine(centerline, roadWidth, options);
+        // Add curvature metadata to each point for compatibility
+        const points = result.points;
+        const n = points.length;
+        for (let i = 0; i < n; i++) {
+          const prev = points[(i - 1 + n) % n];
+          const curr = points[i];
+          const next = points[(i + 1) % n];
+          // Simple curvature estimate
+          const v1x = curr.x - prev.x;
+          const v1y = curr.y - prev.y;
+          const v2x = next.x - curr.x;
+          const v2y = next.y - curr.y;
+          const len1 = Math.hypot(v1x, v1y) || 1;
+          const len2 = Math.hypot(v2x, v2y) || 1;
+          const cross = (v1x / len1) * (v2y / len2) - (v1y / len1) * (v2x / len2);
+          curr.curvature = cross / ((len1 + len2) / 2);
+          curr.targetSpeed = 0; // Will be calculated by controller
+        }
+        result.points._mcpMeta = result.meta;
+        return result.points;
+      } else {
+        console.warn('MCP mode requested but McpRacingLine not loaded, falling back to anchor');
+        return buildRacingLine(centerline, roadWidth, options);
+      }
+    } else {
+      // Use anchor-based algorithm (default)
+      return buildRacingLine(centerline, roadWidth, options);
+    }
+  }
+
   const existing = global.RacerAI || {};
-  existing.buildRacingLine = buildRacingLine;
+  existing.buildRacingLine = buildRacingLine; // Keep original for backward compatibility
+  existing.generateRacingLine = generateRacingLine; // New unified interface
   existing.sampleRacingLine = sampleAlongLine;
   existing.createController = createController;
   existing.AISkill = SKILL_PRESETS;
