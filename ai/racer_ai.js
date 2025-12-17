@@ -214,11 +214,11 @@
     const n = path.length;
     const result = path.map((p) => ({ x: p.x, y: p.y }));
 
-    // Configuration
-    const MIN_CHORD_LENGTH = 8; // Minimum indices to consider for chord (8 * 12px = ~100px)
-    const MAX_CHORD_LENGTH = 35; // Maximum indices for chord (~420px)
-    const DIRECTION_VARIANCE_LIMIT = 0.15; // Max net direction change (radians) to consider "straight"
-    const WAVERING_THRESHOLD = 0.25; // Min cumulative direction change to consider "wavering"
+    // Configuration - More aggressive to catch subtle wavering
+    const MIN_CHORD_LENGTH = 6; // Detect smaller wavering sections (~72px)
+    const MAX_CHORD_LENGTH = 50; // Allow longer straightening (~600px)
+    const DIRECTION_VARIANCE_LIMIT = 0.25; // Consider more gradual curves as "straight"
+    const WAVERING_THRESHOLD = 0.15; // Detect subtler oscillations
 
     // Track which points have been straightened to avoid re-processing
     const processed = new Array(n).fill(false);
@@ -246,78 +246,116 @@
     };
 
     // Scan the path looking for straightenable sections
-    for (let startIdx = 0; startIdx < n; startIdx++) {
-      if (processed[startIdx]) continue;
+    // Use multiple passes to catch wavering at chord boundaries
+    for (let pass = 0; pass < 2; pass++) {
+      // Second pass starts from different offset to catch boundary cases
+      const startOffset = pass === 0 ? 0 : Math.floor(MIN_CHORD_LENGTH / 2);
 
-      // Try different chord lengths, preferring longer chords
-      for (let chordLen = MAX_CHORD_LENGTH; chordLen >= MIN_CHORD_LENGTH; chordLen -= 3) {
-        const endIdx = (startIdx + chordLen) % n;
+      for (let startIdx = startOffset; startIdx < n; startIdx++) {
+        if (processed[startIdx]) continue;
 
-        // Skip if we'd cross the loop boundary awkwardly
-        if (startIdx + chordLen >= n + MIN_CHORD_LENGTH) continue;
+        // Try different chord lengths, preferring longer chords
+        for (let chordLen = MAX_CHORD_LENGTH; chordLen >= MIN_CHORD_LENGTH; chordLen -= 3) {
+          const endIdx = (startIdx + chordLen) % n;
 
-        const startPt = result[startIdx];
-        const endPt = result[endIdx];
+          // Skip if we'd cross the loop boundary awkwardly
+          if (startIdx + chordLen >= n + MIN_CHORD_LENGTH) continue;
 
-        // Calculate chord direction
-        const chordDir = getDirection(startPt, endPt);
+          const startPt = result[startIdx];
+          const endPt = result[endIdx];
 
-        // Measure net direction change and cumulative wavering along the path
-        let cumulativeChange = 0;
-        let lastDir = getDirection(startPt, result[(startIdx + 1) % n]);
+          // Calculate chord direction
+          const chordDir = getDirection(startPt, endPt);
 
-        for (let j = 1; j < chordLen - 1; j++) {
-          const idx = (startIdx + j) % n;
-          const nextIdx = (startIdx + j + 1) % n;
-          const currDir = getDirection(result[idx], result[nextIdx]);
-          const change = Math.abs(normalizeAngle(currDir - lastDir));
-          cumulativeChange += change;
-          lastDir = currDir;
-        }
+          // Measure net direction change and cumulative wavering along the path
+          let cumulativeChange = 0;
+          let lastDir = getDirection(startPt, result[(startIdx + 1) % n]);
 
-        // Net direction change from start to end
-        const netChange = Math.abs(normalizeAngle(chordDir - getDirection(startPt, result[(startIdx + 1) % n])));
-
-        // This section is "wavering" if there's significant cumulative change
-        // but small net change (meaning it's oscillating, not turning)
-        const isWavering = cumulativeChange > WAVERING_THRESHOLD && netChange < DIRECTION_VARIANCE_LIMIT;
-
-        if (!isWavering) continue;
-
-        // Validate that the chord stays within track bounds
-        let chordValid = true;
-        const chordDx = endPt.x - startPt.x;
-        const chordDy = endPt.y - startPt.y;
-
-        for (let j = 1; j < chordLen - 1; j++) {
-          const t = j / chordLen;
-          const chordX = startPt.x + chordDx * t;
-          const chordY = startPt.y + chordDy * t;
-          const centerIdx = Math.floor((startIdx + j) * centerline.length / n) % centerline.length;
-
-          if (!isWithinBounds(chordX, chordY, centerIdx)) {
-            chordValid = false;
-            break;
+          for (let j = 1; j < chordLen - 1; j++) {
+            const idx = (startIdx + j) % n;
+            const nextIdx = (startIdx + j + 1) % n;
+            const currDir = getDirection(result[idx], result[nextIdx]);
+            const change = Math.abs(normalizeAngle(currDir - lastDir));
+            cumulativeChange += change;
+            lastDir = currDir;
           }
-        }
 
-        if (!chordValid) continue;
+          // Net direction change from start to end
+          const netChange = Math.abs(normalizeAngle(chordDir - getDirection(startPt, result[(startIdx + 1) % n])));
 
-        // Apply the chord - replace intermediate points with straight line
-        for (let j = 1; j < chordLen - 1; j++) {
-          const idx = (startIdx + j) % n;
-          const t = j / chordLen;
-          result[idx] = {
-            x: startPt.x + chordDx * t,
-            y: startPt.y + chordDy * t,
+          // This section is "wavering" if there's significant cumulative change
+          // but small net change (meaning it's oscillating, not turning)
+          const isWavering = cumulativeChange > WAVERING_THRESHOLD && netChange < DIRECTION_VARIANCE_LIMIT;
+
+          if (!isWavering) continue;
+
+          // NEW: Check if this section crosses the track centerline
+          // If the path goes from one side of the track to the other, it's a
+          // legitimate racing line transition (exit→entry), not meaningless wavering
+          const startCenterIdx = Math.floor(startIdx * centerline.length / n) % centerline.length;
+          const endCenterIdx = Math.floor(endIdx * centerline.length / n) % centerline.length;
+          const startCenter = centerline[startCenterIdx];
+          const endCenter = centerline[endCenterIdx];
+
+          // Calculate perpendicular offset from centerline (positive = one side, negative = other)
+          const getNormal = (idx) => {
+            const ci = Math.floor(idx * centerline.length / n) % centerline.length;
+            const prev = centerline[(ci - 1 + centerline.length) % centerline.length];
+            const next = centerline[(ci + 1) % centerline.length];
+            const dx = next.x - prev.x;
+            const dy = next.y - prev.y;
+            const len = Math.hypot(dx, dy) || 1;
+            return { x: -dy / len, y: dx / len };
           };
-          processed[idx] = true;
-        }
 
-        // Mark endpoints and skip ahead
-        processed[startIdx] = true;
-        startIdx += chordLen - 2; // -1 for loop increment, -1 to check overlap
-        break; // Found a valid chord, move to next section
+          const startNormal = getNormal(startIdx);
+          const endNormal = getNormal(endIdx);
+          const startOffset = (startPt.x - startCenter.x) * startNormal.x + (startPt.y - startCenter.y) * startNormal.y;
+          const endOffset = (endPt.x - endCenter.x) * endNormal.x + (endPt.y - endCenter.y) * endNormal.y;
+
+          // If start and end are on opposite sides of the centerline, this is a real transition
+          const SIDE_THRESHOLD = 15; // Minimum offset to count as "on a side"
+          const crossesCenterline = (Math.abs(startOffset) > SIDE_THRESHOLD && Math.abs(endOffset) > SIDE_THRESHOLD &&
+            Math.sign(startOffset) !== Math.sign(endOffset));
+
+          if (crossesCenterline) continue; // Don't straighten a real racing line transition
+
+          // Validate that the chord stays within track bounds
+          let chordValid = true;
+          const chordDx = endPt.x - startPt.x;
+          const chordDy = endPt.y - startPt.y;
+
+          for (let j = 1; j < chordLen - 1; j++) {
+            const t = j / chordLen;
+            const chordX = startPt.x + chordDx * t;
+            const chordY = startPt.y + chordDy * t;
+            const centerIdx = Math.floor((startIdx + j) * centerline.length / n) % centerline.length;
+
+            if (!isWithinBounds(chordX, chordY, centerIdx)) {
+              chordValid = false;
+              break;
+            }
+          }
+
+          if (!chordValid) continue;
+
+
+          // Apply the chord - replace intermediate points with straight line
+          for (let j = 1; j < chordLen - 1; j++) {
+            const idx = (startIdx + j) % n;
+            const t = j / chordLen;
+            result[idx] = {
+              x: startPt.x + chordDx * t,
+              y: startPt.y + chordDy * t,
+            };
+            processed[idx] = true;
+          }
+
+          // Mark endpoints and skip ahead
+          processed[startIdx] = true;
+          startIdx += chordLen - 2; // -1 for loop increment, -1 to check overlap
+          break; // Found a valid chord, move to next section
+        }
       }
     }
 
