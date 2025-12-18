@@ -232,8 +232,8 @@
   }
 
   /**
-   * Calculate centerline curvature (track bending)
-   * This tells us which direction is "inside" the curve
+   * Calculate centerline curvature with direction
+   * Returns {magnitude, sign} where sign indicates turn direction
    */
   function calculateCenterlineCurvature(prev, curr, next) {
     const v1x = curr.x - prev.x;
@@ -246,16 +246,21 @@
     // Cross product (SIGNED) - tells us turn direction
     const cross = (v1x / len1) * (v2y / len2) - (v1y / len1) * (v2x / len2);
     const avgLen = (len1 + len2) / 2;
+    const curvature = cross / avgLen;
     
-    return cross / avgLen;
+    return {
+      magnitude: Math.abs(curvature),
+      sign: Math.sign(curvature)
+    };
   }
 
   /**
    * Calculate local cost for offset optimization
-   * Primary goal: minimize path curvature
-   * Secondary: smooth offset profile to prevent wobble
+   * Primary: minimize path curvature
+   * Secondary: smooth offset profile
+   * Tertiary: on curves, reward cutting inside (racing line heuristic)
    */
-  function calculateLocalCost(centerline, normals, offsets, i, wCurvature, wSmooth) {
+  function calculateLocalCost(centerline, normals, offsets, i, wCurvature, wSmooth, wRacingLine, centerlineCurvatures) {
     const n = offsets.length;
     const prevIdx = (i - 1 + n) % n;
     const nextIdx = (i + 1) % n;
@@ -301,7 +306,13 @@
     const accel = offsets[prevIdx] - 2 * offsets[i] + offsets[nextIdx];
     const smoothCost = accel * accel * wSmooth;
     
-    return curvatureCost + smoothCost;
+    // Racing line heuristic: on curves, reward moving toward inside
+    // centerlineCurvature.sign tells us turn direction
+    // Reward offset in the direction that cuts inside the turn
+    const curv = centerlineCurvatures[i];
+    const racingLineCost = -(curv.sign * offsets[i] * curv.magnitude) * wRacingLine;
+    
+    return curvatureCost + smoothCost + racingLineCost;
   }
 
   /**
@@ -424,18 +435,31 @@
     // Step 3: Compute tangents and normals
     const { tangents, normals } = computeTangentsAndNormals(resampled);
 
-    // Step 4: Compute corridor bounds
+    // Step 4: Compute centerline curvatures
+    const centerlineCurvatures = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const prevIdx = (i - 1 + n) % n;
+      const nextIdx = (i + 1) % n;
+      centerlineCurvatures[i] = calculateCenterlineCurvature(
+        resampled[prevIdx],
+        resampled[i],
+        resampled[nextIdx]
+      );
+    }
+
+    // Step 5: Compute corridor bounds
     const { aMin, aMax } = computeCorridorBounds(resampled, normals, roadWidth, cfg.safetyMargin);
 
     // Step 6: Initialize offsets (start at centerline)
     let offsets = new Array(n).fill(0);
 
     // Optimization parameters
-    const wCurvature = 1000.0;  // Curvature weight (encourage low curvature)
-    const wSmooth = 0.01;       // Smoothness weight (very small - just prevent wobble)
-    const step = 3.0;           // Gradient descent step size (large enough to explore)
-    const eps = 1.0;            // Finite difference epsilon
-    const maxStepSize = 10.0;   // Maximum offset change per iteration (prevents instability)
+    const wCurvature = 1000.0;    // Path curvature weight (primary: minimize bending)
+    const wSmooth = 0.01;         // Smoothness weight (prevent wobble)
+    const wRacingLine = 50000.0;  // Racing line heuristic (cut inside on curves)
+    const step = 3.0;             // Gradient descent step size
+    const eps = 1.0;              // Finite difference epsilon
+    const maxStepSize = 10.0;     // Maximum offset change per iteration
 
     // Log bounds info if debug mode
     if (cfg.debugMode) {
@@ -457,12 +481,12 @@
       
       for (let i = 0; i < n; i++) {
         // Calculate base cost
-        const baseCost = calculateLocalCost(resampled, normals, offsets, i, wCurvature, wSmooth);
+        const baseCost = calculateLocalCost(resampled, normals, offsets, i, wCurvature, wSmooth, wRacingLine, centerlineCurvatures);
         
         // Perturb offset and calculate new cost
         const originalOffset = offsets[i];
         offsets[i] = clamp(originalOffset + eps, aMin[i], aMax[i]);
-        const perturbedCost = calculateLocalCost(resampled, normals, offsets, i, wCurvature, wSmooth);
+        const perturbedCost = calculateLocalCost(resampled, normals, offsets, i, wCurvature, wSmooth, wRacingLine, centerlineCurvatures);
         offsets[i] = originalOffset; // Restore
         
         // Finite difference gradient
