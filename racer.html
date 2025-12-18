@@ -13,6 +13,7 @@
   <script src="utils/utils.js"></script>
   <script src="ai/mcp_racing_line.js"></script>
   <script src="ai/racing_line_validation.js"></script>
+  <script src="ai/pro_line_racing.js"></script>
   <script src="ai/racer_ai.js"></script>
   <script src="utils/storage-utils.js"></script>
   <script type="module" src="physics.js"></script>
@@ -2299,8 +2300,10 @@ const { useEffect, useRef, useState } = React;
           let baseRacingLine = [];
           let anchorRacingLine = [];
           let mcpRacingLine = [];
+          let proLineRacingLine = [];
           let anchorValidation = null;
           let mcpValidation = null;
+          let proLineValidation = null;
           let aiDifficulty = initialAIDifficulty;
           function buildControllerPreset(){
             const overrides = aiControlsRef.current;
@@ -2386,7 +2389,7 @@ const { useEffect, useRef, useState } = React;
                 targetSpeed: Math.min(MAX_AI_TARGET_SPEED, (node.targetSpeed || 0) * throttleScale)
               }));
             };
-            // Helper: Generate both racing lines and validation
+            // Helper: Generate all racing lines and validation
             function generateBothRacingLines(opts) {
               const anchorOpts = { ...opts, mode: 'anchor' };
               const builtAnchorLine = window.RacerAI.generateRacingLine(centerline, ROAD_WIDTH, anchorOpts) || [];
@@ -2400,9 +2403,23 @@ const { useEffect, useRef, useState } = React;
                 const builtMcpLine = window.RacerAI.generateRacingLine(centerline, ROAD_WIDTH, mcpOpts) || [];
                 scaledMcp = scaleLine(builtMcpLine);
                 
-                // Validate both lines
+                // Validate MCP line
                 if (window.RacingLineValidation && window.RacingLineValidation.validateRacingLine) {
                   mcpVal = window.RacingLineValidation.validateRacingLine(centerline, ROAD_WIDTH, builtMcpLine);
+                }
+              }
+              
+              let scaledProLine = scaledAnchor; // Fallback
+              let proLineVal = null;
+              
+              if (window.ProLineRacing && window.ProLineRacing.generateProLine) {
+                const proLineOpts = { ...opts, mode: 'pro_line' };
+                const builtProLine = window.RacerAI.generateRacingLine(centerline, ROAD_WIDTH, proLineOpts) || [];
+                scaledProLine = scaleLine(builtProLine);
+                
+                // Validate PRO_LINE
+                if (window.RacingLineValidation && window.RacingLineValidation.validateRacingLine) {
+                  proLineVal = window.RacingLineValidation.validateRacingLine(centerline, ROAD_WIDTH, builtProLine);
                 }
               }
               
@@ -2410,7 +2427,7 @@ const { useEffect, useRef, useState } = React;
                 ? window.RacingLineValidation.validateRacingLine(centerline, ROAD_WIDTH, builtAnchorLine)
                 : null;
               
-              return { scaledAnchor, scaledMcp, anchorVal, mcpVal };
+              return { scaledAnchor, scaledMcp, scaledProLine, anchorVal, mcpVal, proLineVal };
             }
             
             if (canUseBase) {
@@ -2424,21 +2441,24 @@ const { useEffect, useRef, useState } = React;
                 if (typeof apex === "number") opts.apexAggression = apex;
                 if (typeof maxOffset === "number") opts.maxOffset = maxOffset;
                 
-                const { scaledAnchor, scaledMcp, anchorVal, mcpVal } = generateBothRacingLines(opts);
+                const { scaledAnchor, scaledMcp, scaledProLine, anchorVal, mcpVal, proLineVal } = generateBothRacingLines(opts);
                 anchorRacingLine = scaledAnchor;
                 mcpRacingLine = scaledMcp;
+                proLineRacingLine = scaledProLine;
                 anchorValidation = anchorVal;
                 mcpValidation = mcpVal;
+                proLineValidation = proLineVal;
                 
                 // Use the selected mode for active racing line
                 const currentMode = racingLineModeRef.current || 'anchor';
-                racingLine = currentMode === 'mcp' ? mcpRacingLine : anchorRacingLine;
+                racingLine = currentMode === 'pro_line' ? proLineRacingLine : (currentMode === 'mcp' ? mcpRacingLine : anchorRacingLine);
               }
             }
             if (activeTrack) {
               activeTrack.racingLine = racingLine;
               activeTrack.anchorRacingLine = anchorRacingLine;
               activeTrack.mcpRacingLine = mcpRacingLine;
+              activeTrack.proLineRacingLine = proLineRacingLine;
             }
             rebuildAIControllers();
           }
@@ -4128,7 +4148,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               const visMode = lineVisModeRef.current || 'anchor';
               const baseWidth = Math.max(2, ROAD_WIDTH * 0.12);
               
-              if (visMode === 'anchor' || visMode === 'both') {
+              if (visMode === 'anchor' || visMode === 'both' || visMode === 'all') {
                 if (anchorRacingLine && anchorRacingLine.length > 1) {
                   // Highlight violations in red
                   const hasViolations = anchorValidation && (anchorValidation.boundaryViolationsCount > 0);
@@ -4147,16 +4167,34 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                 }
               }
               
-              if (visMode === 'mcp' || visMode === 'both') {
+              if (visMode === 'mcp' || visMode === 'both' || visMode === 'all') {
                 if (mcpRacingLine && mcpRacingLine.length > 1) {
                   const hasViolations = mcpValidation && (mcpValidation.boundaryViolationsCount > 0);
                   strokeAiRacingLine(ctx, mcpRacingLine, {
                     width: baseWidth,
                     color: hasViolations ? "rgba(239, 68, 68, 0.85)" : "rgba(132, 204, 22, 0.85)",
-                    dash: visMode === 'both' ? [18, 12] : [28, 18],
+                    dash: visMode === 'both' || visMode === 'all' ? [18, 12] : [28, 18],
                     alpha: 0.8
                   });
                 } else if (racingLine && racingLine.length > 1 && visMode === 'mcp') {
+                  strokeAiRacingLine(ctx, racingLine, {
+                    width: baseWidth,
+                    dash: [28, 18],
+                    alpha: 0.8
+                  });
+                }
+              }
+              
+              if (visMode === 'pro_line' || visMode === 'all') {
+                if (proLineRacingLine && proLineRacingLine.length > 1) {
+                  const hasViolations = proLineValidation && (proLineValidation.boundaryViolationsCount > 0);
+                  strokeAiRacingLine(ctx, proLineRacingLine, {
+                    width: baseWidth,
+                    color: hasViolations ? "rgba(239, 68, 68, 0.85)" : "rgba(251, 191, 36, 0.85)", // Amber/yellow for PRO_LINE
+                    dash: visMode === 'all' ? [12, 8] : [28, 18],
+                    alpha: 0.8
+                  });
+                } else if (racingLine && racingLine.length > 1 && visMode === 'pro_line') {
                   strokeAiRacingLine(ctx, racingLine, {
                     width: baseWidth,
                     dash: [28, 18],
@@ -4280,7 +4318,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               if (showAiLineRef.current) {
                 const visMode = lineVisModeRef.current || 'anchor';
                 
-                if (visMode === 'anchor' || visMode === 'both') {
+                if (visMode === 'anchor' || visMode === 'both' || visMode === 'all') {
                   const line = anchorRacingLine && anchorRacingLine.length > 1 ? anchorRacingLine : racingLine;
                   if (line && line.length > 1) {
                     ctx.strokeStyle = "rgba(96,165,250,0.9)";
@@ -4299,14 +4337,32 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                   }
                 }
                 
-                if (visMode === 'mcp' || visMode === 'both') {
+                if (visMode === 'mcp' || visMode === 'both' || visMode === 'all') {
                   if (mcpRacingLine && mcpRacingLine.length > 1) {
                     ctx.strokeStyle = "rgba(132, 204, 22, 0.9)";
                     ctx.lineWidth = Math.max(1, ROAD_WIDTH*0.08*s);
-                    ctx.setLineDash(visMode === 'both' ? [6, 4] : [8, 6]);
+                    ctx.setLineDash(visMode === 'both' || visMode === 'all' ? [6, 4] : [8, 6]);
                     ctx.beginPath();
                     for (let i=0;i<mcpRacingLine.length;i++){
                       const node = mcpRacingLine[i];
+                      const lx = node.x*s+ox;
+                      const ly = node.y*s+oy;
+                      if(i===0)ctx.moveTo(lx,ly); else ctx.lineTo(lx,ly);
+                    }
+                    ctx.closePath();
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                  }
+                }
+                
+                if (visMode === 'pro_line' || visMode === 'all') {
+                  if (proLineRacingLine && proLineRacingLine.length > 1) {
+                    ctx.strokeStyle = "rgba(251, 191, 36, 0.9)"; // Amber for PRO_LINE
+                    ctx.lineWidth = Math.max(1, ROAD_WIDTH*0.08*s);
+                    ctx.setLineDash(visMode === 'all' ? [4, 3] : [8, 6]);
+                    ctx.beginPath();
+                    for (let i=0;i<proLineRacingLine.length;i++){
+                      const node = proLineRacingLine[i];
                       const lx = node.x*s+ox;
                       const ly = node.y*s+oy;
                       if(i===0)ctx.moveTo(lx,ly); else ctx.lineTo(lx,ly);
@@ -5108,6 +5164,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                 }}>
                   <option value="anchor">Anchor (Default)</option>
                   <option value="mcp">MCP (Minimum Curvature)</option>
+                  <option value="pro_line">PRO_LINE (Outside-Inside-Outside)</option>
                 </select>
               </label>
               <label title="Choose which racing line to visualize.">
@@ -5115,7 +5172,9 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                 <select value={lineVisMode} onChange={(e) => setLineVisMode(e.target.value)}>
                   <option value="anchor">Anchor Only</option>
                   <option value="mcp">MCP Only</option>
+                  <option value="pro_line">PRO_LINE Only</option>
                   <option value="both">Both (A/B Compare)</option>
+                  <option value="all">All Three</option>
                 </select>
               </label>
               <label title="Display validation metrics for racing lines.">
@@ -5314,7 +5373,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               </label>
             </div>
             <canvas ref={canvasRef} width="1000" height="700"></canvas>
-            {showValidationMetrics && (anchorValidation || mcpValidation) && (
+            {showValidationMetrics && (anchorValidation || mcpValidation || proLineValidation) && (
               <div style={{
                 position: 'absolute',
                 top: '80px',
@@ -5333,9 +5392,9 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                 <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '12px', color: '#60a5fa' }}>
                   Racing Line Validation
                 </div>
-                {anchorValidation && lineVisMode !== 'mcp' && (
-                  <div style={{ marginBottom: lineVisMode === 'both' ? '12px' : '0' }}>
-                    <div style={{ color: '#84cc16', fontWeight: '600', marginBottom: '4px' }}>Anchor Line:</div>
+                {anchorValidation && lineVisMode !== 'mcp' && lineVisMode !== 'pro_line' && (
+                  <div style={{ marginBottom: lineVisMode === 'both' || lineVisMode === 'all' ? '12px' : '0' }}>
+                    <div style={{ color: '#60a5fa', fontWeight: '600', marginBottom: '4px' }}>Anchor Line:</div>
                     <div>Length: {anchorValidation.length.toFixed(0)}px</div>
                     <div style={{ color: anchorValidation.boundaryViolationsCount > 0 ? '#ef4444' : '#6ee7b7' }}>
                       Violations: {anchorValidation.boundaryViolationsCount}
@@ -5354,8 +5413,8 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                     </div>
                   </div>
                 )}
-                {mcpValidation && lineVisMode !== 'anchor' && (
-                  <div>
+                {mcpValidation && lineVisMode !== 'anchor' && lineVisMode !== 'pro_line' && (
+                  <div style={{ marginBottom: lineVisMode === 'all' ? '12px' : '0' }}>
                     <div style={{ color: '#84cc16', fontWeight: '600', marginBottom: '4px' }}>MCP Line:</div>
                     <div>Length: {mcpValidation.length.toFixed(0)}px</div>
                     <div style={{ color: mcpValidation.boundaryViolationsCount > 0 ? '#ef4444' : '#6ee7b7' }}>
@@ -5372,6 +5431,27 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                     <div>Min edge dist: {mcpValidation.minDistanceToEdge.toFixed(1)}px</div>
                     <div style={{ fontSize: '10px', marginTop: '4px', color: '#94a3b8' }}>
                       Curvature: avg {mcpValidation.curvatureStats.avg.toFixed(5)}
+                    </div>
+                  </div>
+                )}
+                {proLineValidation && (lineVisMode === 'pro_line' || lineVisMode === 'all') && (
+                  <div>
+                    <div style={{ color: '#fbbf24', fontWeight: '600', marginBottom: '4px' }}>PRO_LINE:</div>
+                    <div>Length: {proLineValidation.length.toFixed(0)}px</div>
+                    <div style={{ color: proLineValidation.boundaryViolationsCount > 0 ? '#ef4444' : '#6ee7b7' }}>
+                      Violations: {proLineValidation.boundaryViolationsCount}
+                    </div>
+                    {proLineValidation.boundaryViolationsCount > 0 && (
+                      <div style={{ color: '#fca5a5', fontSize: '10px' }}>
+                        Max penetration: {proLineValidation.maxBoundaryPenetration.toFixed(1)}px
+                      </div>
+                    )}
+                    <div style={{ color: proLineValidation.selfIntersectionsCount > 0 ? '#ef4444' : '#6ee7b7' }}>
+                      Self-intersections: {proLineValidation.selfIntersectionsCount}
+                    </div>
+                    <div>Min edge dist: {proLineValidation.minDistanceToEdge.toFixed(1)}px</div>
+                    <div style={{ fontSize: '10px', marginTop: '4px', color: '#94a3b8' }}>
+                      Curvature: avg {proLineValidation.curvatureStats.avg.toFixed(5)}
                     </div>
                   </div>
                 )}
