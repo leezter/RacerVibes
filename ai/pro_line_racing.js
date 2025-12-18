@@ -34,10 +34,13 @@
     mcpBeta: 0.08,
     margin: 3,
 
-    // Corner detection
-    curvatureThreshold: 0.00015, // Threshold for detecting corners
-    minCornerLength: 15, // Minimum points to be considered a corner
-    cornerMergeGap: 8, // Merge corners separated by < this many points
+    // Corner detection (with hysteresis)
+    curvatureEnterThreshold: 0.0003, // Higher threshold to START detecting a corner
+    curvatureExitThreshold: 0.00015, // Lower threshold to STOP detecting a corner
+    curvaturePeakMin: 0.0004, // Discard corners with peak below this
+    minCornerLength: 20, // Minimum points to be considered a corner (increased)
+    cornerMergeGap: 12, // Merge corners separated by < this many points
+    cornerSmoothWindow: 5, // Moving average window for curvature smoothing
 
     // Entry/Apex/Exit positioning
     entryLead: 12, // Points before corner start for entry
@@ -49,11 +52,11 @@
     proAlpha: 0.3, // Step size
     proBeta: 0.06, // Regularization
     
-    // Soft constraint weights
-    entryWeight: 0.8, // Pull toward outside before corner
-    apexWeight: 1.2, // Pull toward inside at apex (strongest)
-    exitWeight: 0.8, // Pull toward outside after corner
-    constraintFalloff: 8, // Gaussian falloff distance (points)
+    // Soft constraint weights (reduced to avoid oscillation)
+    entryWeight: 0.5, // Pull toward outside before corner
+    apexWeight: 0.8, // Pull toward inside at apex (strongest)
+    exitWeight: 0.5, // Pull toward outside after corner
+    constraintFalloff: 12, // Gaussian falloff distance (points) - wider spread
 
     // Final smoothing
     finalSmoothingPasses: 4,
@@ -63,18 +66,16 @@
   };
 
   /**
-   * Detect corner regions in the path using curvature analysis
+   * Detect corner regions in the path using curvature analysis with hysteresis
    * @param {Array} centerline - Path points [{x, y}, ...]
-   * @param {number} curvatureThreshold - Minimum curvature to be considered a corner
-   * @param {number} minLength - Minimum points for a valid corner
-   * @param {number} mergeGap - Merge corners separated by < this many points
-   * @returns {Array} - Corner regions [{start, end, turnSign, maxCurvIdx}, ...]
+   * @param {object} cfg - Configuration with curvature thresholds
+   * @returns {Array} - Corner regions [{start, end, turnSign, maxCurvIdx, peakCurv}, ...]
    */
-  function detectCorners(centerline, curvatureThreshold, minLength, mergeGap) {
+  function detectCorners(centerline, cfg) {
     const n = centerline.length;
     const curvatures = new Array(n);
 
-    // Compute curvature at each point using cross product
+    // Compute raw curvature at each point using cross product
     for (let i = 0; i < n; i++) {
       const iPrev = (i - 1 + n) % n;
       const iNext = (i + 1) % n;
@@ -94,43 +95,62 @@
       curvatures[i] = crossProduct / denom;
     }
 
-    // Find regions where |curvature| > threshold
+    // Apply moving average smoothing to reduce micro-curvature noise
+    const smoothedCurv = new Array(n);
+    const windowSize = cfg.cornerSmoothWindow;
+    for (let i = 0; i < n; i++) {
+      let sum = 0;
+      for (let j = -windowSize; j <= windowSize; j++) {
+        const idx = (i + j + n) % n;
+        sum += curvatures[idx];
+      }
+      smoothedCurv[i] = sum / (2 * windowSize + 1);
+    }
+
+    // Find regions using hysteresis thresholds
     const corners = [];
     let inCorner = false;
     let cornerStart = -1;
     let cornerSign = 0;
+    let cornerPeakCurv = 0;
 
     for (let i = 0; i < n + 1; i++) {
       // Wrap around to close loop
       const idx = i % n;
-      const curv = curvatures[idx];
-      const isCorner = Math.abs(curv) > curvatureThreshold;
+      const curv = smoothedCurv[idx];
+      const absCurv = Math.abs(curv);
 
-      if (isCorner && !inCorner) {
-        // Start new corner
+      if (!inCorner && absCurv > cfg.curvatureEnterThreshold) {
+        // Start new corner (enter threshold)
         inCorner = true;
         cornerStart = idx;
         cornerSign = curv > 0 ? 1 : -1;
-      } else if (!isCorner && inCorner) {
-        // End corner
+        cornerPeakCurv = absCurv;
+      } else if (inCorner && absCurv < cfg.curvatureExitThreshold) {
+        // End corner (exit threshold)
         const cornerEnd = (idx - 1 + n) % n;
         const length = cornerEnd >= cornerStart 
           ? cornerEnd - cornerStart + 1
           : n - cornerStart + cornerEnd + 1;
 
-        if (length >= minLength) {
+        // Only keep corners that meet length and peak curvature requirements
+        if (length >= cfg.minCornerLength && cornerPeakCurv >= cfg.curvaturePeakMin) {
           corners.push({
             start: cornerStart,
             end: cornerEnd,
             turnSign: cornerSign,
             maxCurvIdx: -1, // Will compute later
+            peakCurv: cornerPeakCurv,
           });
         }
         inCorner = false;
+      } else if (inCorner) {
+        // Track peak curvature while in corner
+        cornerPeakCurv = Math.max(cornerPeakCurv, absCurv);
       }
     }
 
-    // Merge nearby corners
+    // Merge nearby corners of same sign
     const merged = [];
     for (let i = 0; i < corners.length; i++) {
       const curr = corners[i];
@@ -140,22 +160,23 @@
         ? next.start - curr.end
         : n - curr.end + next.start;
 
-      if (gap < mergeGap && curr.turnSign === next.turnSign) {
+      if (gap < cfg.cornerMergeGap && curr.turnSign === next.turnSign) {
         // Merge with next
         curr.end = next.end;
+        curr.peakCurv = Math.max(curr.peakCurv, next.peakCurv);
         i++; // Skip next
       }
       merged.push(curr);
     }
 
-    // Find apex (max curvature) for each corner
+    // Find apex (max curvature) for each corner using smoothed curvatures
     for (const corner of merged) {
       let maxCurv = 0;
       let maxIdx = corner.start;
 
       for (let i = corner.start; ; i++) {
         const idx = i % n;
-        const absCurv = Math.abs(curvatures[idx]);
+        const absCurv = Math.abs(smoothedCurv[idx]);
         if (absCurv > maxCurv) {
           maxCurv = absCurv;
           maxIdx = idx;
@@ -257,13 +278,24 @@
     }
 
     // Step 2: Detect corners
-    const corners = detectCorners(c, cfg.curvatureThreshold, cfg.minCornerLength, cfg.cornerMergeGap);
+    const corners = detectCorners(c, cfg);
 
     if (cfg.debug) {
       console.log(`[PRO_LINE] Detected ${corners.length} corners:`);
       corners.forEach((corner, idx) => {
-        console.log(`  Corner ${idx + 1}: [${corner.start}..${corner.end}], turnSign=${corner.turnSign}, apex=${corner.maxCurvIdx}`);
+        const length = corner.end >= corner.start
+          ? corner.end - corner.start + 1
+          : n - corner.start + corner.end + 1;
+        console.log(`  Corner ${idx + 1}: [${corner.start}..${corner.end}] (${length} points), turnSign=${corner.turnSign}, apex=${corner.maxCurvIdx}, peakCurv=${corner.peakCurv.toFixed(6)}`);
       });
+    }
+
+    // If no corners detected, just return smoothed MCP baseline
+    if (corners.length === 0) {
+      if (cfg.debug) {
+        console.log('[PRO_LINE] No corners detected, returning MCP baseline');
+      }
+      return mcpResult;
     }
 
     // Step 3: Compute entry/apex/exit points for each corner
@@ -322,43 +354,36 @@
         const jitterUpdate = cfg.proBeta * (offsets[iPrev] - 2 * offsets[i] + offsets[iNext]);
 
         // Soft constraints toward entry/apex/exit targets
+        // Use weighted average of all nearby constraints
         let constraintPull = 0;
         for (const target of cornerTargets) {
-          // Determine target offset based on point type and turn direction
-          // Outside = opposite of inside
-          // Inside = same direction as turnSign indicates
-          let targetOffset = 0;
-          let weight = 0;
+          // Compute distances (handle wrap-around)
+          const entryDist = Math.min(Math.abs(i - target.iEntry), n - Math.abs(i - target.iEntry));
+          const apexDist = Math.min(Math.abs(i - target.iApex), n - Math.abs(i - target.iApex));
+          const exitDist = Math.min(Math.abs(i - target.iExit), n - Math.abs(i - target.iExit));
 
-          // Entry target (outside)
-          const entryDist = Math.abs(i - target.iEntry);
-          if (entryDist < cfg.constraintFalloff * 2) {
-            targetOffset = -target.turnSign * (halfWidth - cfg.margin);
-            weight = cfg.entryWeight * Math.exp(-entryDist * entryDist / (2 * cfg.constraintFalloff * cfg.constraintFalloff));
+          // Apply Gaussian falloff for each constraint type
+          const falloffDist = cfg.constraintFalloff * 2.5;
+          
+          // Entry constraint (outside)
+          if (entryDist < falloffDist) {
+            const entryTarget = -target.turnSign * (halfWidth - cfg.margin);
+            const entryWeight = cfg.entryWeight * Math.exp(-entryDist * entryDist / (2 * cfg.constraintFalloff * cfg.constraintFalloff));
+            constraintPull += entryWeight * (entryTarget - offsets[i]);
           }
 
-          // Apex target (inside) - strongest constraint
-          const apexDist = Math.abs(i - target.iApex);
-          if (apexDist < cfg.constraintFalloff * 2) {
-            targetOffset = target.turnSign * (halfWidth - cfg.margin);
+          // Apex constraint (inside) - strongest
+          if (apexDist < falloffDist) {
+            const apexTarget = target.turnSign * (halfWidth - cfg.margin);
             const apexWeight = cfg.apexWeight * Math.exp(-apexDist * apexDist / (2 * cfg.constraintFalloff * cfg.constraintFalloff));
-            if (apexWeight > weight) {
-              weight = apexWeight;
-            }
+            constraintPull += apexWeight * (apexTarget - offsets[i]);
           }
 
-          // Exit target (outside)
-          const exitDist = Math.abs(i - target.iExit);
-          if (exitDist < cfg.constraintFalloff * 2) {
-            targetOffset = -target.turnSign * (halfWidth - cfg.margin);
+          // Exit constraint (outside)
+          if (exitDist < falloffDist) {
+            const exitTarget = -target.turnSign * (halfWidth - cfg.margin);
             const exitWeight = cfg.exitWeight * Math.exp(-exitDist * exitDist / (2 * cfg.constraintFalloff * cfg.constraintFalloff));
-            if (exitWeight > weight) {
-              weight = exitWeight;
-            }
-          }
-
-          if (weight > 0) {
-            constraintPull += weight * (targetOffset - offsets[i]);
+            constraintPull += exitWeight * (exitTarget - offsets[i]);
           }
         }
 
