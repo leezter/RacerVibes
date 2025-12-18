@@ -252,49 +252,56 @@
 
   /**
    * Calculate local cost for offset optimization
-   * Includes path curvature, smoothness, acceleration, and corner-cutting incentive
+   * Primary goal: minimize path curvature
+   * Secondary: smooth offset profile to prevent wobble
    */
-  function calculateLocalCost(centerline, normals, offsets, i, wSmooth, wAccel, wCornerCut, centerlineCurvatures) {
+  function calculateLocalCost(centerline, normals, offsets, i, wCurvature, wSmooth) {
     const n = offsets.length;
     const prevIdx = (i - 1 + n) % n;
     const nextIdx = (i + 1) % n;
+    const prev2Idx = (i - 2 + n) % n;
+    const next2Idx = (i + 2) % n;
     
     // Build path points for curvature calculation
-    const pPrev = {
+    // We need to check curvature at i-1, i, and i+1 since offset[i] affects all three
+    let totalCurvature = 0;
+    
+    // Curvature at i-1
+    const pp1 = {
+      x: centerline[prev2Idx].x + normals[prev2Idx].x * offsets[prev2Idx],
+      y: centerline[prev2Idx].y + normals[prev2Idx].y * offsets[prev2Idx]
+    };
+    const pp2 = {
       x: centerline[prevIdx].x + normals[prevIdx].x * offsets[prevIdx],
       y: centerline[prevIdx].y + normals[prevIdx].y * offsets[prevIdx]
     };
-    const pCurr = {
+    const pp3 = {
       x: centerline[i].x + normals[i].x * offsets[i],
       y: centerline[i].y + normals[i].y * offsets[i]
     };
+    totalCurvature += calculatePathCurvature(pp1, pp2, pp3);
+    
+    // Curvature at i
     const pNext = {
       x: centerline[nextIdx].x + normals[nextIdx].x * offsets[nextIdx],
       y: centerline[nextIdx].y + normals[nextIdx].y * offsets[nextIdx]
     };
+    totalCurvature += calculatePathCurvature(pp2, pp3, pNext);
     
-    // Path curvature cost (minimize bending)
-    const curvatureCost = calculatePathCurvature(pPrev, pCurr, pNext);
+    // Curvature at i+1
+    const pNext2 = {
+      x: centerline[next2Idx].x + normals[next2Idx].x * offsets[next2Idx],
+      y: centerline[next2Idx].y + normals[next2Idx].y * offsets[next2Idx]
+    };
+    totalCurvature += calculatePathCurvature(pp3, pNext, pNext2);
     
-    // Smoothness cost (penalize rapid offset changes)
-    const smooth1 = (offsets[i] - offsets[prevIdx]) ** 2;
-    const smooth2 = (offsets[nextIdx] - offsets[i]) ** 2;
-    const smoothCost = (smooth1 + smooth2) * wSmooth;
+    const curvatureCost = totalCurvature * wCurvature;
     
-    // Acceleration cost (penalize kinks in offset profile)
+    // Smoothness cost (second derivative of offsets) - prevents wobble
     const accel = offsets[prevIdx] - 2 * offsets[i] + offsets[nextIdx];
-    const accelCost = accel * accel * wAccel;
+    const smoothCost = accel * accel * wSmooth;
     
-    // Corner-cutting incentive: on curves, favor moving toward the inside
-    // centerlineCurvature is SIGNED: positive = left turn, negative = right turn
-    // normal points left, so negative offset = right, positive = left
-    // To cut inside: if turning left (curv > 0), want positive offset (go left/inside)
-    //                if turning right (curv < 0), want negative offset (go right/inside)
-    // Cost = -(centerlineCurvature * offset) encourages cutting inside
-    const centerlineCurv = centerlineCurvatures[i];
-    const cornerCutCost = -(centerlineCurv * offsets[i]) * wCornerCut;
-    
-    return curvatureCost + smoothCost + accelCost + cornerCutCost;
+    return curvatureCost + smoothCost;
   }
 
   /**
@@ -417,30 +424,18 @@
     // Step 3: Compute tangents and normals
     const { tangents, normals } = computeTangentsAndNormals(resampled);
 
-    // Step 4: Compute centerline curvatures (tells us which way curves bend)
-    const centerlineCurvatures = new Array(n);
-    for (let i = 0; i < n; i++) {
-      const prevIdx = (i - 1 + n) % n;
-      const nextIdx = (i + 1) % n;
-      centerlineCurvatures[i] = calculateCenterlineCurvature(
-        resampled[prevIdx],
-        resampled[i],
-        resampled[nextIdx]
-      );
-    }
-
-    // Step 5: Compute corridor bounds
+    // Step 4: Compute corridor bounds
     const { aMin, aMax } = computeCorridorBounds(resampled, normals, roadWidth, cfg.safetyMargin);
 
     // Step 6: Initialize offsets (start at centerline)
     let offsets = new Array(n).fill(0);
 
     // Optimization parameters
-    const wSmooth = 0.3;    // Smoothness weight
-    const wAccel = 0.1;     // Acceleration weight
-    const wCornerCut = 50.0; // Corner-cutting incentive (encourages inside line)
-    const step = 0.08;      // Gradient descent step size
-    const eps = 0.5;        // Finite difference epsilon
+    const wCurvature = 1000.0;  // Curvature weight (encourage low curvature)
+    const wSmooth = 0.01;       // Smoothness weight (very small - just prevent wobble)
+    const step = 3.0;           // Gradient descent step size (large enough to explore)
+    const eps = 1.0;            // Finite difference epsilon
+    const maxStepSize = 10.0;   // Maximum offset change per iteration (prevents instability)
 
     // Log bounds info if debug mode
     if (cfg.debugMode) {
@@ -462,21 +457,24 @@
       
       for (let i = 0; i < n; i++) {
         // Calculate base cost
-        const baseCost = calculateLocalCost(resampled, normals, offsets, i, wSmooth, wAccel, wCornerCut, centerlineCurvatures);
+        const baseCost = calculateLocalCost(resampled, normals, offsets, i, wCurvature, wSmooth);
         
         // Perturb offset and calculate new cost
         const originalOffset = offsets[i];
         offsets[i] = clamp(originalOffset + eps, aMin[i], aMax[i]);
-        const perturbedCost = calculateLocalCost(resampled, normals, offsets, i, wSmooth, wAccel, wCornerCut, centerlineCurvatures);
+        const perturbedCost = calculateLocalCost(resampled, normals, offsets, i, wCurvature, wSmooth);
         offsets[i] = originalOffset; // Restore
         
         // Finite difference gradient
         gradients[i] = (perturbedCost - baseCost) / eps;
       }
       
-      // Update offsets via gradient descent
+      // Update offsets via gradient descent with step size limiting
       for (let i = 0; i < n; i++) {
-        offsets[i] = clamp(offsets[i] - step * gradients[i], aMin[i], aMax[i]);
+        const delta = -step * gradients[i];
+        // Limit maximum change per iteration for stability
+        const limitedDelta = clamp(delta, -maxStepSize, maxStepSize);
+        offsets[i] = clamp(offsets[i] + limitedDelta, aMin[i], aMax[i]);
       }
       
       // Apply low-pass filter every 10 iterations to reduce numerical chatter
@@ -488,16 +486,16 @@
       }
       
       // Log progress at key iterations
-      if (cfg.debugMode && (iter === 0 || iter === 10 || iter === cfg.iterations - 1)) {
+      if (cfg.debugMode && (iter === 0 || iter === 10 || iter === 50 || iter === cfg.iterations - 1)) {
         const minOffset = Math.min(...offsets);
         const maxOffset = Math.max(...offsets);
         const meanAbsOffset = offsets.reduce((sum, a) => sum + Math.abs(a), 0) / n;
-        let maxStep = 0;
+        let maxLateralStep = 0;
         for (let i = 0; i < n; i++) {
           const prevIdx = (i - 1 + n) % n;
-          maxStep = Math.max(maxStep, Math.abs(offsets[i] - offsets[prevIdx]));
+          maxLateralStep = Math.max(maxLateralStep, Math.abs(offsets[i] - offsets[prevIdx]));
         }
-        console.log(`Iter ${iter}: offset range [${minOffset.toFixed(2)}, ${maxOffset.toFixed(2)}], mean|a|=${meanAbsOffset.toFixed(2)}, maxStep=${maxStep.toFixed(2)}`);
+        console.log(`Iter ${iter}: offset range [${minOffset.toFixed(2)}, ${maxOffset.toFixed(2)}], mean|a|=${meanAbsOffset.toFixed(2)}, maxLateralStep=${maxLateralStep.toFixed(2)}`);
       }
     }
 
@@ -509,6 +507,17 @@
 
     if (cfg.debugMode) {
       console.log('=== Optimal Line Metrics ===');
+      
+      // Calculate additional useful metrics
+      const minOffset = Math.min(...offsets);
+      const maxOffset = Math.max(...offsets);
+      const meanAbsOffset = offsets.reduce((sum, a) => sum + Math.abs(a), 0) / n;
+      const availableHalfWidth = roadWidth / 2 - cfg.safetyMargin;
+      const percentWidthUsed = (meanAbsOffset / availableHalfWidth) * 100;
+      
+      console.log('Offset range:', `[${minOffset.toFixed(2)}, ${maxOffset.toFixed(2)}] px`);
+      console.log('Mean |offset|:', meanAbsOffset.toFixed(2), 'px');
+      console.log('% of half-width used:', percentWidthUsed.toFixed(1) + '%');
       console.log('Max lateral step:', metrics.maxLateralStep.toFixed(2), 'px');
       console.log('Min margin to bounds:', metrics.minMargin.toFixed(2), 'px');
       console.log('Path length:', metrics.pathLength.toFixed(1), 'px');
