@@ -231,7 +231,7 @@
         // Length reduction push: move toward inside of turn
         // Scale by local curvature magnitude to avoid pushing on straights
         const localCurvMag = Math.abs(crossProduct) / (Math.hypot(dx1, dy1) * Math.hypot(dx2, dy2) + 1e-6);
-        const lengthPush = cfg.alpha * 2.0 * insideSign * localCurvMag * 100; // Increased scaling for better width usage
+        const lengthPush = cfg.alpha * 1.5 * insideSign * localCurvMag * 100; // Balanced for width usage vs stability
 
         // Regularization (prevent jitter) - smooths offsets without center bias
         const prevOffset = offsets[(i - 1 + n) % n];
