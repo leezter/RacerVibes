@@ -200,35 +200,57 @@
    * @returns {object} - {points, meta, corners}
    */
   function generateProLine(centerline, roadWidth, options = {}) {
-    const cfg = { ...DEFAULT_PRO_LINE_CONFIG, ...options };
-    const halfWidth = roadWidth / 2;
-    const n = cfg.numSamples;
+    try {
+      const cfg = { ...DEFAULT_PRO_LINE_CONFIG, ...options };
+      const halfWidth = roadWidth / 2;
+      const n = cfg.numSamples;
 
-    if (cfg.debug) {
-      console.log('[PRO_LINE] Starting generation...');
-      console.log(`  Centerline points: ${centerline.length}, Target samples: ${n}`);
-      console.log(`  Track width: ${roadWidth}px, Half width: ${halfWidth}px`);
-    }
+      if (cfg.debug) {
+        console.log('[PRO_LINE] Starting generation...');
+        console.log(`  Centerline points: ${centerline.length}, Target samples: ${n}`);
+        console.log(`  Track width: ${roadWidth}px, Half width: ${halfWidth}px`);
+      }
 
-    // Step 1: Generate MCP baseline using existing module
-    if (!global.McpRacingLine) {
-      throw new Error('McpRacingLine module not loaded. Include mcp_racing_line.js first.');
-    }
+      // Validate inputs
+      if (!centerline || !Array.isArray(centerline) || centerline.length < 3) {
+        console.error('[PRO_LINE] Invalid centerline:', centerline);
+        throw new Error('PRO_LINE requires valid centerline with at least 3 points');
+      }
+      if (!roadWidth || roadWidth <= 0) {
+        console.error('[PRO_LINE] Invalid road width:', roadWidth);
+        throw new Error('PRO_LINE requires positive road width');
+      }
 
-    const mcpOptions = {
-      numSamples: cfg.numSamples,
-      iterations: cfg.mcpIterations,
-      alpha: cfg.mcpAlpha,
-      beta: cfg.mcpBeta,
-      margin: cfg.margin,
-      centerBias: 0,
-      debug: false,
-    };
+      // Step 1: Generate MCP baseline using existing module
+      if (!global.McpRacingLine) {
+        console.error('[PRO_LINE] McpRacingLine module not found on window/global');
+        throw new Error('McpRacingLine module not loaded. Include mcp_racing_line.js first.');
+      }
+      if (!global.McpRacingLine.generateMcpLine) {
+        console.error('[PRO_LINE] McpRacingLine.generateMcpLine function not found');
+        throw new Error('McpRacingLine.generateMcpLine function not available');
+      }
 
-    const mcpResult = global.McpRacingLine.generateMcpLine(centerline, roadWidth, mcpOptions);
-    const basePoints = mcpResult.points;
-    const normals = mcpResult.meta.normals;
-    const c = mcpResult.meta.centerline;
+      const mcpOptions = {
+        numSamples: cfg.numSamples,
+        iterations: cfg.mcpIterations,
+        alpha: cfg.mcpAlpha,
+        beta: cfg.mcpBeta,
+        margin: cfg.margin,
+        centerBias: 0,
+        debug: false,
+      };
+
+      const mcpResult = global.McpRacingLine.generateMcpLine(centerline, roadWidth, mcpOptions);
+      
+      if (!mcpResult || !mcpResult.points || !mcpResult.meta) {
+        console.error('[PRO_LINE] MCP result invalid:', mcpResult);
+        throw new Error('MCP baseline generation failed');
+      }
+      
+      const basePoints = mcpResult.points;
+      const normals = mcpResult.meta.normals;
+      const c = mcpResult.meta.centerline;
 
     if (cfg.debug) {
       console.log(`[PRO_LINE] MCP baseline generated: ${basePoints.length} points`);
@@ -387,19 +409,43 @@
       console.log(`  Corners detected: ${corners.length}`);
     }
 
-    return {
-      points: finalPoints,
-      meta: {
-        algorithm: 'PRO_LINE',
-        baselineAlgorithm: 'MCP',
-        corners: cornerTargets,
-        widthUsageRatio,
-        maxAbsOffset,
-        centerline: c,
-        normals,
-        offsets,
-      },
-    };
+      return {
+        points: finalPoints,
+        meta: {
+          algorithm: 'PRO_LINE',
+          baselineAlgorithm: 'MCP',
+          corners: cornerTargets,
+          widthUsageRatio,
+          maxAbsOffset,
+          centerline: c,
+          normals,
+          offsets,
+        },
+      };
+    } catch (error) {
+      console.error('[PRO_LINE] Error during generation:', error);
+      console.error('[PRO_LINE] Stack trace:', error.stack);
+      
+      // Return fallback: use MCP if available, else simple centerline copy
+      if (global.McpRacingLine && global.McpRacingLine.generateMcpLine) {
+        console.warn('[PRO_LINE] Falling back to MCP baseline');
+        try {
+          return global.McpRacingLine.generateMcpLine(centerline, roadWidth, options);
+        } catch (mcpError) {
+          console.error('[PRO_LINE] MCP fallback also failed:', mcpError);
+        }
+      }
+      
+      // Last resort: return centerline as-is
+      console.warn('[PRO_LINE] All algorithms failed, returning centerline');
+      return {
+        points: centerline.map(p => ({ x: p.x, y: p.y })),
+        meta: {
+          algorithm: 'FALLBACK_CENTERLINE',
+          error: error.message,
+        },
+      };
+    }
   }
 
   // Export

@@ -434,6 +434,10 @@
         isClosedLoop: closingDist < 10, // threshold: 10px
         numPoints: finalPath.length,
         config: cfg,
+        // Export for PRO_LINE use
+        centerline: c,
+        normals: normals,
+        offsets: offsets,
       },
     };
   }
