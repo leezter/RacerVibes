@@ -263,7 +263,7 @@
       }
     }
     
-    function displayMetrics(anchorValidation, mcpValidation) {
+    function displayMetrics(anchorValidation, mcpValidation, mcpMeta) {
       metricsDiv.innerHTML = '';
       
       if (anchorValidation) {
@@ -300,6 +300,16 @@
       }
       
       if (mcpValidation) {
+        const widthUsage = mcpMeta && mcpMeta.widthUsageRatio 
+          ? (mcpMeta.widthUsageRatio * 100).toFixed(1) 
+          : 'N/A';
+        const maxOffset = mcpMeta && mcpMeta.maxAbsOffset 
+          ? mcpMeta.maxAbsOffset.toFixed(1) 
+          : 'N/A';
+        const usableWidth = mcpMeta && mcpMeta.usableWidth 
+          ? mcpMeta.usableWidth.toFixed(1) 
+          : 'N/A';
+        
         const card = document.createElement('div');
         card.className = 'metric-card';
         card.innerHTML = `
@@ -307,6 +317,14 @@
           <div class="metric-row">
             <span class="metric-label">Length:</span>
             <span class="metric-value">${mcpValidation.length.toFixed(0)}px</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Width Usage:</span>
+            <span class="metric-value ${parseFloat(widthUsage) >= 70 ? 'good' : ''}">${widthUsage}%</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Max Offset:</span>
+            <span class="metric-value">${maxOffset}px / ${usableWidth}px</span>
           </div>
           <div class="metric-row">
             <span class="metric-label">Boundary Violations:</span>
@@ -372,7 +390,7 @@
       drawTrack(centerline);
       
       // Generate lines
-      let anchorLine, mcpLine, anchorValidation, mcpValidation;
+      let anchorLine, mcpLine, anchorValidation, mcpValidation, mcpMeta;
       
       if (mode === 'anchor' || mode === 'both') {
         anchorLine = window.RacerAI.generateRacingLine(centerline, ROAD_WIDTH, { mode: 'anchor' });
@@ -383,7 +401,26 @@
       }
       
       if (mode === 'mcp' || mode === 'both') {
-        mcpLine = window.RacerAI.generateRacingLine(centerline, ROAD_WIDTH, { mode: 'mcp' });
+        const mcpResult = window.McpRacingLine.generateMcpLine(centerline, ROAD_WIDTH, { debug: true });
+        mcpLine = mcpResult.points;
+        mcpMeta = mcpResult.meta;
+        
+        // Add curvature metadata for compatibility
+        const n = mcpLine.length;
+        for (let i = 0; i < n; i++) {
+          const prev = mcpLine[(i - 1 + n) % n];
+          const curr = mcpLine[i];
+          const next = mcpLine[(i + 1) % n];
+          const v1x = curr.x - prev.x;
+          const v1y = curr.y - prev.y;
+          const v2x = next.x - curr.x;
+          const v2y = next.y - curr.y;
+          const len1 = Math.hypot(v1x, v1y) || 1;
+          const len2 = Math.hypot(v2x, v2y) || 1;
+          const cross = (v1x / len1) * (v2y / len2) - (v1y / len1) * (v2x / len2);
+          curr.curvature = cross / ((len1 + len2) / 2);
+        }
+        
         mcpValidation = window.RacingLineValidation.validateRacingLine(centerline, ROAD_WIDTH, mcpLine);
         if (mode === 'mcp' || mode === 'both') {
           drawRacingLine(mcpLine, 'rgba(132, 204, 22, 0.9)', [18, 12]);
@@ -391,7 +428,7 @@
       }
       
       // Display metrics
-      displayMetrics(anchorValidation, mcpValidation);
+      displayMetrics(anchorValidation, mcpValidation, mcpMeta);
       
       // Add legend
       ctx.fillStyle = '#eee';

@@ -105,10 +105,40 @@ Default parameters (in `ai/mcp_racing_line.js`):
 - **`numSamples`**: 800 - Points to resample centerline
 - **`iterations`**: 120 - Optimization iterations
 - **`alpha`**: 0.35 - Step size for curvature reduction
-- **`beta`**: 0.08 - Regularization strength (smoothness)
-- **`margin`**: 8px - Safety margin from track edges
-- **`finalSmoothingPasses`**: 8 - Post-optimization smoothing
-- **`finalSmoothingStrength`**: 0.4 - Smoothing strength (0-1)
+- **`beta`**: 0.08 - Regularization strength (smoothness, no center bias)
+- **`margin`**: 3px - Safety margin from track edges (reduced to maximize width usage)
+- **`finalSmoothingPasses`**: 3 - Post-optimization smoothing (reduced to preserve offsets)
+- **`finalSmoothingStrength`**: 0.2 - Smoothing strength (reduced to prevent center bias)
+- **`centerBias`**: 0.0 - Optional center pull (disabled by default, higher pulls toward center)
+- **`debug`**: false - Enable debug logging for width usage diagnostics
+
+#### Center Bias Fix (v2)
+**Problem**: Early MCP implementation exhibited excessive center bias, causing the line to stay too close to the centerline on sustained corners (e.g., ovals, circles). The line behaved more like a "smoothed centerline" than a true minimum-curvature path.
+
+**Root Causes Identified:**
+1. **Aggressive final smoothing** (8 passes at 0.4 strength) pulled optimized offsets back toward the centerline
+2. **Large safety margin** (8px) reduced usable track width on both sides
+3. **Strong implicit bias** from smoothing dominated the curvature minimization
+
+**Fixes Applied:**
+- **Reduced margin**: 8px → 3px (allows ~94% of track width usage vs ~84%)
+- **Reduced final smoothing**: 8 passes → 3 passes, strength 0.4 → 0.2 (preserves offsets)
+- **Added explicit centerBias parameter**: Default 0.0 (no bias), optional for conservative lines
+- **Added debug logging**: Reports width usage ratio (target: 80-100% on constant-radius corners)
+
+**Re-enabling Center Bias:**
+If you prefer more conservative lines that stay closer to the centerline, set `centerBias` in options:
+```javascript
+const line = generateRacingLine(centerline, roadWidth, { 
+  mode: 'mcp', 
+  centerBias: 0.03  // Gentle pull toward center (0.01-0.05 recommended)
+});
+```
+
+**Expected Results:**
+- **Circle/Oval tracks**: Width usage ratio should be 80-100% (line hugs outside of turn)
+- **Chicanes**: Line cuts through S-curves more aggressively
+- **Hairpins**: Still stable, uses full available width
 
 #### When to Use MCP
 ✅ **Use MCP for:**
@@ -116,6 +146,7 @@ Default parameters (in `ai/mcp_racing_line.js`):
 - Tracks with gentle, flowing curves
 - Competitive lap times (often 10-25% shorter than centerline)
 - AI that takes more "geometric" optimal paths
+- Maximum track width usage on sustained corners
 
 ⚠️ **Stick with Anchor for:**
 - Tracks with tight hairpins (anchor handles these better)
@@ -168,8 +199,12 @@ Enable **Show validation metrics** to display:
 | **`numSamples`** | `DEFAULT_MCP_CONFIG` | **800**: Resolution of path sampling. Higher = more precise, slower. |
 | **`iterations`** | `DEFAULT_MCP_CONFIG` | **120**: Optimization iterations. Higher = smoother, slower. |
 | **`alpha`** | `DEFAULT_MCP_CONFIG` | **0.35**: Step size. Higher = faster convergence, risk of instability. |
-| **`beta`** | `DEFAULT_MCP_CONFIG` | **0.08**: Regularization. Higher = smoother offsets, less responsive to curvature. |
-| **`margin`** | `DEFAULT_MCP_CONFIG` | **8px**: Safety margin from walls. Increase for more conservative lines. |
+| **`beta`** | `DEFAULT_MCP_CONFIG` | **0.08**: Regularization. Smooths offsets without center bias. Higher = less jitter. |
+| **`margin`** | `DEFAULT_MCP_CONFIG` | **3px**: Safety margin from walls. Reduced to allow maximum width usage. |
+| **`finalSmoothingPasses`** | `DEFAULT_MCP_CONFIG` | **3**: Post-optimization smoothing passes. Reduced to preserve lateral offsets. |
+| **`finalSmoothingStrength`** | `DEFAULT_MCP_CONFIG` | **0.2**: Smoothing strength. Reduced to prevent pulling back toward center. |
+| **`centerBias`** | `DEFAULT_MCP_CONFIG` | **0.0**: Optional center pull. Set to 0 to maximize width usage. Increase (0.01-0.05) for more conservative lines. |
+| **`debug`** | `DEFAULT_MCP_CONFIG` | **false**: Enable console logging of width usage ratio and offsets. |
 
 ### Common Parameters
 | Parameter | Location | Effect |

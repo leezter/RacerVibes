@@ -29,9 +29,11 @@
     iterations: 120, // Optimization iterations
     alpha: 0.35, // Step size for curvature reduction
     beta: 0.08, // Regularization strength (smoothness)
-    margin: 8, // Safety margin from track edges (px)
-    finalSmoothingPasses: 8, // Post-optimization smoothing
-    finalSmoothingStrength: 0.4, // Smoothing strength (0-1)
+    margin: 3, // Safety margin from track edges (px) - reduced to allow more width usage
+    finalSmoothingPasses: 3, // Post-optimization smoothing - reduced to preserve offsets
+    finalSmoothingStrength: 0.2, // Smoothing strength (0-1) - reduced to prevent center bias
+    centerBias: 0.0, // Optional center pull (0 = no bias, higher = pulls toward center)
+    debug: false, // Enable debug logging
   };
 
   /**
@@ -177,6 +179,7 @@
     // 5. Iterative optimization
     let maxCurvProxy = 0;
     let avgCurvProxy = 0;
+    let maxAbsOffset = 0;
 
     for (let iter = 0; iter < cfg.iterations; iter++) {
       // Compute current path points
@@ -212,16 +215,25 @@
         // Push against curvature
         const curvPush = cfg.alpha * (d2[i].x * normals[i].x + d2[i].y * normals[i].y);
 
-        // Regularization (prevent jitter)
+        // Regularization (prevent jitter) - smooths offsets without center bias
         const prevOffset = offsets[(i - 1 + n) % n];
         const currOffset = offsets[i];
         const nextOffset = offsets[(i + 1) % n];
         const regPush = cfg.beta * (prevOffset - 2 * currOffset + nextOffset);
 
+        // Optional center bias (disabled by default)
+        const centerPull = -cfg.centerBias * currOffset;
+
         // Apply update and clamp
-        newOffsets[i] = clamp(currOffset + curvPush + regPush, aMin, aMax);
+        newOffsets[i] = clamp(currOffset + curvPush + regPush + centerPull, aMin, aMax);
       }
       offsets = newOffsets;
+    }
+
+    // Calculate max absolute offset after optimization
+    maxAbsOffset = 0;
+    for (let i = 0; i < n; i++) {
+      maxAbsOffset = Math.max(maxAbsOffset, Math.abs(offsets[i]));
     }
 
     // 6. Construct final path
@@ -250,12 +262,30 @@
       finalPath[0].y - finalPath[finalPath.length - 1].y
     );
 
+    // Debug logging
+    const usableWidth = halfWidth - cfg.margin;
+    const widthUsageRatio = usableWidth > 0 ? maxAbsOffset / usableWidth : 0;
+    
+    if (cfg.debug) {
+      console.log('[MCP Debug]');
+      console.log(`  Half width: ${halfWidth.toFixed(1)}px`);
+      console.log(`  Margin: ${cfg.margin}px`);
+      console.log(`  Usable width per side: ${usableWidth.toFixed(1)}px`);
+      console.log(`  Max abs offset: ${maxAbsOffset.toFixed(1)}px`);
+      console.log(`  Width usage ratio: ${(widthUsageRatio * 100).toFixed(1)}%`);
+      console.log(`  Avg curvature proxy: ${avgCurvProxy.toFixed(6)}`);
+      console.log(`  Max curvature proxy: ${maxCurvProxy.toFixed(6)}`);
+    }
+
     return {
       points: finalPath,
       meta: {
         iterations: cfg.iterations,
         maxCurvatureProxy: maxCurvProxy,
         avgCurvatureProxy: avgCurvProxy,
+        maxAbsOffset: maxAbsOffset,
+        widthUsageRatio: widthUsageRatio,
+        usableWidth: usableWidth,
         length: pathLength,
         closingDistance: closingDist,
         isClosedLoop: closingDist < 10, // threshold: 10px
