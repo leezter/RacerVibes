@@ -153,6 +153,17 @@
   <script src="../utils/utils.js"></script>
   <script src="../ai/optimal_line.js"></script>
   <script>
+    // Validate dependencies are loaded
+    if (typeof window.RacerUtils === 'undefined') {
+      console.error('RacerUtils not loaded. Make sure utils/utils.js is available.');
+      document.getElementById('status').textContent = 'Error: utils.js failed to load';
+    }
+    if (typeof window.RacerOptimalLine === 'undefined') {
+      console.error('RacerOptimalLine not loaded. Make sure ai/optimal_line.js is available.');
+      document.getElementById('status').textContent = 'Error: optimal_line.js failed to load';
+    }
+  </script>
+  <script>
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     

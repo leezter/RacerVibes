@@ -168,7 +168,7 @@
           aMin[i] = -halfWidth;
           aMax[i] = halfWidth;
         }
-        if (DEFAULT_CONFIG.debugMode) {
+        if (cfg.debugMode) {
           console.warn(`Invalid corridor at point ${i}, using fallback`);
         }
       }
@@ -247,6 +247,21 @@
   }
 
   /**
+   * Calculate curvature at a point using three points
+   */
+  function calculateCurvatureAtPoint(prev, curr, next) {
+    const v1x = curr.x - prev.x;
+    const v1y = curr.y - prev.y;
+    const v2x = next.x - curr.x;
+    const v2y = next.y - curr.y;
+    const len1 = Math.hypot(v1x, v1y) || 1;
+    const len2 = Math.hypot(v2x, v2y) || 1;
+    const cross = (v1x / len1) * (v2y / len2) - (v1y / len1) * (v2x / len2);
+    const avgLen = (len1 + len2) / 2;
+    return Math.abs(cross / avgLen);
+  }
+
+  /**
    * Calculate validation metrics for the racing line
    */
   function calculateMetrics(path, offsets, aMin, aMax) {
@@ -278,16 +293,7 @@
       const prev = path[prevIdx];
       const curr = path[i];
       const next = path[nextIdx];
-
-      const v1x = curr.x - prev.x;
-      const v1y = curr.y - prev.y;
-      const v2x = next.x - curr.x;
-      const v2y = next.y - curr.y;
-      const len1 = Math.hypot(v1x, v1y) || 1;
-      const len2 = Math.hypot(v2x, v2y) || 1;
-      const cross = (v1x / len1) * (v2y / len2) - (v1y / len1) * (v2x / len2);
-      const avgLen = (len1 + len2) / 2;
-      const curvature = Math.abs(cross / avgLen);
+      const curvature = calculateCurvatureAtPoint(prev, curr, next);
       maxCurvature = Math.max(maxCurvature, curvature);
     }
 
@@ -407,6 +413,7 @@
   // Export to global namespace
   global.RacerOptimalLine = {
     generate: generateOptimalRacingLineMinCurvature,
+    calculateCurvature: calculateCurvatureAtPoint,
     DEFAULT_CONFIG,
   };
 

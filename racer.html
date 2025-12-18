@@ -5163,27 +5163,21 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                     type="checkbox"
                     checked={showLineComparison}
                     onChange={(e) => {
-                      setShowLineComparison(e.target.checked);
-                      if (e.target.checked) {
-                        // Generate both lines for comparison
-                        setTimeout(() => {
-                          // Generate anchor line if not current
-                          if (racingLineAlgorithmRef.current !== 'ANCHOR') {
-                            const savedAlg = racingLineAlgorithmRef.current;
-                            racingLineAlgorithmRef.current = 'ANCHOR';
-                            runApplyAiLineOverrides({ forceCustom: true });
-                            racingLineAlgorithmRef.current = savedAlg;
-                          }
-                          // Generate optimal line if not current
-                          if (racingLineAlgorithmRef.current !== 'OPTIMAL_LINE') {
-                            const savedAlg = racingLineAlgorithmRef.current;
-                            racingLineAlgorithmRef.current = 'OPTIMAL_LINE';
-                            runApplyAiLineOverrides({ forceCustom: true });
-                            racingLineAlgorithmRef.current = savedAlg;
-                          }
-                          // Restore current algorithm
+                      const isEnabled = e.target.checked;
+                      setShowLineComparison(isEnabled);
+                      if (isEnabled) {
+                        // Generate both lines asynchronously to avoid blocking
+                        const savedAlg = racingLineAlgorithmRef.current;
+                        Promise.resolve().then(() => {
+                          racingLineAlgorithmRef.current = 'ANCHOR';
                           runApplyAiLineOverrides({ forceCustom: true });
-                        }, 0);
+                        }).then(() => new Promise(resolve => setTimeout(resolve, 10))).then(() => {
+                          racingLineAlgorithmRef.current = 'OPTIMAL_LINE';
+                          runApplyAiLineOverrides({ forceCustom: true });
+                        }).then(() => new Promise(resolve => setTimeout(resolve, 10))).then(() => {
+                          racingLineAlgorithmRef.current = savedAlg;
+                          runApplyAiLineOverrides({ forceCustom: true });
+                        });
                       }
                     }}
                   />
