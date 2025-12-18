@@ -68,14 +68,16 @@
   /**
    * Detect corner regions in the path using curvature analysis with hysteresis
    * @param {Array} centerline - Path points [{x, y}, ...]
+   * @param {Array} normals - Normal vectors for each point
    * @param {object} cfg - Configuration with curvature thresholds
-   * @returns {Array} - Corner regions [{start, end, turnSign, maxCurvIdx, peakCurv}, ...]
+   * @returns {Array} - Corner regions [{start, end, insideSign, maxCurvIdx, peakCurv, curvVec}, ...]
    */
-  function detectCorners(centerline, cfg) {
+  function detectCorners(centerline, normals, cfg) {
     const n = centerline.length;
     const curvatures = new Array(n);
+    const curvatureVectors = new Array(n);
 
-    // Compute raw curvature at each point using cross product
+    // Compute raw curvature at each point using second differences
     for (let i = 0; i < n; i++) {
       const iPrev = (i - 1 + n) % n;
       const iNext = (i + 1) % n;
@@ -84,15 +86,21 @@
       const p1 = centerline[i];
       const p2 = centerline[iNext];
 
-      const dx1 = p1.x - p0.x;
-      const dy1 = p1.y - p0.y;
-      const dx2 = p2.x - p1.x;
-      const dy2 = p2.y - p1.y;
+      // Second difference d2 = p[i-1] - 2*p[i] + p[i+1]
+      // This vector points toward the inside of the turn
+      const d2x = p0.x - 2 * p1.x + p2.x;
+      const d2y = p0.y - 2 * p1.y + p2.y;
+      const d2Mag = Math.hypot(d2x, d2y);
 
-      // Cross product gives signed curvature
-      const crossProduct = dx1 * dy2 - dy1 * dx2;
-      const denom = Math.hypot(dx1, dy1) * Math.hypot(dx2, dy2) + 1e-9;
-      curvatures[i] = crossProduct / denom;
+      // Store curvature magnitude
+      curvatures[i] = d2Mag;
+      
+      // Store normalized curvature vector (points toward inside of turn)
+      if (d2Mag > 1e-6) {
+        curvatureVectors[i] = { x: d2x / d2Mag, y: d2y / d2Mag };
+      } else {
+        curvatureVectors[i] = { x: 0, y: 0 }; // Straight section
+      }
     }
 
     // Apply moving average smoothing to reduce micro-curvature noise
@@ -111,22 +119,21 @@
     const corners = [];
     let inCorner = false;
     let cornerStart = -1;
-    let cornerSign = 0;
     let cornerPeakCurv = 0;
+    let cornerPeakIdx = -1;
 
     for (let i = 0; i < n + 1; i++) {
       // Wrap around to close loop
       const idx = i % n;
       const curv = smoothedCurv[idx];
-      const absCurv = Math.abs(curv);
 
-      if (!inCorner && absCurv > cfg.curvatureEnterThreshold) {
+      if (!inCorner && curv > cfg.curvatureEnterThreshold) {
         // Start new corner (enter threshold)
         inCorner = true;
         cornerStart = idx;
-        cornerSign = curv > 0 ? 1 : -1;
-        cornerPeakCurv = absCurv;
-      } else if (inCorner && absCurv < cfg.curvatureExitThreshold) {
+        cornerPeakCurv = curv;
+        cornerPeakIdx = idx;
+      } else if (inCorner && curv < cfg.curvatureExitThreshold) {
         // End corner (exit threshold)
         const cornerEnd = (idx - 1 + n) % n;
         const length = cornerEnd >= cornerStart 
@@ -135,18 +142,26 @@
 
         // Only keep corners that meet length and peak curvature requirements
         if (length >= cfg.minCornerLength && cornerPeakCurv >= cfg.curvaturePeakMin) {
+          // Compute insideSign from curvature vector at peak
+          const kVec = curvatureVectors[cornerPeakIdx];
+          const normal = normals[cornerPeakIdx];
+          const insideSign = Math.sign(kVec.x * normal.x + kVec.y * normal.y);
+          
           corners.push({
             start: cornerStart,
             end: cornerEnd,
-            turnSign: cornerSign,
-            maxCurvIdx: -1, // Will compute later
+            insideSign: insideSign, // +1 or -1 (or 0 for straight)
+            maxCurvIdx: cornerPeakIdx,
             peakCurv: cornerPeakCurv,
           });
         }
         inCorner = false;
       } else if (inCorner) {
         // Track peak curvature while in corner
-        cornerPeakCurv = Math.max(cornerPeakCurv, absCurv);
+        if (curv > cornerPeakCurv) {
+          cornerPeakCurv = curv;
+          cornerPeakIdx = idx;
+        }
       }
     }
 
@@ -160,31 +175,16 @@
         ? next.start - curr.end
         : n - curr.end + next.start;
 
-      if (gap < cfg.cornerMergeGap && curr.turnSign === next.turnSign) {
-        // Merge with next
+      if (gap < cfg.cornerMergeGap && curr.insideSign === next.insideSign) {
+        // Merge with next - update peak if needed
+        if (next.peakCurv > curr.peakCurv) {
+          curr.maxCurvIdx = next.maxCurvIdx;
+          curr.peakCurv = next.peakCurv;
+        }
         curr.end = next.end;
-        curr.peakCurv = Math.max(curr.peakCurv, next.peakCurv);
         i++; // Skip next
       }
       merged.push(curr);
-    }
-
-    // Find apex (max curvature) for each corner using smoothed curvatures
-    for (const corner of merged) {
-      let maxCurv = 0;
-      let maxIdx = corner.start;
-
-      for (let i = corner.start; ; i++) {
-        const idx = i % n;
-        const absCurv = Math.abs(smoothedCurv[idx]);
-        if (absCurv > maxCurv) {
-          maxCurv = absCurv;
-          maxIdx = idx;
-        }
-        if (idx === corner.end) break;
-      }
-
-      corner.maxCurvIdx = maxIdx;
     }
 
     return merged;
@@ -278,7 +278,7 @@
     }
 
     // Step 2: Detect corners
-    const corners = detectCorners(c, cfg);
+    const corners = detectCorners(c, normals, cfg);
 
     if (cfg.debug) {
       console.log(`[PRO_LINE] Detected ${corners.length} corners:`);
@@ -286,7 +286,7 @@
         const length = corner.end >= corner.start
           ? corner.end - corner.start + 1
           : n - corner.start + corner.end + 1;
-        console.log(`  Corner ${idx + 1}: [${corner.start}..${corner.end}] (${length} points), turnSign=${corner.turnSign}, apex=${corner.maxCurvIdx}, peakCurv=${corner.peakCurv.toFixed(6)}`);
+        console.log(`  Corner ${idx + 1}: [${corner.start}..${corner.end}] (${length} points), insideSign=${corner.insideSign}, apex=${corner.maxCurvIdx}, peakCurv=${corner.peakCurv.toFixed(6)}`);
       });
     }
 
@@ -299,9 +299,20 @@
     }
 
     // Step 3: Compute entry/apex/exit points for each corner
-    const cornerTargets = corners.map(corner => {
+    const cornerTargets = corners.map((corner, idx) => {
       const pts = computeCornerPoints(corner, n, cfg.entryLead, cfg.exitLead, cfg.lateApexFraction);
-      return { ...corner, ...pts };
+      
+      // Compute target offsets using curvature-vector-based inside/outside
+      // insideSign tells us which direction is "inside" relative to normals
+      const W = halfWidth - cfg.margin;
+      const aInside = corner.insideSign * W;
+      const aOutside = -corner.insideSign * W;
+      
+      if (cfg.debug) {
+        console.log(`  Corner ${idx + 1} targets: entry[${pts.iEntry}]=OUT(${aOutside.toFixed(1)}), apex[${pts.iApex}]=IN(${aInside.toFixed(1)}), exit[${pts.iExit}]=OUT(${aOutside.toFixed(1)})`);
+      }
+      
+      return { ...corner, ...pts, aInside, aOutside };
     });
 
     // Step 4: Compute target offsets
@@ -365,25 +376,22 @@
           // Apply Gaussian falloff for each constraint type
           const falloffDist = cfg.constraintFalloff * 2.5;
           
-          // Entry constraint (outside)
+          // Entry constraint (outside) - use pre-computed target
           if (entryDist < falloffDist) {
-            const entryTarget = -target.turnSign * (halfWidth - cfg.margin);
             const entryWeight = cfg.entryWeight * Math.exp(-entryDist * entryDist / (2 * cfg.constraintFalloff * cfg.constraintFalloff));
-            constraintPull += entryWeight * (entryTarget - offsets[i]);
+            constraintPull += entryWeight * (target.aOutside - offsets[i]);
           }
 
-          // Apex constraint (inside) - strongest
+          // Apex constraint (inside) - strongest, use pre-computed target
           if (apexDist < falloffDist) {
-            const apexTarget = target.turnSign * (halfWidth - cfg.margin);
             const apexWeight = cfg.apexWeight * Math.exp(-apexDist * apexDist / (2 * cfg.constraintFalloff * cfg.constraintFalloff));
-            constraintPull += apexWeight * (apexTarget - offsets[i]);
+            constraintPull += apexWeight * (target.aInside - offsets[i]);
           }
 
-          // Exit constraint (outside)
+          // Exit constraint (outside) - use pre-computed target
           if (exitDist < falloffDist) {
-            const exitTarget = -target.turnSign * (halfWidth - cfg.margin);
             const exitWeight = cfg.exitWeight * Math.exp(-exitDist * exitDist / (2 * cfg.constraintFalloff * cfg.constraintFalloff));
-            constraintPull += exitWeight * (exitTarget - offsets[i]);
+            constraintPull += exitWeight * (target.aOutside - offsets[i]);
           }
         }
 
