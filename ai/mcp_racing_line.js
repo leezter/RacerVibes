@@ -212,8 +212,26 @@
       // Update offsets
       const newOffsets = new Array(n);
       for (let i = 0; i < n; i++) {
-        // Push against curvature
+        // Push against curvature (reduces bending energy)
         const curvPush = cfg.alpha * (d2[i].x * normals[i].x + d2[i].y * normals[i].y);
+
+        // Path length minimization: on constant-radius curves, move inward (shorter path)
+        // Compute local curvature of centerline to determine inside direction
+        const iPrev = (i - 1 + n) % n;
+        const iNext = (i + 1) % n;
+        const dx1 = c[i].x - c[iPrev].x;
+        const dy1 = c[i].y - c[iPrev].y;
+        const dx2 = c[iNext].x - c[i].x;
+        const dy2 = c[iNext].y - c[i].y;
+        const crossProduct = dx1 * dy2 - dy1 * dx2;
+        // Positive cross = left turn (inside is to the right/positive normal)
+        // Negative cross = right turn (inside is to the left/negative normal)
+        const insideSign = crossProduct > 0 ? 1 : -1;
+        
+        // Length reduction push: move toward inside of turn
+        // Scale by local curvature magnitude to avoid pushing on straights
+        const localCurvMag = Math.abs(crossProduct) / (Math.hypot(dx1, dy1) * Math.hypot(dx2, dy2) + 1e-6);
+        const lengthPush = cfg.alpha * 2.0 * insideSign * localCurvMag * 100; // Increased scaling for better width usage
 
         // Regularization (prevent jitter) - smooths offsets without center bias
         const prevOffset = offsets[(i - 1 + n) % n];
@@ -225,7 +243,7 @@
         const centerPull = -cfg.centerBias * currOffset;
 
         // Apply update and clamp
-        newOffsets[i] = clamp(currOffset + curvPush + regPush + centerPull, aMin, aMax);
+        newOffsets[i] = clamp(currOffset + curvPush + lengthPush + regPush + centerPull, aMin, aMax);
       }
       offsets = newOffsets;
     }
