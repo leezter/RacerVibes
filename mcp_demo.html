@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MCP vs Anchor Racing Line Demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      padding: 20px;
+    }
+    h1 { color: #00d9ff; margin-bottom: 20px; }
+    .controls {
+      background: #2a2a4e;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    label {
+      display: inline-block;
+      margin-right: 20px;
+      margin-bottom: 10px;
+    }
+    select, button {
+      background: #1a1a2e;
+      color: #eee;
+      border: 1px solid #444;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-left: 8px;
+    }
+    button:hover { background: #2a2a4e; }
+    canvas {
+      background: #0a0a0a;
+      border-radius: 8px;
+      display: block;
+      margin: 20px auto;
+      border: 2px solid #444;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 15px;
+      margin-top: 20px;
+    }
+    .metric-card {
+      background: #2a2a4e;
+      padding: 15px;
+      border-radius: 8px;
+    }
+    .metric-card h3 {
+      color: #00d9ff;
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 0;
+      font-size: 14px;
+    }
+    .metric-label { color: #aaa; }
+    .metric-value { font-weight: bold; }
+    .good { color: #6ee7b7; }
+    .bad { color: #ef4444; }
+  </style>
+</head>
+<body>
+  <h1>🏎️ MCP vs Anchor Racing Line Comparison</h1>
+  
+  <div class="controls">
+    <label>
+      Track:
+      <select id="trackSelect">
+        <option value="hairpin">Hairpin Turn</option>
+        <option value="90corner">90° Corner</option>
+        <option value="chicane">Chicane</option>
+        <option value="circle">Circle</option>
+      </select>
+    </label>
+    <label>
+      Visualize:
+      <select id="visMode">
+        <option value="both">Both Lines</option>
+        <option value="anchor">Anchor Only</option>
+        <option value="mcp">MCP Only</option>
+      </select>
+    </label>
+    <button id="generateBtn">Generate Lines</button>
+  </div>
+  
+  <canvas id="canvas" width="1200" height="700"></canvas>
+  
+  <div class="metrics" id="metrics"></div>
+  
+  <!-- Load modules -->
+  <script src="utils/utils.js"></script>
+  <script src="ai/mcp_racing_line.js"></script>
+  <script src="ai/racing_line_validation.js"></script>
+  <script src="ai/racer_ai.js"></script>
+  
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const trackSelect = document.getElementById('trackSelect');
+    const visMode = document.getElementById('visMode');
+    const generateBtn = document.getElementById('generateBtn');
+    const metricsDiv = document.getElementById('metrics');
+    
+    const ROAD_WIDTH = 200;
+    
+    // Simple track generators
+    function generateHairpin() {
+      const points = [];
+      const centerX = 600, centerY = 450, radius = 150;
+      
+      // Straight approach
+      for (let i = 0; i < 30; i++) {
+        points.push({ x: centerX, y: 100 + i * 8 });
+      }
+      
+      // 180-degree turn
+      for (let i = 0; i <= 50; i++) {
+        const angle = Math.PI + (i / 50) * Math.PI;
+        points.push({
+          x: centerX + radius * Math.cos(angle),
+          y: centerY + radius * Math.sin(angle)
+        });
+      }
+      
+      // Straight exit
+      for (let i = 1; i < 30; i++) {
+        points.push({ x: centerX + 2 * radius, y: centerY + i * 8 });
+      }
+      
+      return points;
+    }
+    
+    function generate90Corner() {
+      const points = [];
+      
+      // Entry straight
+      for (let i = 0; i < 40; i++) {
+        points.push({ x: 300, y: 100 + i * 8 });
+      }
+      
+      // 90-degree turn
+      for (let i = 0; i <= 30; i++) {
+        const angle = Math.PI + (i / 30) * (Math.PI / 2);
+        points.push({
+          x: 400 + 100 * Math.cos(angle),
+          y: 420 + 100 * Math.sin(angle)
+        });
+      }
+      
+      // Exit straight
+      for (let i = 1; i < 40; i++) {
+        points.push({ x: 500 + i * 8, y: 420 });
+      }
+      
+      return points;
+    }
+    
+    function generateChicane() {
+      const points = [];
+      
+      // Entry
+      for (let i = 0; i < 25; i++) {
+        points.push({ x: 200 + i * 10, y: 300 });
+      }
+      
+      // Left chicane
+      for (let i = 0; i <= 20; i++) {
+        const t = i / 20;
+        points.push({
+          x: 450 + t * 150,
+          y: 300 - 80 * Math.sin(t * Math.PI)
+        });
+      }
+      
+      // Right chicane
+      for (let i = 0; i <= 20; i++) {
+        const t = i / 20;
+        points.push({
+          x: 600 + t * 150,
+          y: 300 + 80 * Math.sin(t * Math.PI)
+        });
+      }
+      
+      // Exit
+      for (let i = 1; i < 25; i++) {
+        points.push({ x: 750 + i * 10, y: 300 });
+      }
+      
+      return points;
+    }
+    
+    function generateCircle() {
+      const points = [];
+      const centerX = 600, centerY = 350, radius = 250;
+      
+      for (let i = 0; i < 100; i++) {
+        const angle = (i / 100) * Math.PI * 2;
+        points.push({
+          x: centerX + radius * Math.cos(angle),
+          y: centerY + radius * Math.sin(angle)
+        });
+      }
+      
+      return points;
+    }
+    
+    function drawTrack(centerline) {
+      // Draw track surface
+      ctx.strokeStyle = '#444';
+      ctx.lineWidth = ROAD_WIDTH;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      for (let i = 0; i < centerline.length; i++) {
+        if (i === 0) ctx.moveTo(centerline[i].x, centerline[i].y);
+        else ctx.lineTo(centerline[i].x, centerline[i].y);
+      }
+      ctx.stroke();
+      
+      // Draw centerline
+      ctx.strokeStyle = '#666';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      for (let i = 0; i < centerline.length; i++) {
+        if (i === 0) ctx.moveTo(centerline[i].x, centerline[i].y);
+        else ctx.lineTo(centerline[i].x, centerline[i].y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    
+    function drawRacingLine(line, color, dash) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 6;
+      ctx.setLineDash(dash);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      for (let i = 0; i < line.length; i++) {
+        if (i === 0) ctx.moveTo(line[i].x, line[i].y);
+        else ctx.lineTo(line[i].x, line[i].y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      
+      // Draw dots
+      ctx.fillStyle = color;
+      for (let i = 0; i < line.length; i += 10) {
+        ctx.beginPath();
+        ctx.arc(line[i].x, line[i].y, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    
+    function displayMetrics(anchorValidation, mcpValidation, mcpMeta) {
+      metricsDiv.innerHTML = '';
+      
+      if (anchorValidation) {
+        const card = document.createElement('div');
+        card.className = 'metric-card';
+        card.innerHTML = `
+          <h3>Anchor Line Metrics</h3>
+          <div class="metric-row">
+            <span class="metric-label">Length:</span>
+            <span class="metric-value">${anchorValidation.length.toFixed(0)}px</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Boundary Violations:</span>
+            <span class="metric-value ${anchorValidation.boundaryViolationsCount === 0 ? 'good' : 'bad'}">
+              ${anchorValidation.boundaryViolationsCount}
+            </span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Self-Intersections:</span>
+            <span class="metric-value ${anchorValidation.selfIntersectionsCount === 0 ? 'good' : 'bad'}">
+              ${anchorValidation.selfIntersectionsCount}
+            </span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Min Edge Distance:</span>
+            <span class="metric-value">${anchorValidation.minDistanceToEdge.toFixed(1)}px</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Avg Curvature:</span>
+            <span class="metric-value">${anchorValidation.curvatureStats.avg.toFixed(6)}</span>
+          </div>
+        `;
+        metricsDiv.appendChild(card);
+      }
+      
+      if (mcpValidation) {
+        const widthUsage = mcpMeta && mcpMeta.widthUsageRatio 
+          ? (mcpMeta.widthUsageRatio * 100).toFixed(1) 
+          : 'N/A';
+        const maxOffset = mcpMeta && mcpMeta.maxAbsOffset 
+          ? mcpMeta.maxAbsOffset.toFixed(1) 
+          : 'N/A';
+        const usableWidth = mcpMeta && mcpMeta.usableWidth 
+          ? mcpMeta.usableWidth.toFixed(1) 
+          : 'N/A';
+        
+        const card = document.createElement('div');
+        card.className = 'metric-card';
+        card.innerHTML = `
+          <h3>MCP Line Metrics</h3>
+          <div class="metric-row">
+            <span class="metric-label">Length:</span>
+            <span class="metric-value">${mcpValidation.length.toFixed(0)}px</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Width Usage:</span>
+            <span class="metric-value ${parseFloat(widthUsage) >= 70 ? 'good' : ''}">${widthUsage}%</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Max Offset:</span>
+            <span class="metric-value">${maxOffset}px / ${usableWidth}px</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Boundary Violations:</span>
+            <span class="metric-value ${mcpValidation.boundaryViolationsCount === 0 ? 'good' : 'bad'}">
+              ${mcpValidation.boundaryViolationsCount}
+            </span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Self-Intersections:</span>
+            <span class="metric-value ${mcpValidation.selfIntersectionsCount === 0 ? 'good' : 'bad'}">
+              ${mcpValidation.selfIntersectionsCount}
+            </span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Min Edge Distance:</span>
+            <span class="metric-value">${mcpValidation.minDistanceToEdge.toFixed(1)}px</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Avg Curvature:</span>
+            <span class="metric-value">${mcpValidation.curvatureStats.avg.toFixed(6)}</span>
+          </div>
+        `;
+        metricsDiv.appendChild(card);
+      }
+      
+      if (anchorValidation && mcpValidation) {
+        const lengthDiff = ((anchorValidation.length - mcpValidation.length) / anchorValidation.length * 100);
+        const card = document.createElement('div');
+        card.className = 'metric-card';
+        card.innerHTML = `
+          <h3>Comparison</h3>
+          <div class="metric-row">
+            <span class="metric-label">Length Difference:</span>
+            <span class="metric-value ${lengthDiff > 0 ? 'good' : ''}">${lengthDiff.toFixed(1)}%</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">MCP is:</span>
+            <span class="metric-value">${lengthDiff > 0 ? 'Shorter' : 'Longer'}</span>
+          </div>
+        `;
+        metricsDiv.appendChild(card);
+      }
+    }
+    
+    function generate() {
+      const trackType = trackSelect.value;
+      const mode = visMode.value;
+      
+      // Get centerline
+      let centerline;
+      switch (trackType) {
+        case 'hairpin': centerline = generateHairpin(); break;
+        case '90corner': centerline = generate90Corner(); break;
+        case 'chicane': centerline = generateChicane(); break;
+        case 'circle': centerline = generateCircle(); break;
+      }
+      
+      // Clear canvas
+      ctx.fillStyle = '#0a0a0a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Draw track
+      drawTrack(centerline);
+      
+      // Generate lines
+      let anchorLine, mcpLine, anchorValidation, mcpValidation, mcpMeta;
+      
+      if (mode === 'anchor' || mode === 'both') {
+        anchorLine = window.RacerAI.generateRacingLine(centerline, ROAD_WIDTH, { mode: 'anchor' });
+        anchorValidation = window.RacingLineValidation.validateRacingLine(centerline, ROAD_WIDTH, anchorLine);
+        if (mode === 'anchor' || mode === 'both') {
+          drawRacingLine(anchorLine, 'rgba(96, 165, 250, 0.9)', [28, 18]);
+        }
+      }
+      
+      if (mode === 'mcp' || mode === 'both') {
+        const mcpResult = window.McpRacingLine.generateMcpLine(centerline, ROAD_WIDTH, { debug: true });
+        mcpLine = mcpResult.points;
+        mcpMeta = mcpResult.meta;
+        
+        // Add curvature metadata for compatibility
+        const n = mcpLine.length;
+        for (let i = 0; i < n; i++) {
+          const prev = mcpLine[(i - 1 + n) % n];
+          const curr = mcpLine[i];
+          const next = mcpLine[(i + 1) % n];
+          const v1x = curr.x - prev.x;
+          const v1y = curr.y - prev.y;
+          const v2x = next.x - curr.x;
+          const v2y = next.y - curr.y;
+          const len1 = Math.hypot(v1x, v1y) || 1;
+          const len2 = Math.hypot(v2x, v2y) || 1;
+          const cross = (v1x / len1) * (v2y / len2) - (v1y / len1) * (v2x / len2);
+          curr.curvature = cross / ((len1 + len2) / 2);
+        }
+        
+        mcpValidation = window.RacingLineValidation.validateRacingLine(centerline, ROAD_WIDTH, mcpLine);
+        if (mode === 'mcp' || mode === 'both') {
+          drawRacingLine(mcpLine, 'rgba(132, 204, 22, 0.9)', [18, 12]);
+        }
+      }
+      
+      // Display metrics
+      displayMetrics(anchorValidation, mcpValidation, mcpMeta);
+      
+      // Add legend
+      ctx.fillStyle = '#eee';
+      ctx.font = '14px system-ui';
+      let y = 30;
+      if (mode === 'anchor' || mode === 'both') {
+        ctx.fillStyle = 'rgba(96, 165, 250, 0.9)';
+        ctx.fillText('■ Anchor Line', 20, y);
+        y += 25;
+      }
+      if (mode === 'mcp' || mode === 'both') {
+        ctx.fillStyle = 'rgba(132, 204, 22, 0.9)';
+        ctx.fillText('■ MCP Line', 20, y);
+      }
+    }
+    
+    generateBtn.addEventListener('click', generate);
+    trackSelect.addEventListener('change', generate);
+    visMode.addEventListener('change', generate);
+    
+    // Generate initial
+    generate();
+  </script>
+</body>
+</html>

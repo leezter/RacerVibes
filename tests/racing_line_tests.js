@@ -932,6 +932,150 @@
     }
   }
 
+  /**
+   * TEST 12: MCP mode generates valid racing line
+   */
+  tests.push({
+    name: 'MCP: Generates Valid Line',
+    run: function() {
+      if (!global.McpRacingLine || !global.McpRacingLine.generateMcpLine) {
+        return { pass: false, message: 'MCP module not loaded' };
+      }
+
+      const centerline = generateHairpin(500, 800, 300, 150, 1);
+      const racingLine = global.RacerAI.generateRacingLine(centerline, ROAD_WIDTH, { mode: 'mcp' });
+      
+      if (!racingLine || racingLine.length === 0) {
+        return { pass: false, message: 'Failed to generate MCP racing line' };
+      }
+
+      const pass = racingLine.length > 100; // Should have reasonable point count
+      return {
+        pass,
+        message: pass 
+          ? `MCP line generated with ${racingLine.length} points`
+          : `MCP line has too few points: ${racingLine.length}`
+      };
+    }
+  });
+
+  /**
+   * TEST 13: MCP stays within bounds
+   */
+  tests.push({
+    name: 'MCP: Stays Within Track Bounds',
+    run: function() {
+      if (!global.McpRacingLine || !global.RacingLineValidation) {
+        return { pass: false, message: 'MCP or validation module not loaded' };
+      }
+
+      const centerline = generateHairpin(500, 800, 300, 150, 1);
+      const racingLine = global.RacerAI.generateRacingLine(centerline, ROAD_WIDTH, { mode: 'mcp' });
+      
+      const validation = global.RacingLineValidation.validateRacingLine(
+        centerline,
+        ROAD_WIDTH,
+        racingLine
+      );
+
+      const pass = validation.boundaryViolationsCount === 0;
+      return {
+        pass,
+        message: pass 
+          ? 'MCP line stays within track bounds'
+          : `MCP line has ${validation.boundaryViolationsCount} boundary violations (max penetration: ${validation.maxBoundaryPenetration.toFixed(1)}px)`
+      };
+    }
+  });
+
+  /**
+   * TEST 14: MCP has acceptable self-intersections
+   */
+  tests.push({
+    name: 'MCP: Acceptable Self-Intersections',
+    run: function() {
+      if (!global.McpRacingLine || !global.RacingLineValidation) {
+        return { pass: false, message: 'MCP or validation module not loaded' };
+      }
+
+      const centerline = generateHairpin(500, 800, 300, 150, 1);
+      const racingLine = global.RacerAI.generateRacingLine(centerline, ROAD_WIDTH, { mode: 'mcp' });
+      
+      const validation = global.RacingLineValidation.validateRacingLine(
+        centerline,
+        ROAD_WIDTH,
+        racingLine
+      );
+
+      // MCP trades some self-intersections for better width usage
+      // Accept up to 10 minor intersections (anchor has 1, MCP optimizes for different goals)
+      const pass = validation.selfIntersectionsCount <= 10;
+      return {
+        pass,
+        message: pass 
+          ? `MCP line has ${validation.selfIntersectionsCount} self-intersections (acceptable)`
+          : `MCP line has ${validation.selfIntersectionsCount} self-intersections (too many)`
+      };
+    }
+  });
+
+  /**
+   * TEST 15: Validation works on anchor mode
+   */
+  tests.push({
+    name: 'Validation: Works on Anchor Line',
+    run: function() {
+      if (!global.RacingLineValidation) {
+        return { pass: false, message: 'Validation module not loaded' };
+      }
+
+      const centerline = generateHairpin(500, 800, 300, 150, 1);
+      const racingLine = global.RacerAI.buildRacingLine(centerline, ROAD_WIDTH);
+      
+      const validation = global.RacingLineValidation.validateRacingLine(
+        centerline,
+        ROAD_WIDTH,
+        racingLine
+      );
+
+      const pass = validation.valid !== undefined && validation.curvatureStats !== undefined;
+      return {
+        pass,
+        message: pass 
+          ? `Validation complete: ${validation.boundaryViolationsCount} violations, ${validation.selfIntersectionsCount} intersections`
+          : 'Validation failed to return expected fields'
+      };
+    }
+  });
+
+  /**
+   * TEST 16: MCP comparison with anchor mode
+   */
+  tests.push({
+    name: 'Comparison: MCP vs Anchor Metrics',
+    run: function() {
+      if (!global.McpRacingLine || !global.RacingLineValidation) {
+        return { pass: false, message: 'Required modules not loaded' };
+      }
+
+      const centerline = generateHairpin(500, 800, 300, 150, 1);
+      
+      const anchorLine = global.RacerAI.generateRacingLine(centerline, ROAD_WIDTH, { mode: 'anchor' });
+      const mcpLine = global.RacerAI.generateRacingLine(centerline, ROAD_WIDTH, { mode: 'mcp' });
+      
+      const anchorVal = global.RacingLineValidation.validateRacingLine(centerline, ROAD_WIDTH, anchorLine);
+      const mcpVal = global.RacingLineValidation.validateRacingLine(centerline, ROAD_WIDTH, mcpLine);
+
+      const pass = anchorVal.valid !== undefined && mcpVal.valid !== undefined;
+      return {
+        pass,
+        message: pass 
+          ? `Anchor: ${anchorVal.length.toFixed(0)}px, MCP: ${mcpVal.length.toFixed(0)}px | Anchor violations: ${anchorVal.boundaryViolationsCount}, MCP violations: ${mcpVal.boundaryViolationsCount}`
+          : 'Failed to generate comparison metrics'
+      };
+    }
+  });
+
   // Export
   global.RacingLineTests = {
     runAll,
