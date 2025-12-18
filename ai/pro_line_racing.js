@@ -26,41 +26,33 @@
   const clamp = utils.clamp || ((v, min, max) => (v < min ? min : v > max ? max : v));
 
   // Default configuration for PRO_LINE mode
+  // Strategy: Use MCP's stable elastic band solver directly
   const DEFAULT_PRO_LINE_CONFIG = {
-    // MCP baseline settings
+    // Core MCP settings (use proven stable algorithm)
     numSamples: 800,
-    mcpIterations: 60, // Fewer iterations for baseline (PRO will refine)
-    mcpAlpha: 0.25,
-    mcpBeta: 0.08,
-    margin: 3,
+    iterations: 150, // More iterations for refinement
+    alpha: 0.3, // Step size for curvature minimization
+    beta: 0.08, // Regularization strength
+    margin: 3, // Safety margin from walls
 
-    // Corner detection (with hysteresis)
-    curvatureEnterThreshold: 0.0003, // Higher threshold to START detecting a corner
-    curvatureExitThreshold: 0.00015, // Lower threshold to STOP detecting a corner
-    curvaturePeakMin: 0.0004, // Discard corners with peak below this
-    minCornerLength: 20, // Minimum points to be considered a corner (increased)
-    cornerMergeGap: 12, // Merge corners separated by < this many points
-    cornerSmoothWindow: 5, // Moving average window for curvature smoothing
+    // Pro-style shaping (optional second pass - currently disabled for stability)
+    enableProShaping: false, // Set to true to enable entry/apex/exit shaping
+    shapingIterations: 40, // Additional iterations if shaping enabled
+    shapingWeight: 0.3, // Weight for pro-style constraints
 
-    // Entry/Apex/Exit positioning
-    entryLead: 12, // Points before corner start for entry
-    exitLead: 12, // Points after corner end for exit
-    lateApexFraction: 0.35, // Shift apex this fraction toward exit (0.35 = 35% late)
-
-    // Pro-line optimization
-    proIterations: 80, // Additional iterations for pro-style refinement
-    proAlpha: 0.3, // Step size
-    proBeta: 0.06, // Regularization
-    
-    // Soft constraint weights (reduced to avoid oscillation)
-    entryWeight: 0.5, // Pull toward outside before corner
-    apexWeight: 0.8, // Pull toward inside at apex (strongest)
-    exitWeight: 0.5, // Pull toward outside after corner
-    constraintFalloff: 12, // Gaussian falloff distance (points) - wider spread
+    // Corner detection (only used if enableProShaping = true)
+    curvatureEnterThreshold: 0.0005, // Very conservative
+    curvatureExitThreshold: 0.0002,
+    curvaturePeakMin: 0.0006,
+    minCornerLength: 30, // Longer minimum
+    cornerMergeGap: 15,
+    entryLead: 15,
+    exitLead: 15,
+    lateApexFraction: 0.35,
 
     // Final smoothing
-    finalSmoothingPasses: 4,
-    finalSmoothingStrength: 0.25,
+    finalSmoothingPasses: 3,
+    finalSmoothingStrength: 0.2,
 
     debug: false,
   };
@@ -215,239 +207,193 @@
 
   /**
    * Generate PRO_LINE racing line
+   * Uses MCP's proven stable elastic band solver directly.
+   * Pro-style shaping (entry/apex/exit) can optionally be enabled as a second pass.
+   * 
    * @param {Array} centerline - Track centerline points [{x, y}, ...]
    * @param {number} roadWidth - Track width (px)
    * @param {object} options - Configuration overrides
-   * @returns {object} - {points, meta, corners}
+   * @returns {object} - {points, meta}
    */
   function generateProLine(centerline, roadWidth, options = {}) {
     try {
       const cfg = { ...DEFAULT_PRO_LINE_CONFIG, ...options };
       const halfWidth = roadWidth / 2;
-      const n = cfg.numSamples;
 
       if (cfg.debug) {
-        console.log('[PRO_LINE] Starting generation...');
-        console.log(`  Centerline points: ${centerline.length}, Target samples: ${n}`);
+        console.log('[PRO_LINE] Using stable MCP elastic band solver');
+        console.log(`  Centerline points: ${centerline.length}`);
         console.log(`  Track width: ${roadWidth}px, Half width: ${halfWidth}px`);
+        console.log(`  Pro shaping: ${cfg.enableProShaping ? 'ENABLED' : 'DISABLED (stable mode)'}`);
       }
 
       // Validate inputs
       if (!centerline || !Array.isArray(centerline) || centerline.length < 3) {
-        console.error('[PRO_LINE] Invalid centerline:', centerline);
         throw new Error('PRO_LINE requires valid centerline with at least 3 points');
       }
       if (!roadWidth || roadWidth <= 0) {
-        console.error('[PRO_LINE] Invalid road width:', roadWidth);
         throw new Error('PRO_LINE requires positive road width');
       }
 
-      // Step 1: Generate MCP baseline using existing module
-      if (!global.McpRacingLine) {
-        console.error('[PRO_LINE] McpRacingLine module not found on window/global');
+      // Use MCP module directly with PRO_LINE config
+      if (!global.McpRacingLine || !global.McpRacingLine.generateMcpLine) {
         throw new Error('McpRacingLine module not loaded. Include mcp_racing_line.js first.');
       }
-      if (!global.McpRacingLine.generateMcpLine) {
-        console.error('[PRO_LINE] McpRacingLine.generateMcpLine function not found');
-        throw new Error('McpRacingLine.generateMcpLine function not available');
-      }
 
+      // Generate using MCP's stable elastic band algorithm
       const mcpOptions = {
         numSamples: cfg.numSamples,
-        iterations: cfg.mcpIterations,
-        alpha: cfg.mcpAlpha,
-        beta: cfg.mcpBeta,
+        iterations: cfg.iterations, // Use PRO_LINE's iteration count
+        alpha: cfg.alpha,
+        beta: cfg.beta,
         margin: cfg.margin,
-        centerBias: 0,
-        debug: false,
+        finalSmoothingPasses: cfg.finalSmoothingPasses,
+        finalSmoothingStrength: cfg.finalSmoothingStrength,
+        centerBias: 0, // No center bias
+        debug: cfg.debug,
       };
 
-      const mcpResult = global.McpRacingLine.generateMcpLine(centerline, roadWidth, mcpOptions);
+      const result = global.McpRacingLine.generateMcpLine(centerline, roadWidth, mcpOptions);
       
-      if (!mcpResult || !mcpResult.points || !mcpResult.meta) {
-        console.error('[PRO_LINE] MCP result invalid:', mcpResult);
-        throw new Error('MCP baseline generation failed');
+      if (!result || !result.points || !result.meta) {
+        throw new Error('MCP generation failed');
       }
-      
-      const basePoints = mcpResult.points;
-      const normals = mcpResult.meta.normals;
-      const c = mcpResult.meta.centerline;
 
-    if (cfg.debug) {
-      console.log(`[PRO_LINE] MCP baseline generated: ${basePoints.length} points`);
-    }
+      // If pro shaping is disabled (default for stability), return MCP result directly
+      if (!cfg.enableProShaping) {
+        if (cfg.debug) {
+          console.log('[PRO_LINE] Returning stable MCP elastic band solution (no pro shaping)');
+        }
+        
+        // Update metadata to indicate PRO_LINE algorithm
+        result.meta.algorithm = 'PRO_LINE';
+        result.meta.baselineAlgorithm = 'MCP';
+        result.meta.proShapingEnabled = false;
+        
+        return result;
+      }
 
-    // Step 2: Detect corners
-    const corners = detectCorners(c, normals, cfg);
+      // Optional: Pro-style shaping as second pass
+      // This section is only reached if enableProShaping = true
+      if (cfg.debug) {
+        console.log('[PRO_LINE] Applying optional pro-style shaping...');
+      }
 
-    if (cfg.debug) {
-      console.log(`[PRO_LINE] Detected ${corners.length} corners:`);
-      corners.forEach((corner, idx) => {
-        const length = corner.end >= corner.start
-          ? corner.end - corner.start + 1
-          : n - corner.start + corner.end + 1;
-        console.log(`  Corner ${idx + 1}: [${corner.start}..${corner.end}] (${length} points), insideSign=${corner.insideSign}, apex=${corner.maxCurvIdx}, peakCurv=${corner.peakCurv.toFixed(6)}`);
+      const basePoints = result.points;
+      const normals = result.meta.normals;
+      const c = result.meta.centerline;
+      const n = c.length;
+
+      // Detect corners
+      const corners = detectCorners(c, normals, cfg);
+
+      if (cfg.debug) {
+        console.log(`[PRO_LINE] Detected ${corners.length} corners for shaping`);
+      }
+
+      // If no corners, return baseline
+      if (corners.length === 0) {
+        result.meta.algorithm = 'PRO_LINE';
+        result.meta.baselineAlgorithm = 'MCP';
+        result.meta.proShapingEnabled = true;
+        result.meta.cornersDetected = 0;
+        return result;
+      }
+
+      // Compute entry/apex/exit points
+      const cornerTargets = corners.map((corner) => {
+        const pts = computeCornerPoints(corner, n, cfg.entryLead, cfg.exitLead, cfg.lateApexFraction);
+        const W = halfWidth - cfg.margin;
+        const aInside = corner.insideSign * W;
+        const aOutside = -corner.insideSign * W;
+        return { ...corner, ...pts, aInside, aOutside };
       });
-    }
 
-    // If no corners detected, just return smoothed MCP baseline
-    if (corners.length === 0) {
-      if (cfg.debug) {
-        console.log('[PRO_LINE] No corners detected, returning MCP baseline');
+      // Extract offsets from baseline
+      const offsets = result.meta.offsets || new Array(n).fill(0);
+      const aMin = -(halfWidth - cfg.margin);
+      const aMax = halfWidth - cfg.margin;
+
+      // Apply very gentle shaping iterations
+      for (let iter = 0; iter < cfg.shapingIterations; iter++) {
+        const p = offsets.map((a, i) => ({
+          x: c[i].x + normals[i].x * a,
+          y: c[i].y + normals[i].y * a,
+        }));
+
+        const d2 = new Array(n);
+        for (let i = 0; i < n; i++) {
+          const iPrev = (i - 1 + n) % n;
+          const iNext = (i + 1) % n;
+          d2[i] = {
+            x: p[iPrev].x - 2 * p[i].x + p[iNext].x,
+            y: p[iPrev].y - 2 * p[i].y + p[iNext].y,
+          };
+        }
+
+        const newOffsets = new Array(n);
+        for (let i = 0; i < n; i++) {
+          const iPrev = (i - 1 + n) % n;
+          const iNext = (i + 1) % n;
+
+          // Primary: curvature minimization
+          const curvPush = cfg.alpha * (d2[i].x * normals[i].x + d2[i].y * normals[i].y);
+          const jitterUpdate = cfg.beta * (offsets[iPrev] - 2 * offsets[i] + offsets[iNext]);
+
+          // Secondary: very gentle shaping pull
+          let shapingPull = 0;
+          for (const target of cornerTargets) {
+            const entryDist = Math.min(Math.abs(i - target.iEntry), n - Math.abs(i - target.iEntry));
+            const apexDist = Math.min(Math.abs(i - target.iApex), n - Math.abs(i - target.iApex));
+            const exitDist = Math.min(Math.abs(i - target.iExit), n - Math.abs(i - target.iExit));
+
+            const falloff = 20; // Wide falloff
+            if (entryDist < falloff) {
+              const w = cfg.shapingWeight * 0.3 * Math.exp(-entryDist * entryDist / (2 * falloff * falloff));
+              shapingPull += w * (target.aOutside - offsets[i]);
+            }
+            if (apexDist < falloff) {
+              const w = cfg.shapingWeight * 0.5 * Math.exp(-apexDist * apexDist / (2 * falloff * falloff));
+              shapingPull += w * (target.aInside - offsets[i]);
+            }
+            if (exitDist < falloff) {
+              const w = cfg.shapingWeight * 0.3 * Math.exp(-exitDist * exitDist / (2 * falloff * falloff));
+              shapingPull += w * (target.aOutside - offsets[i]);
+            }
+          }
+
+          newOffsets[i] = clamp(
+            offsets[i] + curvPush + jitterUpdate + shapingPull,
+            aMin,
+            aMax
+          );
+        }
+
+        offsets.splice(0, n, ...newOffsets);
       }
-      return mcpResult;
-    }
 
-    // Step 3: Compute entry/apex/exit points for each corner
-    const cornerTargets = corners.map((corner, idx) => {
-      const pts = computeCornerPoints(corner, n, cfg.entryLead, cfg.exitLead, cfg.lateApexFraction);
-      
-      // Compute target offsets using curvature-vector-based inside/outside
-      // insideSign tells us which direction is "inside" relative to normals
-      const W = halfWidth - cfg.margin;
-      const aInside = corner.insideSign * W;
-      const aOutside = -corner.insideSign * W;
-      
-      if (cfg.debug) {
-        console.log(`  Corner ${idx + 1} targets: entry[${pts.iEntry}]=OUT(${aOutside.toFixed(1)}), apex[${pts.iApex}]=IN(${aInside.toFixed(1)}), exit[${pts.iExit}]=OUT(${aOutside.toFixed(1)})`);
-      }
-      
-      return { ...corner, ...pts, aInside, aOutside };
-    });
-
-    // Step 4: Compute target offsets
-    const aMin = -(halfWidth - cfg.margin);
-    const aMax = halfWidth - cfg.margin;
-
-    // Extract initial offsets from MCP baseline
-    const offsets = new Array(n);
-    for (let i = 0; i < n; i++) {
-      // Project basePoint onto normal to get offset
-      const dx = basePoints[i].x - c[i].x;
-      const dy = basePoints[i].y - c[i].y;
-      offsets[i] = dx * normals[i].x + dy * normals[i].y;
-      offsets[i] = clamp(offsets[i], aMin, aMax);
-    }
-
-    if (cfg.debug) {
-      console.log('[PRO_LINE] Starting pro-style optimization...');
-    }
-
-    // Step 5: Pro-line optimization with soft constraints
-    for (let iter = 0; iter < cfg.proIterations; iter++) {
-      // Build points from current offsets
-      const p = offsets.map((a, i) => ({
+      // Build final points
+      const finalPoints = offsets.map((a, i) => ({
         x: c[i].x + normals[i].x * a,
         y: c[i].y + normals[i].y * a,
       }));
 
-      // Compute second differences (curvature proxy)
-      const d2 = new Array(n);
-      for (let i = 0; i < n; i++) {
-        const iPrev = (i - 1 + n) % n;
-        const iNext = (i + 1) % n;
-        d2[i] = {
-          x: p[iPrev].x - 2 * p[i].x + p[iNext].x,
-          y: p[iPrev].y - 2 * p[i].y + p[iNext].y,
-        };
+      const maxAbsOffset = Math.max(...offsets.map(Math.abs));
+      const widthUsageRatio = maxAbsOffset / (halfWidth - cfg.margin);
+
+      if (cfg.debug) {
+        console.log('[PRO_LINE] Shaping complete');
+        console.log(`  Width usage: ${(widthUsageRatio * 100).toFixed(1)}%`);
+        console.log(`  Corners shaped: ${corners.length}`);
       }
-
-      // Update offsets
-      const newOffsets = new Array(n);
-      for (let i = 0; i < n; i++) {
-        const iPrev = (i - 1 + n) % n;
-        const iNext = (i + 1) % n;
-
-        // Curvature minimization (push against bending)
-        const curvPush = cfg.proAlpha * (d2[i].x * normals[i].x + d2[i].y * normals[i].y);
-
-        // Regularization (jitter reduction)
-        const jitterUpdate = cfg.proBeta * (offsets[iPrev] - 2 * offsets[i] + offsets[iNext]);
-
-        // Soft constraints toward entry/apex/exit targets
-        // Use weighted average of all nearby constraints
-        let constraintPull = 0;
-        for (const target of cornerTargets) {
-          // Compute distances (handle wrap-around)
-          const entryDist = Math.min(Math.abs(i - target.iEntry), n - Math.abs(i - target.iEntry));
-          const apexDist = Math.min(Math.abs(i - target.iApex), n - Math.abs(i - target.iApex));
-          const exitDist = Math.min(Math.abs(i - target.iExit), n - Math.abs(i - target.iExit));
-
-          // Apply Gaussian falloff for each constraint type
-          const falloffDist = cfg.constraintFalloff * 2.5;
-          
-          // Entry constraint (outside) - use pre-computed target
-          if (entryDist < falloffDist) {
-            const entryWeight = cfg.entryWeight * Math.exp(-entryDist * entryDist / (2 * cfg.constraintFalloff * cfg.constraintFalloff));
-            constraintPull += entryWeight * (target.aOutside - offsets[i]);
-          }
-
-          // Apex constraint (inside) - strongest, use pre-computed target
-          if (apexDist < falloffDist) {
-            const apexWeight = cfg.apexWeight * Math.exp(-apexDist * apexDist / (2 * cfg.constraintFalloff * cfg.constraintFalloff));
-            constraintPull += apexWeight * (target.aInside - offsets[i]);
-          }
-
-          // Exit constraint (outside) - use pre-computed target
-          if (exitDist < falloffDist) {
-            const exitWeight = cfg.exitWeight * Math.exp(-exitDist * exitDist / (2 * cfg.constraintFalloff * cfg.constraintFalloff));
-            constraintPull += exitWeight * (target.aOutside - offsets[i]);
-          }
-        }
-
-        // Combine updates
-        newOffsets[i] = clamp(
-          offsets[i] + curvPush + jitterUpdate + constraintPull,
-          aMin,
-          aMax
-        );
-      }
-
-      offsets.splice(0, n, ...newOffsets);
-    }
-
-    if (cfg.debug) {
-      console.log('[PRO_LINE] Optimization complete');
-    }
-
-    // Step 6: Final smoothing on offsets
-    for (let pass = 0; pass < cfg.finalSmoothingPasses; pass++) {
-      const smoothed = new Array(n);
-      for (let i = 0; i < n; i++) {
-        const iPrev = (i - 1 + n) % n;
-        const iNext = (i + 1) % n;
-        const neighborAvg = (offsets[iPrev] + offsets[iNext]) / 2;
-        smoothed[i] = offsets[i] + (neighborAvg - offsets[i]) * cfg.finalSmoothingStrength;
-        smoothed[i] = clamp(smoothed[i], aMin, aMax);
-      }
-      offsets.splice(0, n, ...smoothed);
-    }
-
-    // Build final points
-    const finalPoints = offsets.map((a, i) => ({
-      x: c[i].x + normals[i].x * a,
-      y: c[i].y + normals[i].y * a,
-    }));
-
-    // Calculate metrics
-    const maxAbsOffset = Math.max(...offsets.map(Math.abs));
-    const widthUsageRatio = maxAbsOffset / (halfWidth - cfg.margin);
-
-    if (cfg.debug) {
-      console.log('[PRO_LINE Debug - Final Results]');
-      console.log(`  Half width: ${halfWidth.toFixed(1)}px`);
-      console.log(`  Margin: ${cfg.margin}px`);
-      console.log(`  Max abs offset: ${maxAbsOffset.toFixed(1)}px`);
-      console.log(`  Width usage ratio: ${(widthUsageRatio * 100).toFixed(1)}% (target: 80-100%)`);
-      console.log(`  Corners detected: ${corners.length}`);
-    }
 
       return {
         points: finalPoints,
         meta: {
           algorithm: 'PRO_LINE',
           baselineAlgorithm: 'MCP',
-          corners: cornerTargets,
+          proShapingEnabled: true,
+          cornersDetected: corners.length,
           widthUsageRatio,
           maxAbsOffset,
           centerline: c,
