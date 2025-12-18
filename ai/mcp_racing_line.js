@@ -210,15 +210,37 @@
     const rawNormals = computeNormals(tangents);
     const normals = enforceNormalContinuity(rawNormals);
 
-    // 3. Initialize offsets (start at centerline)
-    let offsets = new Array(n).fill(0);
-
-    // 4. Compute bounds
+    // 3. Compute bounds
     const halfWidth = roadWidth / 2;
     const aMin = -(halfWidth - cfg.margin);
     const aMax = halfWidth - cfg.margin;
 
-    // 5. Iterative optimization
+    // 4. Initialize offsets - start on outside of turns for minimum curvature
+    let offsets = new Array(n);
+    for (let i = 0; i < n; i++) {
+      // Detect turn direction from centerline geometry
+      const iPrev = (i - 1 + n) % n;
+      const iNext = (i + 1) % n;
+      const dx1 = c[i].x - c[iPrev].x;
+      const dy1 = c[i].y - c[iPrev].y;
+      const dx2 = c[iNext].x - c[i].x;
+      const dy2 = c[iNext].y - c[i].y;
+      const crossProduct = dx1 * dy2 - dy1 * dx2;
+      
+      // On turns, initialize to outside (opposite of inside direction)
+      // Positive cross = left turn, outside is negative offset
+      // Negative cross = right turn, outside is positive offset
+      const localCurvMag = Math.abs(crossProduct) / (Math.hypot(dx1, dy1) * Math.hypot(dx2, dy2) + 1e-6);
+      const outsideSign = crossProduct > 0 ? -1 : 1;
+      
+      // Initialize to outside edge - this is the true minimum curvature for circular sections
+      // Use full usable width scaled by local curvature
+      const targetOffset = (halfWidth - cfg.margin) * Math.min(localCurvMag * 10000, 1.0);
+      offsets[i] = outsideSign * targetOffset;
+    }
+
+    // 5. Iterative optimization to minimize curvature energy E = sum ||d2[i]||^2
+    let energy = 0;
     let maxCurvProxy = 0;
     let avgCurvProxy = 0;
     let maxAbsOffset = 0;
@@ -235,6 +257,7 @@
 
       // Compute second differences (curvature proxy)
       const d2 = new Array(n);
+      energy = 0;
       maxCurvProxy = 0;
       avgCurvProxy = 0;
       for (let i = 0; i < n; i++) {
@@ -246,65 +269,56 @@
           y: prev.y - 2 * curr.y + next.y,
         };
         const mag = Math.hypot(d2[i].x, d2[i].y);
+        energy += mag * mag;
         maxCurvProxy = Math.max(maxCurvProxy, mag);
         avgCurvProxy += mag;
       }
       avgCurvProxy /= n;
 
-      // Update offsets
+      // Debug logging every 10 iterations
+      if (cfg.debug && iter % 10 === 0) {
+        const maxAbsOffsetRatio = maxAbsOffset / (halfWidth - cfg.margin);
+        console.log(`[MCP Iter ${iter}] Energy=${energy.toFixed(2)}, maxOffsetRatio=${maxAbsOffsetRatio.toFixed(3)}`);
+      }
+
+      // Update offsets using simplified curvature gradient
       const newOffsets = new Array(n);
       for (let i = 0; i < n; i++) {
-        // Push against curvature (reduces bending energy)
-        const curvPush = cfg.alpha * (d2[i].x * normals[i].x + d2[i].y * normals[i].y);
-
-        // Path length minimization: on constant-radius curves, move inward (shorter path)
-        // Compute local curvature of centerline to determine inside direction
         const iPrev = (i - 1 + n) % n;
         const iNext = (i + 1) % n;
+        
+        // Push against local curvature (second difference) - reduces bending
+        const curvPush = cfg.alpha * (d2[i].x * normals[i].x + d2[i].y * normals[i].y);
+
+        // Radius preference: on circular sections, prefer OUTSIDE (larger radius = less absolute curvature)
+        // Detect if this is a circular/constant-curvature section
         const dx1 = c[i].x - c[iPrev].x;
         const dy1 = c[i].y - c[iPrev].y;
         const dx2 = c[iNext].x - c[i].x;
         const dy2 = c[iNext].y - c[i].y;
         const crossProduct = dx1 * dy2 - dy1 * dx2;
-        // Positive cross = left turn (inside is to the right/positive normal)
-        // Negative cross = right turn (inside is to the left/negative normal)
-        const insideSign = crossProduct > 0 ? 1 : -1;
-        
-        // Length reduction push: move toward inside of turn
-        // Scale by local curvature magnitude to avoid pushing on straights
         const localCurvMag = Math.abs(crossProduct) / (Math.hypot(dx1, dy1) * Math.hypot(dx2, dy2) + 1e-6);
         
-        // Reduce aggressiveness on extremely tight turns to prevent jumps
-        // Curvature > 0.02 (radius < 50px) gets scaled down gradually
-        const curvatureLimit = 0.02;
-        const lengthScale = localCurvMag < curvatureLimit ? 1.0 : Math.sqrt(curvatureLimit / localCurvMag);
-        
-        const lengthPush = cfg.alpha * 1.0 * insideSign * localCurvMag * 100 * lengthScale;
+        // For circular sections (constant curvature), push toward outside
+        // Outside = opposite of inside direction
+        const outsideSign = crossProduct > 0 ? -1 : 1;
+        const radiusPreference = cfg.alpha * 0.5 * outsideSign * localCurvMag * 100;
 
-        // Regularization (prevent jitter) - smooths offsets without center bias
-        const prevOffset = offsets[(i - 1 + n) % n];
+        // Jitter regularization - smooths offsets relative to neighbors (NO center bias)
+        const prevOffset = offsets[iPrev];
         const currOffset = offsets[i];
-        const nextOffset = offsets[(i + 1) % n];
-        const regPush = cfg.beta * (prevOffset - 2 * currOffset + nextOffset);
+        const nextOffset = offsets[iNext];
+        const jitterUpdate = cfg.beta * (prevOffset - 2 * currOffset + nextOffset);
 
         // Optional center bias (disabled by default)
-        const centerPull = -cfg.centerBias * currOffset;
+        const centerUpdate = -cfg.centerBias * currOffset;
 
         // Apply update and clamp
-        let proposedOffset = currOffset + curvPush + lengthPush + regPush + centerPull;
-        proposedOffset = clamp(proposedOffset, aMin, aMax);
-        
-        // Additional constraint: limit rate of change to prevent jumps
-        // Allow max change of 20px per step (prevents teleports on hairpins)
-        const maxChange = 20;
-        const prevIdx = (i - 1 + n) % n;
-        const delta = proposedOffset - offsets[prevIdx];
-        if (Math.abs(delta) > maxChange) {
-          proposedOffset = offsets[prevIdx] + Math.sign(delta) * maxChange;
-          proposedOffset = clamp(proposedOffset, aMin, aMax);
-        }
-        
-        newOffsets[i] = proposedOffset;
+        newOffsets[i] = clamp(
+          currOffset + curvPush + radiusPreference + jitterUpdate + centerUpdate,
+          aMin,
+          aMax
+        );
       }
       offsets = newOffsets;
     }
@@ -360,12 +374,14 @@
     const widthUsageRatio = usableWidth > 0 ? maxAbsOffset / usableWidth : 0;
     
     if (cfg.debug) {
-      console.log('[MCP Debug]');
+      console.log('[MCP Debug - Final Results]');
+      console.log(`  Final Energy: ${energy.toFixed(2)}`);
       console.log(`  Half width: ${halfWidth.toFixed(1)}px`);
       console.log(`  Margin: ${cfg.margin}px`);
+      console.log(`  aMin/aMax: ${aMin.toFixed(1)}px / ${aMax.toFixed(1)}px`);
       console.log(`  Usable width per side: ${usableWidth.toFixed(1)}px`);
       console.log(`  Max abs offset: ${maxAbsOffset.toFixed(1)}px`);
-      console.log(`  Width usage ratio: ${(widthUsageRatio * 100).toFixed(1)}%`);
+      console.log(`  Width usage ratio: ${(widthUsageRatio * 100).toFixed(1)}% (target: 80-100%)`);
       console.log(`  Avg curvature proxy: ${avgCurvProxy.toFixed(6)}`);
       console.log(`  Max curvature proxy: ${maxCurvProxy.toFixed(6)}`);
       
@@ -385,16 +401,21 @@
       console.log(`  Max segment length: ${maxLength.toFixed(1)}px`);
       
       // Flag suspicious jumps
+      let jumpCount = 0;
       for (let i = 0; i < finalPath.length; i++) {
         const p1 = finalPath[i];
         const p2 = finalPath[(i + 1) % finalPath.length];
         const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
         
         if (dist > 3 * medianLength) {
+          jumpCount++;
           const normalDot = normals[i].x * normals[(i + 1) % finalPath.length].x + 
                            normals[i].y * normals[(i + 1) % finalPath.length].y;
           console.warn(`  ⚠ Jump detected at index ${i}: dist=${dist.toFixed(1)}px (${(dist/medianLength).toFixed(1)}x median), normalDot=${normalDot.toFixed(3)}, offset[${i}]=${offsets[i].toFixed(1)}, offset[${i+1}]=${offsets[(i+1)%n].toFixed(1)}`);
         }
+      }
+      if (jumpCount === 0) {
+        console.log('  ✓ No jumps detected (all segments < 3x median)');
       }
     }
 
@@ -402,6 +423,7 @@
       points: finalPath,
       meta: {
         iterations: cfg.iterations,
+        energy: energy,
         maxCurvatureProxy: maxCurvProxy,
         avgCurvatureProxy: avgCurvProxy,
         maxAbsOffset: maxAbsOffset,
