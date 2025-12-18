@@ -2389,8 +2389,9 @@ const { useEffect, useRef, useState } = React;
               
               if (algorithm === 'OPTIMAL_LINE' && window.RacerOptimalLine && typeof window.RacerOptimalLine.generate === "function") {
                 // Use optimal min-curvature algorithm
+                console.log('Using Optimal Racing Line (Min-Curvature)');
                 const optimalOpts = {
-                  debugMode: false, // Set to true for console logging
+                  debugMode: true, // Enable debug logging to verify algorithm behavior
                   safetyMargin: 15,
                   iterations: 200,
                   lambda: 0.1,

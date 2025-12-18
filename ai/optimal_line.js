@@ -205,28 +205,96 @@
   }
 
   /**
-   * Apply bending-energy smoothing (discrete Laplacian)
+   * Calculate path curvature (unsigned - just magnitude)
+   * Higher curvature = tighter turn = higher cost
    */
-  function applyBendingSmoothing(path, lambda) {
-    const n = path.length;
-    const smoothed = [];
+  function calculatePathCurvature(prev, curr, next) {
+    const v1x = curr.x - prev.x;
+    const v1y = curr.y - prev.y;
+    const v2x = next.x - curr.x;
+    const v2y = next.y - curr.y;
+    const len1 = Math.hypot(v1x, v1y) || 1;
+    const len2 = Math.hypot(v2x, v2y) || 1;
+    
+    // Normalized vectors
+    const n1x = v1x / len1;
+    const n1y = v1y / len1;
+    const n2x = v2x / len2;
+    const n2y = v2y / len2;
+    
+    // Cross product magnitude (unsigned curvature)
+    const cross = Math.abs(n1x * n2y - n1y * n2x);
+    const avgLen = (len1 + len2) / 2;
+    
+    // Return squared curvature (heavily penalize tight turns)
+    const kappa = cross / avgLen;
+    return kappa * kappa;
+  }
 
-    for (let i = 0; i < n; i++) {
-      const prev = path[(i - 1 + n) % n];
-      const curr = path[i];
-      const next = path[(i + 1) % n];
+  /**
+   * Calculate centerline curvature (track bending)
+   * This tells us which direction is "inside" the curve
+   */
+  function calculateCenterlineCurvature(prev, curr, next) {
+    const v1x = curr.x - prev.x;
+    const v1y = curr.y - prev.y;
+    const v2x = next.x - curr.x;
+    const v2y = next.y - curr.y;
+    const len1 = Math.hypot(v1x, v1y) || 1;
+    const len2 = Math.hypot(v2x, v2y) || 1;
+    
+    // Cross product (SIGNED) - tells us turn direction
+    const cross = (v1x / len1) * (v2y / len2) - (v1y / len1) * (v2x / len2);
+    const avgLen = (len1 + len2) / 2;
+    
+    return cross / avgLen;
+  }
 
-      // Discrete Laplacian: second derivative approximation
-      const laplacianX = prev.x - 2 * curr.x + next.x;
-      const laplacianY = prev.y - 2 * curr.y + next.y;
-
-      smoothed.push({
-        x: curr.x + lambda * laplacianX,
-        y: curr.y + lambda * laplacianY,
-      });
-    }
-
-    return smoothed;
+  /**
+   * Calculate local cost for offset optimization
+   * Includes path curvature, smoothness, acceleration, and corner-cutting incentive
+   */
+  function calculateLocalCost(centerline, normals, offsets, i, wSmooth, wAccel, wCornerCut, centerlineCurvatures) {
+    const n = offsets.length;
+    const prevIdx = (i - 1 + n) % n;
+    const nextIdx = (i + 1) % n;
+    
+    // Build path points for curvature calculation
+    const pPrev = {
+      x: centerline[prevIdx].x + normals[prevIdx].x * offsets[prevIdx],
+      y: centerline[prevIdx].y + normals[prevIdx].y * offsets[prevIdx]
+    };
+    const pCurr = {
+      x: centerline[i].x + normals[i].x * offsets[i],
+      y: centerline[i].y + normals[i].y * offsets[i]
+    };
+    const pNext = {
+      x: centerline[nextIdx].x + normals[nextIdx].x * offsets[nextIdx],
+      y: centerline[nextIdx].y + normals[nextIdx].y * offsets[nextIdx]
+    };
+    
+    // Path curvature cost (minimize bending)
+    const curvatureCost = calculatePathCurvature(pPrev, pCurr, pNext);
+    
+    // Smoothness cost (penalize rapid offset changes)
+    const smooth1 = (offsets[i] - offsets[prevIdx]) ** 2;
+    const smooth2 = (offsets[nextIdx] - offsets[i]) ** 2;
+    const smoothCost = (smooth1 + smooth2) * wSmooth;
+    
+    // Acceleration cost (penalize kinks in offset profile)
+    const accel = offsets[prevIdx] - 2 * offsets[i] + offsets[nextIdx];
+    const accelCost = accel * accel * wAccel;
+    
+    // Corner-cutting incentive: on curves, favor moving toward the inside
+    // centerlineCurvature is SIGNED: positive = left turn, negative = right turn
+    // normal points left, so negative offset = right, positive = left
+    // To cut inside: if turning left (curv > 0), want positive offset (go left/inside)
+    //                if turning right (curv < 0), want negative offset (go right/inside)
+    // Cost = -(centerlineCurvature * offset) encourages cutting inside
+    const centerlineCurv = centerlineCurvatures[i];
+    const cornerCutCost = -(centerlineCurv * offsets[i]) * wCornerCut;
+    
+    return curvatureCost + smoothCost + accelCost + cornerCutCost;
   }
 
   /**
@@ -349,32 +417,87 @@
     // Step 3: Compute tangents and normals
     const { tangents, normals } = computeTangentsAndNormals(resampled);
 
-    // Step 4: Compute corridor bounds
+    // Step 4: Compute centerline curvatures (tells us which way curves bend)
+    const centerlineCurvatures = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const prevIdx = (i - 1 + n) % n;
+      const nextIdx = (i + 1) % n;
+      centerlineCurvatures[i] = calculateCenterlineCurvature(
+        resampled[prevIdx],
+        resampled[i],
+        resampled[nextIdx]
+      );
+    }
+
+    // Step 5: Compute corridor bounds
     const { aMin, aMax } = computeCorridorBounds(resampled, normals, roadWidth, cfg.safetyMargin);
 
-    // Step 5: Initialize offsets (start at centerline)
+    // Step 6: Initialize offsets (start at centerline)
     let offsets = new Array(n).fill(0);
 
-    // Step 6: Iterative optimization
+    // Optimization parameters
+    const wSmooth = 0.3;    // Smoothness weight
+    const wAccel = 0.1;     // Acceleration weight
+    const wCornerCut = 50.0; // Corner-cutting incentive (encourages inside line)
+    const step = 0.08;      // Gradient descent step size
+    const eps = 0.5;        // Finite difference epsilon
+
+    // Log bounds info if debug mode
+    if (cfg.debugMode) {
+      const minAMin = Math.min(...aMin);
+      const maxAMin = Math.max(...aMin);
+      const minAMax = Math.min(...aMax);
+      const maxAMax = Math.max(...aMax);
+      const minWidth = Math.min(...aMin.map((min, i) => aMax[i] - min));
+      console.log('=== Corridor Bounds ===');
+      console.log(`aMin range: [${minAMin.toFixed(2)}, ${maxAMin.toFixed(2)}]`);
+      console.log(`aMax range: [${minAMax.toFixed(2)}, ${maxAMax.toFixed(2)}]`);
+      console.log(`Min corridor width: ${minWidth.toFixed(2)}px`);
+    }
+
+    // Step 7: Iterative optimization with projected gradient descent
     for (let iter = 0; iter < cfg.iterations; iter++) {
-      // Build current path from offsets
-      let path = buildPathFromOffsets(resampled, normals, offsets);
-
-      // Apply bending-energy smoothing
-      path = applyBendingSmoothing(path, cfg.lambda);
-
-      // Project back to corridor
+      // Compute gradient for each offset via finite differences
+      const gradients = new Array(n);
+      
       for (let i = 0; i < n; i++) {
-        offsets[i] = projectToCorridorOffset(path[i], resampled[i], normals[i], aMin[i], aMax[i]);
+        // Calculate base cost
+        const baseCost = calculateLocalCost(resampled, normals, offsets, i, wSmooth, wAccel, wCornerCut, centerlineCurvatures);
+        
+        // Perturb offset and calculate new cost
+        const originalOffset = offsets[i];
+        offsets[i] = clamp(originalOffset + eps, aMin[i], aMax[i]);
+        const perturbedCost = calculateLocalCost(resampled, normals, offsets, i, wSmooth, wAccel, wCornerCut, centerlineCurvatures);
+        offsets[i] = originalOffset; // Restore
+        
+        // Finite difference gradient
+        gradients[i] = (perturbedCost - baseCost) / eps;
       }
-
-      // Optional anti-wobble filter
-      if (cfg.enableAntiWobble) {
-        offsets = applyAntiWobble(offsets);
-        // Re-clamp after filtering
+      
+      // Update offsets via gradient descent
+      for (let i = 0; i < n; i++) {
+        offsets[i] = clamp(offsets[i] - step * gradients[i], aMin[i], aMax[i]);
+      }
+      
+      // Apply low-pass filter every 10 iterations to reduce numerical chatter
+      if (iter % 10 === 9) {
+        const filtered = applyAntiWobble(offsets);
         for (let i = 0; i < n; i++) {
-          offsets[i] = clamp(offsets[i], aMin[i], aMax[i]);
+          offsets[i] = clamp(filtered[i], aMin[i], aMax[i]);
         }
+      }
+      
+      // Log progress at key iterations
+      if (cfg.debugMode && (iter === 0 || iter === 10 || iter === cfg.iterations - 1)) {
+        const minOffset = Math.min(...offsets);
+        const maxOffset = Math.max(...offsets);
+        const meanAbsOffset = offsets.reduce((sum, a) => sum + Math.abs(a), 0) / n;
+        let maxStep = 0;
+        for (let i = 0; i < n; i++) {
+          const prevIdx = (i - 1 + n) % n;
+          maxStep = Math.max(maxStep, Math.abs(offsets[i] - offsets[prevIdx]));
+        }
+        console.log(`Iter ${iter}: offset range [${minOffset.toFixed(2)}, ${maxOffset.toFixed(2)}], mean|a|=${meanAbsOffset.toFixed(2)}, maxStep=${maxStep.toFixed(2)}`);
       }
     }
 
