@@ -335,9 +335,10 @@
       // Skip corners that cover most of the track (likely detection issue)
       const cornerLength = entry <= exit ? exit - entry + 1 : n - entry + exit + 1;
       if (cornerLength > n * 0.9) {
-        // For tracks that are mostly one big corner (like circles), just use a constant offset
+        // For tracks that are mostly one big corner (like circles), use a constant offset
+        // For minimum curvature, we want to run on the OUTSIDE of the turn (largest radius)
         const avgHalfWidth = (aMax[apex] - aMin[apex]) / 2;
-        const targetOffset = sign * avgHalfWidth * 0.7; // Go to outside of turn
+        const targetOffset = -sign * avgHalfWidth * 0.7; // OUTSIDE of turn (negative of inside direction)
         targets.fill(targetOffset);
         continue;
       }
@@ -612,12 +613,12 @@
 
     // Optimization parameters
     const wCurvature = 1.0;       // Path curvature weight (primary: minimize bending)
-    const wFirstDeriv = 0.2;      // First derivative penalty (prevent large jumps)
-    const wSmooth = 2.0;          // Second derivative penalty (prevent wobble)
-    const wTarget = 0.5;          // Target bias weight (racing line pattern) - increased for circles
-    const step = 0.1;             // Gradient descent step size
+    const wFirstDeriv = 0.1;      // First derivative penalty (prevent large jumps)
+    const wSmooth = 0.5;          // Second derivative penalty (prevent wobble)
+    const wTarget = 2.0;          // Target bias weight (racing line pattern) - must be strong enough to guide the line
+    const step = 0.15;            // Gradient descent step size
     const eps = 0.5;              // Finite difference epsilon
-    const maxStepSize = 5.0;      // Maximum offset change per iteration
+    const maxStepSize = 8.0;      // Maximum offset change per iteration
 
     // Log bounds info if debug mode
     if (cfg.debugMode) {
