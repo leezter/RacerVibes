@@ -250,17 +250,161 @@
     
     return {
       magnitude: Math.abs(curvature),
-      sign: Math.sign(curvature)
+      sign: Math.sign(curvature),
+      value: curvature
     };
   }
 
   /**
-   * Calculate local cost for offset optimization
-   * Primary: minimize path curvature
-   * Secondary: smooth offset profile
-   * Tertiary: on curves, reward cutting inside (racing line heuristic)
+   * Detect corners in the centerline curvature profile
+   * Returns array of corner segments with entry, apex, and exit indices
    */
-  function calculateLocalCost(centerline, normals, offsets, i, wCurvature, wSmooth, wRacingLine, centerlineCurvatures) {
+  function detectCorners(centerlineCurvatures, kThreshold = 0.005) {
+    const n = centerlineCurvatures.length;
+    const corners = [];
+    
+    // Smooth curvatures with moving average to reduce noise
+    const smoothed = new Array(n);
+    const windowSize = 15;
+    for (let i = 0; i < n; i++) {
+      let sum = 0;
+      for (let j = -windowSize; j <= windowSize; j++) {
+        const idx = (i + j + n) % n;
+        sum += centerlineCurvatures[idx].value;
+      }
+      smoothed[i] = sum / (2 * windowSize + 1);
+    }
+    
+    // Find contiguous segments where |curvature| > threshold
+    let inCorner = false;
+    let cornerStart = -1;
+    let maxCurvIdx = -1;
+    let maxCurvMag = 0;
+    
+    for (let i = 0; i <= n; i++) {
+      const idx = i % n;
+      const curvMag = Math.abs(smoothed[idx]);
+      
+      if (!inCorner && curvMag > kThreshold) {
+        // Start of corner
+        inCorner = true;
+        cornerStart = idx;
+        maxCurvIdx = idx;
+        maxCurvMag = curvMag;
+      } else if (inCorner) {
+        if (curvMag > maxCurvMag) {
+          maxCurvIdx = idx;
+          maxCurvMag = curvMag;
+        }
+        
+        if (curvMag <= kThreshold || i === n) {
+          // End of corner
+          const cornerEnd = (idx - 1 + n) % n;
+          const cornerLength = cornerStart <= cornerEnd 
+            ? cornerEnd - cornerStart + 1
+            : n - cornerStart + cornerEnd + 1;
+          
+          if (cornerLength > 5) { // Minimum corner length
+            corners.push({
+              entry: cornerStart,
+              apex: maxCurvIdx,
+              exit: cornerEnd,
+              sign: Math.sign(smoothed[maxCurvIdx]),
+              magnitude: maxCurvMag
+            });
+          }
+          
+          inCorner = false;
+          maxCurvMag = 0;
+        }
+      }
+    }
+    
+    return corners;
+  }
+
+  /**
+   * Generate target offset profile for outside-inside-outside racing line
+   */
+  function generateRacingLineTargets(n, corners, aMin, aMax) {
+    const targets = new Array(n).fill(0);
+    
+    for (const corner of corners) {
+      const { entry, apex, exit, sign } = corner;
+      
+      // Skip corners that cover most of the track (likely detection issue)
+      const cornerLength = entry <= exit ? exit - entry + 1 : n - entry + exit + 1;
+      if (cornerLength > n * 0.9) {
+        // For tracks that are mostly one big corner (like circles), just use a constant offset
+        const avgHalfWidth = (aMax[apex] - aMin[apex]) / 2;
+        const targetOffset = sign * avgHalfWidth * 0.7; // Go to outside of turn
+        targets.fill(targetOffset);
+        continue;
+      }
+      
+      // Calculate available width (use average of corridor bounds)
+      let avgHalfWidth = 0;
+      let count = 0;
+      for (let i = entry; i !== (exit + 1) % n; i = (i + 1) % n) {
+        avgHalfWidth += (aMax[i] - aMin[i]) / 2;
+        count++;
+        if (count > n) break; // Safety check
+      }
+      if (count === 0) count = 1; // Avoid division by zero
+      avgHalfWidth /= count;
+      
+      // Define inside/outside amounts (use 70% of available width)
+      const outsideAmount = avgHalfWidth * 0.7;
+      const insideAmount = avgHalfWidth * 0.85;
+      
+      // Inside direction based on turn sign
+      // Positive curvature = left turn → inside is +offset (left/outside normal direction)
+      // Negative curvature = right turn → inside is -offset (right)
+      const insideSign = sign;
+      
+      // Set targets: outside at entry, inside at apex, outside at exit
+      const aEntry = -insideSign * outsideAmount;  // Wide entry
+      const aApex = insideSign * insideAmount;      // Tight apex
+      const aExit = -insideSign * outsideAmount;    // Wide exit
+      
+      // Interpolate from entry to apex
+      let segmentLength = entry <= apex ? apex - entry : n - entry + apex;
+      if (segmentLength > 0) {
+        for (let j = 0; j <= segmentLength; j++) {
+          const idx = (entry + j) % n;
+          const t = j / segmentLength;
+          // Smooth cosine interpolation
+          const blend = 0.5 - 0.5 * Math.cos(t * Math.PI);
+          targets[idx] = aEntry + blend * (aApex - aEntry);
+        }
+      } else {
+        targets[entry] = aEntry;
+      }
+      
+      // Interpolate from apex to exit
+      segmentLength = apex <= exit ? exit - apex : n - apex + exit;
+      if (segmentLength > 0) {
+        for (let j = 0; j <= segmentLength; j++) {
+          const idx = (apex + j) % n;
+          const t = j / segmentLength;
+          const blend = 0.5 - 0.5 * Math.cos(t * Math.PI);
+          targets[idx] = aApex + blend * (aExit - aApex);
+        }
+      } else {
+        targets[apex] = aApex;
+      }
+    }
+    
+    return targets;
+  }
+
+  /**
+   * Calculate local cost for offset optimization
+   * Primary: minimize path curvature (favors largest radius = outside of turns)
+   * Secondary: smooth offset profile to prevent wobble
+   * Tertiary: bias toward racing line targets (outside→inside→outside)
+   */
+  function calculateLocalCost(centerline, normals, offsets, i, wCurvature, wSmooth, wFirstDeriv, wTarget, targets) {
     const n = offsets.length;
     const prevIdx = (i - 1 + n) % n;
     const nextIdx = (i + 1) % n;
@@ -302,17 +446,19 @@
     
     const curvatureCost = totalCurvature * wCurvature;
     
-    // Smoothness cost (second derivative of offsets) - prevents wobble
+    // First derivative penalty - prevents large jumps between adjacent offsets
+    const firstDeriv1 = (offsets[i] - offsets[prevIdx]) ** 2;
+    const firstDeriv2 = (offsets[nextIdx] - offsets[i]) ** 2;
+    const firstDerivCost = (firstDeriv1 + firstDeriv2) * wFirstDeriv;
+    
+    // Second derivative penalty - prevents wobble in offset profile
     const accel = offsets[prevIdx] - 2 * offsets[i] + offsets[nextIdx];
     const smoothCost = accel * accel * wSmooth;
     
-    // Racing line heuristic: on curves, reward moving toward inside
-    // centerlineCurvature.sign tells us turn direction
-    // Reward offset in the direction that cuts inside the turn
-    const curv = centerlineCurvatures[i];
-    const racingLineCost = -(curv.sign * offsets[i] * curv.magnitude) * wRacingLine;
+    // Target bias - encourages outside→inside→outside pattern in corners
+    const targetCost = targets ? (offsets[i] - targets[i]) ** 2 * wTarget : 0;
     
-    return curvatureCost + smoothCost + racingLineCost;
+    return curvatureCost + firstDerivCost + smoothCost + targetCost;
   }
 
   /**
@@ -450,16 +596,28 @@
     // Step 5: Compute corridor bounds
     const { aMin, aMax } = computeCorridorBounds(resampled, normals, roadWidth, cfg.safetyMargin);
 
-    // Step 6: Initialize offsets (start at centerline)
-    let offsets = new Array(n).fill(0);
+    // Step 6: Detect corners for racing line bias
+    const corners = detectCorners(centerlineCurvatures, 0.003);
+    const racingLineTargets = generateRacingLineTargets(n, corners, aMin, aMax);
+    
+    if (cfg.debugMode && corners.length > 0) {
+      console.log(`Detected ${corners.length} corners`);
+      corners.forEach((c, i) => {
+        console.log(`  Corner ${i + 1}: entry=${c.entry}, apex=${c.apex}, exit=${c.exit}, sign=${c.sign > 0 ? 'left' : 'right'}`);
+      });
+    }
+
+    // Step 7: Initialize offsets (start at targets for faster convergence)
+    let offsets = racingLineTargets.slice();
 
     // Optimization parameters
-    const wCurvature = 1000.0;    // Path curvature weight (primary: minimize bending)
-    const wSmooth = 0.01;         // Smoothness weight (prevent wobble)
-    const wRacingLine = 50000.0;  // Racing line heuristic (cut inside on curves)
-    const step = 3.0;             // Gradient descent step size
-    const eps = 1.0;              // Finite difference epsilon
-    const maxStepSize = 10.0;     // Maximum offset change per iteration
+    const wCurvature = 1.0;       // Path curvature weight (primary: minimize bending)
+    const wFirstDeriv = 0.2;      // First derivative penalty (prevent large jumps)
+    const wSmooth = 2.0;          // Second derivative penalty (prevent wobble)
+    const wTarget = 0.5;          // Target bias weight (racing line pattern) - increased for circles
+    const step = 0.1;             // Gradient descent step size
+    const eps = 0.5;              // Finite difference epsilon
+    const maxStepSize = 5.0;      // Maximum offset change per iteration
 
     // Log bounds info if debug mode
     if (cfg.debugMode) {
@@ -474,19 +632,19 @@
       console.log(`Min corridor width: ${minWidth.toFixed(2)}px`);
     }
 
-    // Step 7: Iterative optimization with projected gradient descent
+    // Step 8: Iterative optimization with projected gradient descent
     for (let iter = 0; iter < cfg.iterations; iter++) {
       // Compute gradient for each offset via finite differences
       const gradients = new Array(n);
       
       for (let i = 0; i < n; i++) {
         // Calculate base cost
-        const baseCost = calculateLocalCost(resampled, normals, offsets, i, wCurvature, wSmooth, wRacingLine, centerlineCurvatures);
+        const baseCost = calculateLocalCost(resampled, normals, offsets, i, wCurvature, wSmooth, wFirstDeriv, wTarget, racingLineTargets);
         
         // Perturb offset and calculate new cost
         const originalOffset = offsets[i];
         offsets[i] = clamp(originalOffset + eps, aMin[i], aMax[i]);
-        const perturbedCost = calculateLocalCost(resampled, normals, offsets, i, wCurvature, wSmooth, wRacingLine, centerlineCurvatures);
+        const perturbedCost = calculateLocalCost(resampled, normals, offsets, i, wCurvature, wSmooth, wFirstDeriv, wTarget, racingLineTargets);
         offsets[i] = originalOffset; // Restore
         
         // Finite difference gradient
@@ -523,10 +681,10 @@
       }
     }
 
-    // Step 7: Build final path
+    // Step 9: Build final path
     const finalPath = buildPathFromOffsets(resampled, normals, offsets);
 
-    // Step 8: Calculate validation metrics
+    // Step 10: Calculate validation metrics
     const metrics = calculateMetrics(finalPath, offsets, aMin, aMax);
 
     if (cfg.debugMode) {
