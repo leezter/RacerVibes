@@ -117,6 +117,47 @@
   }
 
   /**
+   * Enforce normal continuity to prevent flips that cause jumps across track
+   * @param {Array} normals - Normal vectors
+   * @returns {Array} - Fixed normal vectors with consistent orientation
+   */
+  function enforceNormalContinuity(normals) {
+    if (normals.length < 2) return normals;
+    
+    const fixed = normals.map(n => ({ x: n.x, y: n.y }));
+    const n = fixed.length;
+    
+    // Forward pass: ensure each normal is consistent with the previous
+    for (let i = 1; i < n; i++) {
+      const dot = fixed[i].x * fixed[i - 1].x + fixed[i].y * fixed[i - 1].y;
+      if (dot < 0) {
+        // Flip this normal to match orientation
+        fixed[i].x = -fixed[i].x;
+        fixed[i].y = -fixed[i].y;
+      }
+    }
+    
+    // Check closure: ensure first and last are consistent
+    const closureDot = fixed[0].x * fixed[n - 1].x + fixed[0].y * fixed[n - 1].y;
+    if (closureDot < 0) {
+      // Need to fix closure - flip the first normal and reprocess
+      fixed[0].x = -fixed[0].x;
+      fixed[0].y = -fixed[0].y;
+      
+      // Re-run forward pass from start
+      for (let i = 1; i < n; i++) {
+        const dot = fixed[i].x * fixed[i - 1].x + fixed[i].y * fixed[i - 1].y;
+        if (dot < 0) {
+          fixed[i].x = -fixed[i].x;
+          fixed[i].y = -fixed[i].y;
+        }
+      }
+    }
+    
+    return fixed;
+  }
+
+  /**
    * Laplacian smoothing for closed loop paths
    * @param {Array} points - Path points
    * @param {number} passes - Number of smoothing iterations
@@ -166,7 +207,8 @@
 
     // 2. Compute geometry
     const tangents = computeTangents(c);
-    const normals = computeNormals(tangents);
+    const rawNormals = computeNormals(tangents);
+    const normals = enforceNormalContinuity(rawNormals);
 
     // 3. Initialize offsets (start at centerline)
     let offsets = new Array(n).fill(0);
@@ -231,7 +273,13 @@
         // Length reduction push: move toward inside of turn
         // Scale by local curvature magnitude to avoid pushing on straights
         const localCurvMag = Math.abs(crossProduct) / (Math.hypot(dx1, dy1) * Math.hypot(dx2, dy2) + 1e-6);
-        const lengthPush = cfg.alpha * 1.5 * insideSign * localCurvMag * 100; // Balanced for width usage vs stability
+        
+        // Reduce aggressiveness on extremely tight turns to prevent jumps
+        // Curvature > 0.02 (radius < 50px) gets scaled down gradually
+        const curvatureLimit = 0.02;
+        const lengthScale = localCurvMag < curvatureLimit ? 1.0 : Math.sqrt(curvatureLimit / localCurvMag);
+        
+        const lengthPush = cfg.alpha * 1.0 * insideSign * localCurvMag * 100 * lengthScale;
 
         // Regularization (prevent jitter) - smooths offsets without center bias
         const prevOffset = offsets[(i - 1 + n) % n];
@@ -243,7 +291,20 @@
         const centerPull = -cfg.centerBias * currOffset;
 
         // Apply update and clamp
-        newOffsets[i] = clamp(currOffset + curvPush + lengthPush + regPush + centerPull, aMin, aMax);
+        let proposedOffset = currOffset + curvPush + lengthPush + regPush + centerPull;
+        proposedOffset = clamp(proposedOffset, aMin, aMax);
+        
+        // Additional constraint: limit rate of change to prevent jumps
+        // Allow max change of 20px per step (prevents teleports on hairpins)
+        const maxChange = 20;
+        const prevIdx = (i - 1 + n) % n;
+        const delta = proposedOffset - offsets[prevIdx];
+        if (Math.abs(delta) > maxChange) {
+          proposedOffset = offsets[prevIdx] + Math.sign(delta) * maxChange;
+          proposedOffset = clamp(proposedOffset, aMin, aMax);
+        }
+        
+        newOffsets[i] = proposedOffset;
       }
       offsets = newOffsets;
     }
@@ -254,17 +315,31 @@
       maxAbsOffset = Math.max(maxAbsOffset, Math.abs(offsets[i]));
     }
 
-    // 6. Construct final path
-    let finalPath = new Array(n);
+    // 6. Final smoothing of offsets (not points) to prevent boundary violations
+    if (cfg.finalSmoothingPasses > 0) {
+      for (let pass = 0; pass < cfg.finalSmoothingPasses; pass++) {
+        const smoothedOffsets = new Array(n);
+        for (let i = 0; i < n; i++) {
+          const prev = offsets[(i - 1 + n) % n];
+          const curr = offsets[i];
+          const next = offsets[(i + 1) % n];
+          const avg = (prev + next) / 2;
+          smoothedOffsets[i] = curr + (avg - curr) * cfg.finalSmoothingStrength;
+          // Re-clamp after smoothing to prevent boundary violations
+          smoothedOffsets[i] = clamp(smoothedOffsets[i], aMin, aMax);
+        }
+        offsets = smoothedOffsets;
+      }
+    }
+
+    // 7. Construct final path from smoothed offsets
+    const finalPath = new Array(n);
     for (let i = 0; i < n; i++) {
       finalPath[i] = {
         x: c[i].x + normals[i].x * offsets[i],
         y: c[i].y + normals[i].y * offsets[i],
       };
     }
-
-    // 7. Final smoothing pass
-    finalPath = smoothPath(finalPath, cfg.finalSmoothingPasses, cfg.finalSmoothingStrength);
 
     // 8. Calculate path length
     let pathLength = 0;
@@ -293,6 +368,34 @@
       console.log(`  Width usage ratio: ${(widthUsageRatio * 100).toFixed(1)}%`);
       console.log(`  Avg curvature proxy: ${avgCurvProxy.toFixed(6)}`);
       console.log(`  Max curvature proxy: ${maxCurvProxy.toFixed(6)}`);
+      
+      // Jump detection: check for abnormal segment lengths
+      const segmentLengths = [];
+      for (let i = 0; i < finalPath.length; i++) {
+        const p1 = finalPath[i];
+        const p2 = finalPath[(i + 1) % finalPath.length];
+        segmentLengths.push(Math.hypot(p2.x - p1.x, p2.y - p1.y));
+      }
+      
+      segmentLengths.sort((a, b) => a - b);
+      const medianLength = segmentLengths[Math.floor(segmentLengths.length / 2)];
+      const maxLength = Math.max(...segmentLengths);
+      
+      console.log(`  Median segment length: ${medianLength.toFixed(1)}px`);
+      console.log(`  Max segment length: ${maxLength.toFixed(1)}px`);
+      
+      // Flag suspicious jumps
+      for (let i = 0; i < finalPath.length; i++) {
+        const p1 = finalPath[i];
+        const p2 = finalPath[(i + 1) % finalPath.length];
+        const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        
+        if (dist > 3 * medianLength) {
+          const normalDot = normals[i].x * normals[(i + 1) % finalPath.length].x + 
+                           normals[i].y * normals[(i + 1) % finalPath.length].y;
+          console.warn(`  ⚠ Jump detected at index ${i}: dist=${dist.toFixed(1)}px (${(dist/medianLength).toFixed(1)}x median), normalDot=${normalDot.toFixed(3)}, offset[${i}]=${offsets[i].toFixed(1)}, offset[${i+1}]=${offsets[(i+1)%n].toFixed(1)}`);
+        }
+      }
     }
 
     return {
@@ -320,6 +423,7 @@
     resampleByArcLength,
     computeTangents,
     computeNormals,
+    enforceNormalContinuity,
     smoothPath,
   };
 })(typeof window !== 'undefined' ? window : this);
