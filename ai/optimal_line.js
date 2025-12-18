@@ -1,10 +1,10 @@
 /**
  * Geometric Optimal Racing Line (Min-Curvature)
- * 
+ *
  * This module implements a global geometric optimizer that minimizes overall
  * bending/curvature inside the track corridor. The racing line naturally produces
  * pro-style patterns (outside -> apex -> outside) without explicit corner detection.
- * 
+ *
  * Algorithm:
  * 1. Represent racing line as offsets from a resampled smooth centerline
  * 2. Use elastic-band iteration with bending-energy smoothing
@@ -65,7 +65,7 @@
       const last = resampled[resampled.length - 1];
       const first = resampled[0];
       const closeDist = Math.hypot(first.x - last.x, first.y - last.y);
-      
+
       // If the last point is very close to first, remove it to avoid duplicate
       if (closeDist < step * 0.5) {
         resampled.pop();
@@ -301,7 +301,7 @@
 
   /**
    * Main function: Generate optimal racing line using min-curvature approach
-   * 
+   *
    * @param {Array} centerline - Track centerline points [{x, y}, ...]
    * @param {number} roadWidth - Track width in pixels
    * @param {Object} options - Configuration options
@@ -324,7 +324,7 @@
 
     // Step 1: Resample centerline to constant arc-length spacing
     let resampled = resamplePath(centerline, cfg.resampleStep);
-    
+
     // Step 2: Smooth centerline slightly to avoid jitter normals
     if (cfg.centerlineSmoothing > 0) {
       resampled = smoothPath(resampled, cfg.centerlineSmoothing, 0.3);
@@ -384,7 +384,7 @@
       console.log('Min margin to bounds:', metrics.minMargin.toFixed(2), 'px');
       console.log('Path length:', metrics.pathLength.toFixed(1), 'px');
       console.log('Max curvature:', metrics.maxCurvature.toFixed(6));
-      
+
       if (metrics.minMargin < 0) {
         console.warn('WARNING: Line violates boundary constraints!');
       }
