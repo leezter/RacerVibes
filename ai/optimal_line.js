@@ -1,0 +1,416 @@
+/**
+ * Geometric Optimal Racing Line (Min-Curvature)
+ * 
+ * This module implements a global geometric optimizer that minimizes overall
+ * bending/curvature inside the track corridor. The racing line naturally produces
+ * pro-style patterns (outside -> apex -> outside) without explicit corner detection.
+ * 
+ * Algorithm:
+ * 1. Represent racing line as offsets from a resampled smooth centerline
+ * 2. Use elastic-band iteration with bending-energy smoothing
+ * 3. Project back to corridor bounds each iteration
+ * 4. Optional anti-wobble low-pass filter
+ */
+
+(function (global) {
+  'use strict';
+
+  const utils = global.RacerUtils || {};
+  const clamp = utils.clamp || ((v, min, max) => (v < min ? min : v > max ? max : v));
+
+  // Configuration constants
+  const DEFAULT_CONFIG = {
+    resampleStep: 12, // Arc-length spacing for centerline resampling
+    iterations: 200, // Number of smoothing iterations
+    lambda: 0.1, // Bending-energy smoothing strength (must be small for stability)
+    safetyMargin: 15, // Safety margin from track edges (pixels)
+    enableAntiWobble: false, // Optional low-pass filter to reduce oscillations
+    centerlineSmoothing: 3, // Pre-smooth centerline to avoid jitter normals
+    debugMode: false, // Enable console logging
+  };
+
+  /**
+   * Resample a path to approximately constant arc-length spacing
+   */
+  function resamplePath(points, step) {
+    if (!points || points.length < 2) return points;
+
+    const resampled = [{ x: points[0].x, y: points[0].y }];
+    let accumulated = 0;
+
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const segmentLength = Math.hypot(dx, dy);
+
+      if (segmentLength === 0) continue;
+
+      accumulated += segmentLength;
+
+      while (accumulated >= step) {
+        const remainder = accumulated - step;
+        const t = 1 - remainder / segmentLength;
+        resampled.push({
+          x: a.x + dx * t,
+          y: a.y + dy * t,
+        });
+        accumulated = remainder;
+      }
+    }
+
+    // Ensure loop closure - adjust last point to match first
+    if (resampled.length > 1) {
+      const last = resampled[resampled.length - 1];
+      const first = resampled[0];
+      const closeDist = Math.hypot(first.x - last.x, first.y - last.y);
+      
+      // If the last point is very close to first, remove it to avoid duplicate
+      if (closeDist < step * 0.5) {
+        resampled.pop();
+      }
+    }
+
+    return resampled;
+  }
+
+  /**
+   * Apply simple moving average smoothing to a closed path
+   */
+  function smoothPath(points, passes, weight = 0.5) {
+    if (!points || points.length < 3 || passes === 0) return points;
+
+    let result = points.map((p) => ({ x: p.x, y: p.y }));
+    const n = result.length;
+
+    for (let pass = 0; pass < passes; pass++) {
+      const smoothed = [];
+      for (let i = 0; i < n; i++) {
+        const prev = result[(i - 1 + n) % n];
+        const curr = result[i];
+        const next = result[(i + 1) % n];
+        smoothed.push({
+          x: curr.x * (1 - weight) + (prev.x + next.x) * 0.5 * weight,
+          y: curr.y * (1 - weight) + (prev.y + next.y) * 0.5 * weight,
+        });
+      }
+      result = smoothed;
+    }
+
+    return result;
+  }
+
+  /**
+   * Compute unit tangent and normal vectors at each point
+   * Ensures normals are continuous (no flipping)
+   */
+  function computeTangentsAndNormals(points) {
+    const n = points.length;
+    const tangents = [];
+    const normals = [];
+
+    for (let i = 0; i < n; i++) {
+      const prev = points[(i - 1 + n) % n];
+      const next = points[(i + 1) % n];
+      const dx = next.x - prev.x;
+      const dy = next.y - prev.y;
+      const len = Math.hypot(dx, dy) || 1;
+
+      const tx = dx / len;
+      const ty = dy / len;
+      tangents.push({ x: tx, y: ty });
+
+      // Normal is perpendicular to tangent (rotate 90 degrees)
+      let nx = -ty;
+      let ny = tx;
+
+      // Ensure continuity: if normal flips relative to previous, flip it back
+      if (i > 0) {
+        const prevNormal = normals[i - 1];
+        const dot = nx * prevNormal.x + ny * prevNormal.y;
+        if (dot < 0) {
+          nx = -nx;
+          ny = -ny;
+        }
+      }
+
+      normals.push({ x: nx, y: ny });
+    }
+
+    return { tangents, normals };
+  }
+
+  /**
+   * Compute corridor bounds from track edges
+   * aMin[i] = max offset toward right edge (negative)
+   * aMax[i] = max offset toward left edge (positive)
+   */
+  function computeCorridorBounds(centerline, normals, roadWidth, safetyMargin) {
+    const n = centerline.length;
+    const aMin = new Array(n);
+    const aMax = new Array(n);
+    const halfWidth = roadWidth / 2 - safetyMargin;
+
+    for (let i = 0; i < n; i++) {
+      // Assuming symmetric corridor around centerline
+      // In a real implementation, you might have explicit left/right edges
+      aMin[i] = -halfWidth;
+      aMax[i] = halfWidth;
+
+      // Validate bounds
+      if (aMin[i] >= aMax[i]) {
+        // Invalid corridor - use previous or default
+        if (i > 0) {
+          aMin[i] = aMin[i - 1];
+          aMax[i] = aMax[i - 1];
+        } else {
+          aMin[i] = -halfWidth;
+          aMax[i] = halfWidth;
+        }
+        if (DEFAULT_CONFIG.debugMode) {
+          console.warn(`Invalid corridor at point ${i}, using fallback`);
+        }
+      }
+    }
+
+    return { aMin, aMax };
+  }
+
+  /**
+   * Build path points from centerline and offsets
+   */
+  function buildPathFromOffsets(centerline, normals, offsets) {
+    const n = centerline.length;
+    const path = [];
+
+    for (let i = 0; i < n; i++) {
+      path.push({
+        x: centerline[i].x + normals[i].x * offsets[i],
+        y: centerline[i].y + normals[i].y * offsets[i],
+      });
+    }
+
+    return path;
+  }
+
+  /**
+   * Project a point back to the corridor by computing its offset and clamping
+   */
+  function projectToCorridorOffset(point, centerPoint, normal, aMin, aMax) {
+    const dx = point.x - centerPoint.x;
+    const dy = point.y - centerPoint.y;
+    const offset = dx * normal.x + dy * normal.y;
+    return clamp(offset, aMin, aMax);
+  }
+
+  /**
+   * Apply bending-energy smoothing (discrete Laplacian)
+   */
+  function applyBendingSmoothing(path, lambda) {
+    const n = path.length;
+    const smoothed = [];
+
+    for (let i = 0; i < n; i++) {
+      const prev = path[(i - 1 + n) % n];
+      const curr = path[i];
+      const next = path[(i + 1) % n];
+
+      // Discrete Laplacian: second derivative approximation
+      const laplacianX = prev.x - 2 * curr.x + next.x;
+      const laplacianY = prev.y - 2 * curr.y + next.y;
+
+      smoothed.push({
+        x: curr.x + lambda * laplacianX,
+        y: curr.y + lambda * laplacianY,
+      });
+    }
+
+    return smoothed;
+  }
+
+  /**
+   * Apply anti-wobble low-pass filter (simple 3-point moving average)
+   */
+  function applyAntiWobble(offsets) {
+    const n = offsets.length;
+    const filtered = new Array(n);
+
+    for (let i = 0; i < n; i++) {
+      const prev = offsets[(i - 1 + n) % n];
+      const curr = offsets[i];
+      const next = offsets[(i + 1) % n];
+      filtered[i] = 0.25 * prev + 0.5 * curr + 0.25 * next;
+    }
+
+    return filtered;
+  }
+
+  /**
+   * Calculate validation metrics for the racing line
+   */
+  function calculateMetrics(path, offsets, aMin, aMax) {
+    const n = path.length;
+    let maxLateralStep = 0;
+    let minMargin = Infinity;
+    let pathLength = 0;
+    let maxCurvature = 0;
+
+    for (let i = 0; i < n; i++) {
+      // Max lateral step
+      const prevIdx = (i - 1 + n) % n;
+      const lateralStep = Math.abs(offsets[i] - offsets[prevIdx]);
+      maxLateralStep = Math.max(maxLateralStep, lateralStep);
+
+      // Min margin to bounds
+      const marginToMin = offsets[i] - aMin[i];
+      const marginToMax = aMax[i] - offsets[i];
+      const margin = Math.min(marginToMin, marginToMax);
+      minMargin = Math.min(minMargin, margin);
+
+      // Path length
+      const nextIdx = (i + 1) % n;
+      const dx = path[nextIdx].x - path[i].x;
+      const dy = path[nextIdx].y - path[i].y;
+      pathLength += Math.hypot(dx, dy);
+
+      // Curvature estimate (using three points)
+      const prev = path[prevIdx];
+      const curr = path[i];
+      const next = path[nextIdx];
+
+      const v1x = curr.x - prev.x;
+      const v1y = curr.y - prev.y;
+      const v2x = next.x - curr.x;
+      const v2y = next.y - curr.y;
+      const len1 = Math.hypot(v1x, v1y) || 1;
+      const len2 = Math.hypot(v2x, v2y) || 1;
+      const cross = (v1x / len1) * (v2y / len2) - (v1y / len1) * (v2x / len2);
+      const avgLen = (len1 + len2) / 2;
+      const curvature = Math.abs(cross / avgLen);
+      maxCurvature = Math.max(maxCurvature, curvature);
+    }
+
+    return {
+      maxLateralStep,
+      minMargin,
+      pathLength,
+      maxCurvature,
+    };
+  }
+
+  /**
+   * Main function: Generate optimal racing line using min-curvature approach
+   * 
+   * @param {Array} centerline - Track centerline points [{x, y}, ...]
+   * @param {number} roadWidth - Track width in pixels
+   * @param {Object} options - Configuration options
+   * @returns {Array} - Racing line points with additional properties
+   */
+  function generateOptimalRacingLineMinCurvature(centerline, roadWidth, options = {}) {
+    if (!Array.isArray(centerline) || centerline.length < 3) {
+      console.error('Invalid centerline for optimal racing line generation');
+      return [];
+    }
+
+    const cfg = { ...DEFAULT_CONFIG, ...options };
+
+    if (cfg.debugMode) {
+      console.log('=== Optimal Racing Line Generation ===');
+      console.log('Centerline points:', centerline.length);
+      console.log('Road width:', roadWidth);
+      console.log('Configuration:', cfg);
+    }
+
+    // Step 1: Resample centerline to constant arc-length spacing
+    let resampled = resamplePath(centerline, cfg.resampleStep);
+    
+    // Step 2: Smooth centerline slightly to avoid jitter normals
+    if (cfg.centerlineSmoothing > 0) {
+      resampled = smoothPath(resampled, cfg.centerlineSmoothing, 0.3);
+    }
+
+    const n = resampled.length;
+    if (n < 3) {
+      console.error('Not enough points after resampling');
+      return [];
+    }
+
+    if (cfg.debugMode) {
+      console.log('Resampled points:', n);
+    }
+
+    // Step 3: Compute tangents and normals
+    const { tangents, normals } = computeTangentsAndNormals(resampled);
+
+    // Step 4: Compute corridor bounds
+    const { aMin, aMax } = computeCorridorBounds(resampled, normals, roadWidth, cfg.safetyMargin);
+
+    // Step 5: Initialize offsets (start at centerline)
+    let offsets = new Array(n).fill(0);
+
+    // Step 6: Iterative optimization
+    for (let iter = 0; iter < cfg.iterations; iter++) {
+      // Build current path from offsets
+      let path = buildPathFromOffsets(resampled, normals, offsets);
+
+      // Apply bending-energy smoothing
+      path = applyBendingSmoothing(path, cfg.lambda);
+
+      // Project back to corridor
+      for (let i = 0; i < n; i++) {
+        offsets[i] = projectToCorridorOffset(path[i], resampled[i], normals[i], aMin[i], aMax[i]);
+      }
+
+      // Optional anti-wobble filter
+      if (cfg.enableAntiWobble) {
+        offsets = applyAntiWobble(offsets);
+        // Re-clamp after filtering
+        for (let i = 0; i < n; i++) {
+          offsets[i] = clamp(offsets[i], aMin[i], aMax[i]);
+        }
+      }
+    }
+
+    // Step 7: Build final path
+    const finalPath = buildPathFromOffsets(resampled, normals, offsets);
+
+    // Step 8: Calculate validation metrics
+    const metrics = calculateMetrics(finalPath, offsets, aMin, aMax);
+
+    if (cfg.debugMode) {
+      console.log('=== Optimal Line Metrics ===');
+      console.log('Max lateral step:', metrics.maxLateralStep.toFixed(2), 'px');
+      console.log('Min margin to bounds:', metrics.minMargin.toFixed(2), 'px');
+      console.log('Path length:', metrics.pathLength.toFixed(1), 'px');
+      console.log('Max curvature:', metrics.maxCurvature.toFixed(6));
+      
+      if (metrics.minMargin < 0) {
+        console.warn('WARNING: Line violates boundary constraints!');
+      }
+    }
+
+    // Store additional data for visualization and debugging
+    return finalPath.map((p, i) => ({
+      x: p.x,
+      y: p.y,
+      offset: offsets[i],
+      aMin: aMin[i],
+      aMax: aMax[i],
+      centerX: resampled[i].x,
+      centerY: resampled[i].y,
+      normalX: normals[i].x,
+      normalY: normals[i].y,
+    }));
+  }
+
+  // Export to global namespace
+  global.RacerOptimalLine = {
+    generate: generateOptimalRacingLineMinCurvature,
+    DEFAULT_CONFIG,
+  };
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = global.RacerOptimalLine;
+  }
+})(typeof window !== 'undefined' ? window : this);
