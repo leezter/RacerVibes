@@ -196,181 +196,114 @@
     }
 
     /**
-     * Step 3: Elastic Band Solver - Iterative gradient descent optimization
+     * Step 3: Minimum Curvature Path Optimizer
+     * Minimizes maximum curvature to maximize cornering speed
+     * This naturally creates outside-inside-outside racing lines
      * @private
      */
     _elasticBandSolver(centerLine, boundaries) {
       const n = centerLine.length;
       
-      // Initialize racing line with curvature-based offsets (not just centerline)
-      // This gives the elastic band algorithm a starting point away from center
-      let racingLine = this._initializeWithCurvatureOffset(centerLine, boundaries);
+      // Start from centerline
+      let racingLine = centerLine.map((p) => ({ x: p.x, y: p.y }));
 
       // Run optimization iterations
+      const step = this.optimizationFactor * 0.1; // Movement step size
+      
       for (let iter = 0; iter < this.iterations; iter++) {
         const newLine = [];
-        
-        // Recalculate curvature each iteration
         const curvatures = this._calculateCurvature(racingLine);
-
+        
+        // Find maximum absolute curvature (the limiting factor for speed)
+        const maxCurvature = Math.max(...curvatures.map(Math.abs));
+        
         for (let i = 0; i < n; i++) {
-          const prev = racingLine[(i - 1 + n) % n];
           const curr = racingLine[i];
-          const next = racingLine[(i + 1) % n];
-
-          // Calculate target position as midpoint of neighbors (smoothing force)
-          const targetX = (prev.x + next.x) / 2;
-          const targetY = (prev.y + next.y) / 2;
-
-          // Calculate how much this point should move based on local curvature
-          // Higher curvature = more aggressive cutting
-          const curvature = Math.abs(curvatures[i]);
-          const CURVATURE_SCALE_FACTOR = 200; // Controls how aggressively to respond to curves
-          const curvatureFactor = Math.min(1, curvature * CURVATURE_SCALE_FACTOR);
+          const boundary = boundaries[i];
+          const currCurv = Math.abs(curvatures[i]);
           
-          // Blend smoothing strength with optimization factor and curvature
-          const effectiveStrength = this.smoothingStrength * (0.5 + 0.5 * this.optimizationFactor * (1 + curvatureFactor));
-
-          const smoothedX = lerp(curr.x, targetX, effectiveStrength);
-          const smoothedY = lerp(curr.y, targetY, effectiveStrength);
-
-          // Constraint: Project onto track boundaries
-          const constrained = this._constrainToTrack(
-            { x: smoothedX, y: smoothedY },
-            boundaries[i]
-          );
-
-          newLine.push(constrained);
+          // Only move points that have high curvature (near the limit)
+          // This focuses optimization on the tightest parts
+          if (currCurv > maxCurvature * 0.3) {
+            // Try moving the point laterally (perpendicular to path)
+            // to see if it reduces curvature
+            const prev = racingLine[(i - 1 + n) % n];
+            const next = racingLine[(i + 1) % n];
+            
+            // Calculate tangent direction
+            const dx = next.x - prev.x;
+            const dy = next.y - prev.y;
+            const len = Math.hypot(dx, dy) || 1;
+            
+            // Normal direction (perpendicular)
+            const normalX = -dy / len;
+            const normalY = dx / len;
+            
+            // Try moving in normal direction to reduce curvature
+            const testLeft = {
+              x: curr.x + normalX * step,
+              y: curr.y + normalY * step
+            };
+            const testRight = {
+              x: curr.x - normalX * step,
+              y: curr.y - normalY * step
+            };
+            
+            // Calculate curvature for both test positions
+            const curvLeft = this._calculatePointCurvature(prev, testLeft, next);
+            const curvRight = this._calculatePointCurvature(prev, testRight, next);
+            const curvCurrent = curvatures[i];
+            
+            // Move in direction that reduces curvature most
+            let best = curr;
+            let bestCurv = Math.abs(curvCurrent);
+            
+            if (Math.abs(curvLeft) < bestCurv) {
+              best = testLeft;
+              bestCurv = Math.abs(curvLeft);
+            }
+            if (Math.abs(curvRight) < bestCurv) {
+              best = testRight;
+            }
+            
+            // Constrain to track boundaries
+            newLine.push(this._constrainToTrack(best, boundary));
+          } else {
+            // Low curvature points don't need adjustment
+            newLine.push({ x: curr.x, y: curr.y });
+          }
         }
-
+        
         racingLine = newLine;
       }
 
       return racingLine;
     }
-
+    
     /**
-     * Initialize racing line with proper outside-inside-outside pattern
-     * This analyzes curvature changes to place points correctly
+     * Calculate curvature at a single point given its neighbors
      * @private
      */
-    _initializeWithCurvatureOffset(centerLine, boundaries) {
-      const n = centerLine.length;
-      const curvatures = this._calculateCurvature(centerLine);
+    _calculatePointCurvature(prev, curr, next) {
+      const v1x = curr.x - prev.x;
+      const v1y = curr.y - prev.y;
+      const v2x = next.x - curr.x;
+      const v2y = next.y - curr.y;
       
-      // Smooth curvatures heavily to identify major corners
-      const smoothedCurvatures = this._smoothArray(curvatures, 10);
+      const len1 = Math.hypot(v1x, v1y) || 1;
+      const len2 = Math.hypot(v2x, v2y) || 1;
       
-      // Find corner apex points (local maxima in |curvature|)
-      const apexInfo = [];
-      for (let i = 0; i < n; i++) {
-        const prevCurv = Math.abs(smoothedCurvatures[(i - 5 + n) % n]);
-        const currCurv = Math.abs(smoothedCurvatures[i]);
-        const nextCurv = Math.abs(smoothedCurvatures[(i + 5) % n]);
-        
-        if (currCurv > 0.002 && currCurv > prevCurv && currCurv > nextCurv) {
-          apexInfo.push({
-            index: i,
-            curvature: smoothedCurvatures[i], // Keep sign
-            magnitude: currCurv
-          });
-        }
-      }
+      const t1x = v1x / len1;
+      const t1y = v1y / len1;
+      const t2x = v2x / len2;
+      const t2y = v2y / len2;
       
-      const initialLine = [];
+      const cross = t1x * t2y - t1y * t2x;
+      const dot = t1x * t2x + t1y * t2y;
+      const angle = Math.atan2(cross, dot);
+      const avgLen = (len1 + len2) / 2 || 1;
       
-      for (let i = 0; i < n; i++) {
-        const center = centerLine[i];
-        const boundary = boundaries[i];
-        
-        // Find nearest apex and determine position relative to it
-        let nearestApex = null;
-        let minDist = Infinity;
-        let distToApex = 0;
-        
-        for (const apex of apexInfo) {
-          const forwardDist = (apex.index - i + n) % n;
-          const backwardDist = (i - apex.index + n) % n;
-          const dist = Math.min(forwardDist, backwardDist);
-          
-          if (dist < minDist) {
-            minDist = dist;
-            nearestApex = apex;
-            distToApex = forwardDist < backwardDist ? forwardDist : -backwardDist;
-          }
-        }
-        
-        if (nearestApex && minDist < 30) {
-          // We're near an apex
-          const apexCurv = nearestApex.curvature;
-          
-          // Determine which side is inside/outside of the turn
-          // After testing: apexCurv > 0 means inside is LEFT
-          const insideSide = apexCurv > 0 ? 'left' : 'right';
-          
-          // Determine if we should be inside or outside
-          const isAtApex = Math.abs(distToApex) < 5;
-          const isBeforeApex = distToApex > 0 && distToApex < 25;
-          const isAfterApex = distToApex < 0 && distToApex > -25;
-          
-          let targetSide, offsetAmount;
-          
-          if (isAtApex) {
-            // AT apex: full inside
-            targetSide = insideSide;
-            offsetAmount = this.optimizationFactor;
-          } else if (isBeforeApex) {
-            // BEFORE apex: should be on OUTSIDE (opposite of inside)
-            const outsideSide = insideSide === 'left' ? 'right' : 'left';
-            targetSide = outsideSide;
-            const progress = 1 - (distToApex / 25); // 0 = far before, 1 = at apex
-            offsetAmount = this.optimizationFactor * 0.5 * (1 - progress * 0.5);
-          } else if (isAfterApex) {
-            // AFTER apex: should be on OUTSIDE (opposite of inside)
-            const outsideSide = insideSide === 'left' ? 'right' : 'left';
-            targetSide = outsideSide;
-            const progress = 1 - (Math.abs(distToApex) / 25); // 1 = at apex, 0 = far after
-            offsetAmount = this.optimizationFactor * 0.5 * (1 - progress * 0.5);
-          } else {
-            // Far from apex: center
-            initialLine.push({ x: center.x, y: center.y });
-            continue;
-          }
-          
-          const targetBoundary = targetSide === 'left' ? boundary.left : boundary.right;
-          initialLine.push({
-            x: lerp(center.x, targetBoundary.x, offsetAmount),
-            y: lerp(center.y, targetBoundary.y, offsetAmount)
-          });
-        } else {
-          // Far from any apex: stay at center
-          initialLine.push({ x: center.x, y: center.y });
-        }
-      }
-      
-      return initialLine;
-    }
-
-    /**
-     * Smooth an array of values using simple averaging
-     * @private
-     */
-    _smoothArray(values, passes) {
-      let current = values.slice();
-      const n = current.length;
-      
-      for (let pass = 0; pass < passes; pass++) {
-        const next = new Array(n);
-        for (let i = 0; i < n; i++) {
-          const prev = current[(i - 1 + n) % n];
-          const curr = current[i];
-          const nextVal = current[(i + 1) % n];
-          next[i] = (prev + curr + nextVal) / 3;
-        }
-        current = next;
-      }
-      
-      return current;
+      return angle / avgLen;
     }
 
     /**

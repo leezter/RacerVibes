@@ -2363,9 +2363,7 @@ const { useEffect, useRef, useState } = React;
               } else {
                 const opts = { 
                   straightSpeed: (window.RacerAI.DEFAULT_LINE_CFG && window.RacerAI.DEFAULT_LINE_CFG.straightSpeed) || 520,
-                  useElasticBandSolver: true,
-                  elasticBandIterations: 100,
-                  elasticBandSmoothing: 0.6
+                  useElasticBandSolver: false  // Disabled - use working anchor-based algorithm
                 };
                 if (typeof apex === "number") opts.apexAggression = apex;
                 if (typeof maxOffset === "number") opts.maxOffset = maxOffset;
@@ -3525,9 +3523,7 @@ const { useEffect, useRef, useState } = React;
             } else if (window.RacerAI && typeof window.RacerAI.buildRacingLine === "function") {
               racingLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, { 
                 straightSpeed: 440,
-                useElasticBandSolver: true,
-                elasticBandIterations: 100,
-                elasticBandSmoothing: 0.6
+                useElasticBandSolver: false  // Disabled - use working anchor-based algorithm
               }) || [];
               baseRacingLine = racingLine.map((node) => ({ ...node }));
             } else {
