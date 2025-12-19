@@ -6,8 +6,8 @@
   const DEFAULT_LINE_CFG = {
     sampleStep: 6,
     smoothingPasses: 5,
-    apexAggression: 0.7, // 0 = conservative (60% track width), 1 = aggressive (95% track width)
-    maxOffset: 0.9, // Maximum fraction of half-width to use
+    apexAggression: 0.9, // INCREASED: 0 = conservative (65% track width), 1 = aggressive (98% track width)  
+    maxOffset: 0.98, // INCREASED: Maximum fraction of half-width to use
     minRadius: 12,
     roadFriction: 1.1,
     gravity: 750, // px/s^2 to roughly match RacerPhysics defaults
@@ -389,10 +389,72 @@
     return result;
   }
 
+  /**
+   * Enrich a simple path with racing line metadata (curvature, speed, etc.)
+   * Used by both anchor-based and elastic band solvers
+   */
+  function enrichRacingLine(path, cfg) {
+    if (!path || path.length < 3) return [];
+    
+    const n = path.length;
+    const g = cfg.gravity || 750;
+    const minRadius = cfg.minRadius || 12;
+    const straightSpeed = cfg.straightSpeed || 3000;
+    const cornerSpeedFloor = cfg.cornerSpeedFloor || 140;
+    
+    let arc = 0;
+    return path.map((pt, idx) => {
+      const prev = path[(idx - 1 + n) % n];
+      const next = path[(idx + 1) % n];
+      const segLen = Math.hypot(next.x - pt.x, next.y - pt.y) || 1;
+      arc += segLen;
+      
+      const tangent = { x: (next.x - pt.x) / segLen, y: (next.y - pt.y) / segLen };
+      const normal = { x: -tangent.y, y: tangent.x };
+      const curvature = signedCurvature(prev, pt, next);
+      const radiusPx = Math.max(minRadius, Math.abs(1 / (curvature || 1e-4)));
+      const rawSpeed = Math.sqrt(Math.max(0, (cfg.roadFriction || 1.1) * g * radiusPx));
+      const targetSpeed = clamp(rawSpeed, cornerSpeedFloor, straightSpeed);
+      
+      return {
+        index: idx,
+        s: arc,
+        x: pt.x,
+        y: pt.y,
+        tangent,
+        normal,
+        curvature,
+        radius: radiusPx,
+        targetSpeed,
+      };
+    });
+  }
+
   function buildRacingLine(centerline, roadWidth, options = {}) {
     if (!Array.isArray(centerline) || centerline.length < 3) return [];
     const cfg = { ...DEFAULT_LINE_CFG, ...options };
 
+    // NEW: Option to use the elastic band solver instead of anchor-based
+    if (cfg.useElasticBandSolver && global.RacingLineSolver) {
+      try {
+        const solver = new global.RacingLineSolver({
+          resampleSpacing: cfg.elasticBandSpacing || 10,
+          iterations: cfg.elasticBandIterations || 75,
+          optimizationFactor: cfg.apexAggression !== undefined ? cfg.apexAggression : 0.7,
+          smoothingStrength: cfg.elasticBandSmoothing || 0.5,
+        });
+        
+        const optimizedPath = solver.solve(centerline, roadWidth);
+        
+        // Convert to full racing line format with metadata
+        return enrichRacingLine(optimizedPath, cfg);
+      } catch (err) {
+        console.warn('Elastic band solver failed, falling back to anchor-based:', err);
+        // Fall through to anchor-based solver
+      }
+    }
+
+    // ORIGINAL: Anchor-based racing line generation
     // 1. Resample centerline to fine spacing for smooth curves
     const step = 12; // Finer spacing for smoother curves
     const points = resample(centerline, step);
@@ -401,9 +463,9 @@
 
     // 2. Setup Constraints
     const halfWidth = roadWidth / 2;
-    const maxOff = cfg.maxOffset !== undefined ? cfg.maxOffset : 0.85;
-    const aggression = clamp(cfg.apexAggression !== undefined ? cfg.apexAggression : 0.5, 0, 1);
-    const usableWidth = halfWidth * (0.6 + 0.35 * aggression) * maxOff;
+    const maxOff = cfg.maxOffset !== undefined ? cfg.maxOffset : 0.98; // Increased from 0.95
+    const aggression = clamp(cfg.apexAggression !== undefined ? cfg.apexAggression : 0.9, 0, 1);
+    const usableWidth = halfWidth * (0.70 + 0.28 * aggression) * maxOff; // EVEN MORE aggressive formula
 
     // 3. Calculate curvature at each point using wider window for stability
     const rawCurvatures = [];
@@ -646,6 +708,70 @@
       apices.push(...mergedApices);
     }
 
+    // ADDITIONAL MERGE PASS: Merge very close apexes regardless of sign
+    // This handles cases where curvature calculation creates oscillations in a single corner
+    // For example, a 90-degree turn might be split into multiple peaks with alternating signs
+    if (apices.length > 1) {
+      const finalApices = [];
+      let i = 0;
+      
+      while (i < apices.length) {
+        const curr = apices[i];
+        const toMerge = [curr];
+        let j = i + 1;
+        
+        // Look ahead for nearby apexes to merge with current
+        while (j < apices.length) {
+          const next = apices[j];
+          let dist = next.index - curr.index;
+          if (dist < 0) dist += n;
+          
+          // Merge if very close (within typical turn length)
+          // This threshold should catch peaks within the same corner
+          // Use a generous threshold to merge multi-peak corners into single apexes
+          const maxMergeDist = Math.max(n / 8, 40); // ~31 points or 40, whichever is larger
+          
+          if (dist < maxMergeDist) {
+            toMerge.push(next);
+            j++;
+          } else {
+            break; // Too far, stop looking
+          }
+        }
+        
+        // Create single apex from the group
+        if (toMerge.length === 1) {
+          finalApices.push(toMerge[0]);
+        } else {
+          // Check if the group contains apexes with DIFFERENT signs
+          // If so, these are OPPOSITE direction corners (e.g., chicane or S-curve)
+          // DO NOT merge them - keep them separate!
+          const signs = toMerge.map(a => a.sign);
+          const hasMixedSigns = signs.some(s => s !== signs[0]);
+          
+          if (hasMixedSigns) {
+            // Keep all apexes separate - don't merge opposite-direction corners
+            finalApices.push(...toMerge);
+          } else {
+            // Same direction: merge multiple apexes into one (e.g., long sweeping turn)
+            // Use the one with highest magnitude
+            let bestApex = toMerge[0];
+            for (const apex of toMerge) {
+              if (apex.mag > bestApex.mag) {
+                bestApex = apex;
+              }
+            }
+            finalApices.push(bestApex);
+          }
+        }
+        
+        i = j;
+      }
+      
+      apices.length = 0;
+      apices.push(...finalApices);
+    }
+
     // B. Create Offset Map (Anchors)
     // Initialize with null to signify "undefined/interpolate"
     const targetOffsets = new Array(n).fill(null);
@@ -735,10 +861,10 @@
       // Map 0.002 (Threshold) -> 0.005 (Full Width Radius ~200px)
       const severity = clamp((apex.mag - 0.002) / 0.003, 0, 1);
 
-      // Use severity directly with a minimum floor for detected corners
-      // If an apex passed the displacement filter, it deserves at least 30% amplitude
-      // Sharp turns (high severity) get progressively more offset
-      let amplitude = Math.max(0.3, severity);
+      // Use severity directly with a HIGHER minimum floor for detected corners
+      // If an apex passed the displacement filter, it deserves at least 50% amplitude
+      // Sharp turns (high severity) get progressively more offset up to 100%
+      let amplitude = Math.max(0.5, severity); // INCREASED from 0.3 to 0.5
       
       const currentWidth = usableWidth * amplitude;
       
@@ -911,7 +1037,11 @@
     // No additional path smoothing needed - it destroys anchor positions.
 
     // 7.5 Straighten wavering sections (removes unnecessary weaving on lumpy tracks)
-    path = straightenPath(path, points, usableWidth, smoothCurvatures);
+    // CRITICAL FIX: Pass the ACTUAL track boundary (halfWidth * maxOff), not usableWidth
+    // usableWidth is already scaled by the formula and is what we WANT to use
+    // straightenPath should only prevent going beyond the track boundaries
+    const trackBoundary = halfWidth * maxOff;
+    path = straightenPath(path, points, trackBoundary, smoothCurvatures);
 
     // 7.6 Fix Direction Reversals (prevent path from folding back on itself)
     // When anchors are close together with opposite offsets, the path can zigzag

@@ -11,6 +11,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://unpkg.com/planck-js@0.3.0/dist/planck.min.js"></script>
   <script src="utils/utils.js"></script>
+  <!-- REMOVED: racing_line_solver.js - elastic band solver proved incompatible with racing lines -->
   <script src="ai/racer_ai.js"></script>
   <script src="utils/storage-utils.js"></script>
   <script type="module" src="physics.js"></script>
@@ -1316,7 +1317,7 @@ const { useEffect, useRef, useState } = React;
         function getLineDefaults(){
           const api = window.RacerAI;
           if (api && api.DEFAULT_LINE_CFG) return { ...api.DEFAULT_LINE_CFG };
-          return { apexAggression: 0.10, maxOffset: 0.65 };
+          return { apexAggression: 0.90, maxOffset: 0.98 }; // Updated to match new defaults
         }
         const modeDefault = gripModeConfig && gripModeConfig.ai && gripModeConfig.ai.defaultDifficulty ? gripModeConfig.ai.defaultDifficulty : null;
         const initialAIDifficulty = loadStoredDifficulty() || sanitizeDifficulty(modeDefault) || sanitizeDifficulty("hard") || AVAILABLE_AI_DIFFICULTIES[0];
@@ -1373,8 +1374,8 @@ const { useEffect, useRef, useState } = React;
           const skillDefaults = getAISkillDefaults(initialAIDifficulty);
           return {
             difficulty: initialAIDifficulty,
-            apexAggression: lineDefaults.apexAggression ?? 0.10,
-            maxOffset: lineDefaults.maxOffset ?? 0.65,
+            apexAggression: lineDefaults.apexAggression ?? 0.90,
+            maxOffset: lineDefaults.maxOffset ?? 0.98,
             lookaheadBase: skillDefaults.lookaheadBase ?? 50,
             lookaheadSpeed: skillDefaults.lookaheadSpeed ?? 0.16,
             steerP: skillDefaults.steerP ?? 3.2,
@@ -2337,15 +2338,20 @@ const { useEffect, useRef, useState } = React;
             const defaults = getLineDefaults();
             const overrides = aiControlsRef.current;
             const skillDefaults = getAISkillDefaults((overrides && overrides.difficulty) || aiDifficulty);
-            const apex = overrides ? overrides.apexAggression : defaults.apexAggression;
-            const maxOffset = overrides ? overrides.maxOffset : defaults.maxOffset;
+            const apex = overrides?.apexAggression ?? defaults.apexAggression;
+            const maxOffset = overrides?.maxOffset ?? defaults.maxOffset;
             const throttleSetting = overrides && Number.isFinite(overrides.maxThrottle)
               ? overrides.maxThrottle
               : (skillDefaults.maxThrottle ?? AI_SKILL_FALLBACK.maxThrottle ?? 1);
             const throttleScale = mapMaxThrottleToSpeedScale(throttleSetting);
-            const canUseBase = baseRacingLine && baseRacingLine.length && !forceCustom &&
-              approxEqual(apex, defaults.apexAggression ?? apex) &&
-              approxEqual(maxOffset, defaults.maxOffset ?? maxOffset);
+            
+            // Check if we can use the cached baseRacingLine
+            // NOTE: We never cache when using default params because baseRacingLine might be from
+            // old storage with different defaults. Always regenerate to ensure fresh parameters.
+            const usingDefaults = approxEqual(apex, defaults.apexAggression ?? apex) &&
+                                  approxEqual(maxOffset, defaults.maxOffset ?? maxOffset);
+            const canUseBase = false; // DISABLED: Always regenerate to use updated parameters
+            
             const scaleLine = (source) => {
               if (!source || !source.length) return [];
               return source.map((node) => ({
@@ -2360,11 +2366,18 @@ const { useEffect, useRef, useState } = React;
                 const fallbackLine = baseRacingLine.length ? baseRacingLine : racingLine;
                 racingLine = scaleLine(fallbackLine);
               } else {
-                const opts = { straightSpeed: (window.RacerAI.DEFAULT_LINE_CFG && window.RacerAI.DEFAULT_LINE_CFG.straightSpeed) || 520 };
+                const opts = { 
+                  straightSpeed: (window.RacerAI.DEFAULT_LINE_CFG && window.RacerAI.DEFAULT_LINE_CFG.straightSpeed) || 520,
+                  useElasticBandSolver: false  // Disabled - use working anchor-based algorithm
+                };
                 if (typeof apex === "number") opts.apexAggression = apex;
                 if (typeof maxOffset === "number") opts.maxOffset = maxOffset;
                 const builtLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, opts) || [];
                 racingLine = scaleLine(builtLine);
+                // Update baseRacingLine so subsequent throttle-only changes can use cache
+                if (usingDefaults) {
+                  baseRacingLine = builtLine.map(node => ({ ...node }));
+                }
               }
             }
             if (activeTrack) {
@@ -3512,12 +3525,17 @@ const { useEffect, useRef, useState } = React;
             buildTrackSurfaceCanvas();
             const zones = Array.isArray(T.speedZones) && T.speedZones.length ? T.speedZones : [[0, Math.max(1, Math.floor(centerline.length / 24)), 220]];
             waypoints = buildWaypoints(centerline, zones);
-            const storedLine = Array.isArray(T.racingLine) ? T.racingLine : null;
-            if (storedLine && storedLine.length) {
-              baseRacingLine = storedLine.map((node) => ({ ...node }));
-              racingLine = baseRacingLine.map((node) => ({ ...node }));
-            } else if (window.RacerAI && typeof window.RacerAI.buildRacingLine === "function") {
-              racingLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, { straightSpeed: 440 }) || [];
+            
+            // ALWAYS regenerate racing line to use updated parameters (apexAggression=0.8, maxOffset=0.95)
+            // Don't use stored lines which may have been created with old conservative parameters
+            if (window.RacerAI && typeof window.RacerAI.buildRacingLine === "function") {
+              const lineDefaults = (window.RacerAI.DEFAULT_LINE_CFG) || {};
+              racingLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, { 
+                straightSpeed: 440,
+                apexAggression: lineDefaults.apexAggression ?? 0.90,  // Use updated defaults
+                maxOffset: lineDefaults.maxOffset ?? 0.98,           // Use updated defaults
+                useElasticBandSolver: false  // Disabled - use working anchor-based algorithm
+              }) || [];
               baseRacingLine = racingLine.map((node) => ({ ...node }));
             } else {
               racingLine = [];

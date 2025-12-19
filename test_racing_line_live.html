@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Racing Line Test</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #fff; }
+    canvas { border: 1px solid #666; background: #2a2a2a; display: block; margin: 20px 0; }
+    .stats { background: #333; padding: 15px; margin: 10px 0; border-radius: 5px; }
+    .good { color: #4f4; }
+    .bad { color: #f44; }
+    button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Racing Line Generator Test</h1>
+  <button onclick="testSharpCorner()">Test Sharp Corner</button>
+  <button onclick="testHairpin()">Test Hairpin</button>
+  <button onclick="testLumpySection()">Test Lumpy Section</button>
+  
+  <div id="output"></div>
+  <canvas id="canvas" width="800" height="600"></canvas>
+  
+  <script src="utils/utils.js"></script>
+  <script src="ai/racer_ai.js"></script>
+  
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const output = document.getElementById('output');
+    
+    function createSharpCorner() {
+      // 90-degree corner
+      const points = [];
+      const r = 80;
+      const cx = 400, cy = 300;
+      
+      // Approach (straight)
+      for (let i = 0; i < 20; i++) {
+        points.push({ x: cx - r - 100 + i * 5, y: cy - r });
+      }
+      
+      // Corner (quarter circle)
+      for (let i = 0; i <= 20; i++) {
+        const angle = (Math.PI / 2) * (i / 20);
+        points.push({
+          x: cx - r * Math.cos(angle),
+          y: cy - r + r * Math.sin(angle)
+        });
+      }
+      
+      // Exit (straight)
+      for (let i = 1; i <= 20; i++) {
+        points.push({ x: cx, y: cy + i * 5 });
+      }
+      
+      return points;
+    }
+    
+    function createHairpin() {
+      // 180-degree hairpin
+      const points = [];
+      const r = 50;
+      const cx = 400, cy = 300;
+      
+      // Approach
+      for (let i = 0; i < 15; i++) {
+        points.push({ x: cx - r - 80 + i * 5, y: cy });
+      }
+      
+      // Hairpin (semi-circle)
+      for (let i = 0; i <= 30; i++) {
+        const angle = Math.PI * (i / 30);
+        points.push({
+          x: cx - r * Math.cos(angle),
+          y: cy + r * Math.sin(angle)
+        });
+      }
+      
+      // Exit
+      for (let i = 1; i <= 15; i++) {
+        points.push({ x: cx + r + i * 5, y: cy });
+      }
+      
+      return points;
+    }
+    
+    function createLumpySection() {
+      // Gentle oscillations (should stay mostly straight)
+      const points = [];
+      const cx = 200, cy = 300;
+      
+      for (let i = 0; i < 60; i++) {
+        const x = cx + i * 10;
+        const y = cy + Math.sin(i * 0.3) * 15; // Small oscillations
+        points.push({ x, y });
+      }
+      
+      return points;
+    }
+    
+    function testTrack(centerline, trackWidth, testName) {
+      console.log(`\n=== Testing: ${testName} ===`);
+      console.log('Centerline points:', centerline.length);
+      console.log('Track width:', trackWidth);
+      
+      // Generate racing line
+      const racingLine = window.RacerAI.buildRacingLine(centerline, trackWidth, {
+        straightSpeed: 440
+      });
+      
+      console.log('Racing line points:', racingLine.length);
+      
+      // Analyze offsets
+      const offsets = [];
+      const halfWidth = trackWidth / 2;
+      
+      for (let i = 0; i < Math.min(centerline.length, racingLine.length); i++) {
+        const center = centerline[i];
+        const racing = racingLine[i];
+        const dx = racing.x - center.x;
+        const dy = racing.y - center.y;
+        const offset = Math.hypot(dx, dy);
+        offsets.push(offset);
+      }
+      
+      const maxOffset = Math.max(...offsets);
+      const avgOffset = offsets.reduce((a, b) => a + b, 0) / offsets.length;
+      const percentOfHalfWidth = (maxOffset / halfWidth * 100).toFixed(1);
+      
+      console.log(`Max offset: ${maxOffset.toFixed(1)}px (${percentOfHalfWidth}% of half-width)`);
+      console.log(`Avg offset: ${avgOffset.toFixed(1)}px`);
+      console.log(`Expected: ~87% of ${halfWidth}px = ${(halfWidth * 0.87).toFixed(1)}px`);
+      
+      // Draw
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Draw track boundaries
+      ctx.strokeStyle = '#444';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < centerline.length - 1; i++) {
+        const p1 = centerline[i];
+        const p2 = centerline[i + 1];
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const len = Math.hypot(dx, dy);
+        const nx = -dy / len;
+        const ny = dx / len;
+        
+        ctx.beginPath();
+        ctx.moveTo(p1.x + nx * halfWidth, p1.y + ny * halfWidth);
+        ctx.lineTo(p2.x + nx * halfWidth, p2.y + ny * halfWidth);
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.moveTo(p1.x - nx * halfWidth, p1.y - ny * halfWidth);
+        ctx.lineTo(p2.x - nx * halfWidth, p2.y - ny * halfWidth);
+        ctx.stroke();
+      }
+      
+      // Draw centerline
+      ctx.strokeStyle = '#666';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      centerline.forEach((p, i) => {
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
+      ctx.stroke();
+      
+      // Draw racing line
+      ctx.strokeStyle = '#0ff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      racingLine.forEach((p, i) => {
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
+      ctx.stroke();
+      
+      // Draw points
+      racingLine.forEach(p => {
+        ctx.fillStyle = '#0ff';
+        ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+      });
+      
+      // Generate report
+      const expectedMax = halfWidth * 0.87;
+      const isGood = maxOffset >= expectedMax * 0.8; // Within 20% tolerance
+      const statusClass = isGood ? 'good' : 'bad';
+      const statusText = isGood ? '✓ PASS' : '✗ FAIL';
+      
+      output.innerHTML = `
+        <div class="stats">
+          <h2>${testName} - <span class="${statusClass}">${statusText}</span></h2>
+          <p><strong>Track Width:</strong> ${trackWidth}px (half-width: ${halfWidth}px)</p>
+          <p><strong>Max Offset:</strong> ${maxOffset.toFixed(1)}px (${percentOfHalfWidth}% of half-width)</p>
+          <p><strong>Avg Offset:</strong> ${avgOffset.toFixed(1)}px</p>
+          <p><strong>Expected Max:</strong> ~${expectedMax.toFixed(1)}px (87% of half-width)</p>
+          <p><strong>Status:</strong> ${isGood ? 'Line uses adequate track width' : 'Line too conservative - not using enough track width!'}</p>
+          <p><strong>Formula:</strong> usableWidth = ${halfWidth} * (0.65 + 0.33 * 0.8) * 0.95 = ${(halfWidth * 0.868).toFixed(1)}px</p>
+        </div>
+      `;
+    }
+    
+    function testSharpCorner() {
+      const centerline = createSharpCorner();
+      testTrack(centerline, 200, 'Sharp 90° Corner');
+    }
+    
+    function testHairpin() {
+      const centerline = createHairpin();
+      testTrack(centerline, 200, '180° Hairpin');
+    }
+    
+    function testLumpySection() {
+      const centerline = createLumpySection();
+      testTrack(centerline, 200, 'Lumpy Section (gentle oscillations)');
+    }
+    
+    // Auto-run first test
+    setTimeout(() => testSharpCorner(), 500);
+  </script>
+</body>
+</html>

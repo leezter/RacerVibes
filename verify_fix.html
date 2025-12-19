@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Verify Racing Line Fix</title>
+  <style>
+    body {
+      font-family: monospace;
+      background: #1a1a2e;
+      color: #eee;
+      padding: 20px;
+    }
+    .good { color: #4f4; }
+    .bad { color: #f44; }
+    .section {
+      background: #16213e;
+      padding: 15px;
+      margin: 15px 0;
+      border-radius: 5px;
+      border: 1px solid #0ff;
+    }
+    canvas {
+      border: 2px solid #0ff;
+      background: #0a1929;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Racing Line Fix Verification</h1>
+  
+  <div class="section">
+    <h2>Test Setup</h2>
+    <p>Creating a circular track (diameter=600px, width=200px)</p>
+    <p>Testing with apexAggression=0.8, maxOffset=0.95</p>
+  </div>
+  
+  <div id="output"></div>
+  <canvas id="canvas" width="800" height="800"></canvas>
+  
+  <script src="utils/utils.js"></script>
+  <script src="ai/racer_ai.js"></script>
+  <script>
+    const output = document.getElementById('output');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    function log(msg, isGood = null) {
+      const div = document.createElement('div');
+      div.className = 'section';
+      if (isGood === true) div.style.borderColor = '#4f4';
+      if (isGood === false) div.style.borderColor = '#f44';
+      div.innerHTML = msg;
+      output.appendChild(div);
+    }
+    
+    // Create circular track
+    const centerline = [];
+    const centerX = 400, centerY = 400, radius = 300;
+    for (let i = 0; i < 100; i++) {
+      const angle = (i / 100) * Math.PI * 2;
+      centerline.push({
+        x: centerX + Math.cos(angle) * radius,
+        y: centerY + Math.sin(angle) * radius
+      });
+    }
+    
+    const roadWidth = 200;
+    const halfWidth = roadWidth / 2;
+    
+    log('<h3>Step 1: Check RacerAI</h3>');
+    if (!window.RacerAI) {
+      log('<p class="bad">✗ window.RacerAI not found!</p>', false);
+    } else {
+      log('<p class="good">✓ window.RacerAI exists</p>');
+      
+      if (window.RacerAI.DEFAULT_LINE_CFG) {
+        log(`<p class="good">✓ DEFAULT_LINE_CFG found</p>
+             <p>  apexAggression: ${window.RacerAI.DEFAULT_LINE_CFG.apexAggression}</p>
+             <p>  maxOffset: ${window.RacerAI.DEFAULT_LINE_CFG.maxOffset}</p>`);
+      }
+    }
+    
+    log('<h3>Step 2: Generate Racing Line</h3>');
+    const racingLine = window.RacerAI.buildRacingLine(centerline, roadWidth, {
+      apexAggression: 0.8,
+      maxOffset: 0.95
+    });
+    
+    log(`<p>Generated ${racingLine.length} points</p>`);
+    
+    // Calculate actual track usage
+    log('<h3>Step 3: Measure Track Width Usage</h3>');
+    let maxOffset = 0;
+    let totalOffset = 0;
+    for (let i = 0; i < racingLine.length && i < centerline.length; i++) {
+      const dx = racingLine[i].x - centerline[i].x;
+      const dy = racingLine[i].y - centerline[i].y;
+      const offset = Math.sqrt(dx*dx + dy*dy);
+      totalOffset += offset;
+      if (offset > maxOffset) maxOffset = offset;
+    }
+    const avgOffset = totalOffset / racingLine.length;
+    
+    const expectedUsableWidth = halfWidth * (0.65 + 0.33 * 0.8) * 0.95;
+    const usagePercent = (maxOffset / halfWidth * 100).toFixed(1);
+    const expectedPercent = (expectedUsableWidth / halfWidth * 100).toFixed(1);
+    
+    log(`<p>Max offset: ${maxOffset.toFixed(1)}px</p>
+         <p>Avg offset: ${avgOffset.toFixed(1)}px</p>
+         <p>Half road width: ${halfWidth}px</p>
+         <p>Usage: <strong>${usagePercent}%</strong> of half-width</p>
+         <p>Expected: <strong>${expectedPercent}%</strong></p>`);
+    
+    // Determine if fix worked
+    if (maxOffset >= expectedUsableWidth * 0.75) {
+      log(`<h2 class="good">✓ FIX SUCCESSFUL!</h2>
+           <p>Racing line is using ${usagePercent}% of half-width (expected ${expectedPercent}%).</p>
+           <p>The line properly extends toward track edges on corners.</p>`, true);
+    } else {
+      log(`<h2 class="bad">✗ FIX FAILED!</h2>
+           <p>Racing line only using ${usagePercent}% of half-width (expected ${expectedPercent}%).</p>
+           <p>Maximum offset: ${maxOffset.toFixed(1)}px (expected ~${expectedUsableWidth.toFixed(1)}px)</p>
+           <p>The line is still too conservative and stays near center.</p>`, false);
+    }
+    
+    // Draw visualization
+    log('<h3>Step 4: Visualization</h3>');
+    
+    // Draw track boundaries
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i <= 100; i++) {
+      const angle = (i / 100) * Math.PI * 2;
+      const x = centerX + Math.cos(angle) * (radius - halfWidth);
+      const y = centerY + Math.sin(angle) * (radius - halfWidth);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    
+    ctx.beginPath();
+    for (let i = 0; i <= 100; i++) {
+      const angle = (i / 100) * Math.PI * 2;
+      const x = centerX + Math.cos(angle) * (radius + halfWidth);
+      const y = centerY + Math.sin(angle) * (radius + halfWidth);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    
+    // Draw centerline
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    centerline.forEach((pt, i) => {
+      if (i === 0) ctx.moveTo(pt.x, pt.y);
+      else ctx.lineTo(pt.x, pt.y);
+    });
+    ctx.closePath();
+    ctx.stroke();
+    
+    // Draw racing line
+    ctx.strokeStyle = maxOffset >= expectedUsableWidth * 0.75 ? '#0ff' : '#f80';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    racingLine.forEach((pt, i) => {
+      if (i === 0) ctx.moveTo(pt.x, pt.y);
+      else ctx.lineTo(pt.x, pt.y);
+    });
+    ctx.closePath();
+    ctx.stroke();
+    
+    // Draw legend
+    ctx.fillStyle = '#eee';
+    ctx.font = '14px monospace';
+    ctx.fillText('Track boundaries (gray)', 20, 30);
+    ctx.fillText('Centerline (light gray)', 20, 50);
+    ctx.fillText(`Racing line (${maxOffset >= expectedUsableWidth * 0.75 ? 'cyan = good' : 'orange = bad'})`, 20, 70);
+    ctx.fillText(`Usage: ${usagePercent}% (target: ${expectedPercent}%)`, 20, 90);
+    
+  </script>
+</body>
+</html>

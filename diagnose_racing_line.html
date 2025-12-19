@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Racing Line Diagnostic Tool</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1a1a2e; color: #eee; }
+    h1 { color: #0ff; }
+    .section { margin: 20px 0; padding: 15px; background: #16213e; border-radius: 8px; }
+    .error { color: #f33; }
+    .success { color: #3f3; }
+    .warning { color: #ff3; }
+    pre { background: #0f0f0f; padding: 10px; border-radius: 4px; overflow-x: auto; }
+    button { padding: 10px 20px; background: #0ff; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    button:hover { background: #0cc; }
+  </style>
+</head>
+<body>
+  <h1>🔍 Racing Line Diagnostic Tool</h1>
+  
+  <div class="section">
+    <h2>Test Configuration</h2>
+    <p>This tool will generate a test track and analyze the racing line generation.</p>
+    <button onclick="runDiagnostic()">Run Diagnostic</button>
+  </div>
+  
+  <div id="output"></div>
+  
+  <script src="utils/utils.js"></script>
+  <script src="ai/racer_ai.js"></script>
+  
+  <script>
+    function runDiagnostic() {
+      const output = document.getElementById('output');
+      output.innerHTML = '<div class="section"><h2>Running Diagnostic...</h2></div>';
+      
+      try {
+        // Create a test track with a clear pattern:
+        // Straight section, RIGHT turn, straight, LEFT turn, straight
+        const track = [];
+        const segLen = 20;
+        
+        // Straight going east (0 to 200, 0)
+        for (let x = 0; x <= 200; x += segLen) {
+          track.push({ x, y: 0 });
+        }
+        
+        // RIGHT turn (clockwise) - quarter circle from east to south
+        const r1 = 100;
+        const cx1 = 200;
+        const cy1 = -r1;
+        for (let ang = 0; ang <= Math.PI / 2; ang += Math.PI / 16) {
+          track.push({
+            x: cx1 + r1 * Math.cos(ang),
+            y: cy1 + r1 * Math.sin(ang)
+          });
+        }
+        
+        // Straight going south (200, -100 to 200, -300)
+        for (let y = -100; y >= -300; y -= segLen) {
+          track.push({ x: 200, y });
+        }
+        
+        // LEFT turn (counter-clockwise) - quarter circle from south to west
+        const r2 = 100;
+        const cx2 = 200 - r2;
+        const cy2 = -300;
+        for (let ang = 0; ang <= Math.PI / 2; ang += Math.PI / 16) {
+          track.push({
+            x: cx2 - r2 * Math.sin(ang),
+            y: cy2 - r2 * Math.cos(ang)
+          });
+        }
+        
+        // Straight going west (100, -400 to -100, -400)
+        for (let x = 100; x >= -100; x -= segLen) {
+          track.push({ x, y: -400 });
+        }
+        
+        console.log(`Created test track with ${track.length} points`);
+        
+        // Generate racing line
+        const roadWidth = 100; // 100px wide track
+        const opts = {
+          apexAggression: 0.8,
+          maxOffset: 0.95
+        };
+        
+        console.log('Generating racing line with options:', opts);
+        const racingLine = RacerAI.buildRacingLine(track, roadWidth, opts);
+        
+        if (!racingLine || racingLine.length === 0) {
+          output.innerHTML += '<div class="section error"><h2>❌ Failed to generate racing line!</h2></div>';
+          return;
+        }
+        
+        console.log(`Generated racing line with ${racingLine.length} points`);
+        
+        // Analyze the racing line
+        let html = '<div class="section success"><h2>✓ Racing Line Generated</h2>';
+        html += `<p>Track points: ${track.length}</p>`;
+        html += `<p>Racing line points: ${racingLine.length}</p>`;
+        html += '<h3>Offset Analysis:</h3><pre>';
+        
+        // Sample points from each section
+        const samples = [
+          { name: 'Start (straight east)', range: [0, 10] },
+          { name: 'Right turn entry', range: [Math.floor(racingLine.length * 0.15), Math.floor(racingLine.length * 0.2)] },
+          { name: 'Right turn apex', range: [Math.floor(racingLine.length * 0.22), Math.floor(racingLine.length * 0.25)] },
+          { name: 'Right turn exit', range: [Math.floor(racingLine.length * 0.27), Math.floor(racingLine.length * 0.3)] },
+          { name: 'Mid straight (south)', range: [Math.floor(racingLine.length * 0.45), Math.floor(racingLine.length * 0.5)] },
+          { name: 'Left turn entry', range: [Math.floor(racingLine.length * 0.65), Math.floor(racingLine.length * 0.7)] },
+          { name: 'Left turn apex', range: [Math.floor(racingLine.length * 0.72), Math.floor(racingLine.length * 0.75)] },
+          { name: 'Left turn exit', range: [Math.floor(racingLine.length * 0.77), Math.floor(racingLine.length * 0.8)] },
+        ];
+        
+        let allPositive = true;
+        let allNegative = true;
+        let maxOffset = 0;
+        let minOffset = 0;
+        
+        samples.forEach(sample => {
+          const start = sample.range[0];
+          const end = sample.range[1];
+          const offsets = [];
+          
+          for (let i = start; i < end && i < racingLine.length; i++) {
+            // Calculate offset from centerline
+            const rlPt = racingLine[i];
+            const trackIdx = Math.min(i, track.length - 1);
+            const centerPt = track[trackIdx];
+            
+            const dx = rlPt.x - centerPt.x;
+            const dy = rlPt.y - centerPt.y;
+            
+            // Calculate which side (use cross product with travel direction)
+            const nextTrackIdx = Math.min(trackIdx + 1, track.length - 1);
+            const travelDx = track[nextTrackIdx].x - centerPt.x;
+            const travelDy = track[nextTrackIdx].y - centerPt.y;
+            const cross = dx * travelDy - dy * travelDx;
+            const signedOffset = Math.hypot(dx, dy) * Math.sign(cross);
+            
+            offsets.push(signedOffset);
+            
+            if (signedOffset > 0) allNegative = false;
+            if (signedOffset < 0) allPositive = false;
+            maxOffset = Math.max(maxOffset, signedOffset);
+            minOffset = Math.min(minOffset, signedOffset);
+          }
+          
+          const avg = offsets.reduce((a, b) => a + b, 0) / offsets.length;
+          const side = avg > 5 ? 'LEFT' : avg < -5 ? 'RIGHT' : 'CENTER';
+          html += `${sample.name.padEnd(25)}: ${avg.toFixed(1).padStart(6)}px (${side})\n`;
+        });
+        
+        html += '</pre>';
+        
+        html += '<h3>Summary:</h3><ul>';
+        html += `<li>Max offset: ${maxOffset.toFixed(1)}px (LEFT)</li>`;
+        html += `<li>Min offset: ${minOffset.toFixed(1)}px (RIGHT)</li>`;
+        html += `<li>Track half-width: ${roadWidth / 2}px</li>`;
+        html += `<li>Expected max: ~${(roadWidth / 2 * 0.868).toFixed(1)}px (with aggression=0.8, maxOffset=0.95)</li>`;
+        
+        if (allPositive) {
+          html += '<li class="error">⚠️ WARNING: Line ONLY goes to LEFT side (never crosses to right)!</li>';
+        } else if (allNegative) {
+          html += '<li class="error">⚠️ WARNING: Line ONLY goes to RIGHT side (never crosses to left)!</li>';
+        } else {
+          html += '<li class="success">✓ Line crosses centerline properly</li>';
+        }
+        
+        const usagePercent = Math.max(Math.abs(maxOffset), Math.abs(minOffset)) / (roadWidth / 2) * 100;
+        html += `<li>Track width usage: ${usagePercent.toFixed(1)}%</li>`;
+        
+        if (usagePercent < 50) {
+          html += '<li class="error">⚠️ WARNING: Using less than 50% of track width!</li>';
+        } else if (usagePercent < 70) {
+          html += '<li class="warning">⚠️ Using less than 70% of track width (should be ~87%)</li>';
+        } else {
+          html += '<li class="success">✓ Good track width usage</li>';
+        }
+        
+        html += '</ul></div>';
+        
+        output.innerHTML += html;
+        
+      } catch (err) {
+        output.innerHTML += `<div class="section error"><h2>❌ Error</h2><pre>${err.stack}</pre></div>`;
+        console.error('Diagnostic error:', err);
+      }
+    }
+  </script>
+</body>
+</html>
