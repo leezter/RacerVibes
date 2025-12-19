@@ -708,6 +708,58 @@
       apices.push(...mergedApices);
     }
 
+    // ADDITIONAL MERGE PASS: Merge very close apexes regardless of sign
+    // This handles cases where curvature calculation creates oscillations in a single corner
+    // For example, a 90-degree turn might be split into multiple peaks with alternating signs
+    if (apices.length > 1) {
+      const finalApices = [];
+      let i = 0;
+      
+      while (i < apices.length) {
+        const curr = apices[i];
+        const toMerge = [curr];
+        let j = i + 1;
+        
+        // Look ahead for nearby apexes to merge with current
+        while (j < apices.length) {
+          const next = apices[j];
+          let dist = next.index - curr.index;
+          if (dist < 0) dist += n;
+          
+          // Merge if very close (within typical turn length)
+          // This threshold should catch peaks within the same corner
+          // Use a generous threshold to merge multi-peak corners into single apexes
+          const maxMergeDist = Math.max(n / 8, 40); // ~31 points or 40, whichever is larger
+          
+          if (dist < maxMergeDist) {
+            toMerge.push(next);
+            j++;
+          } else {
+            break; // Too far, stop looking
+          }
+        }
+        
+        // Create single apex from the group
+        if (toMerge.length === 1) {
+          finalApices.push(toMerge[0]);
+        } else {
+          // Merge multiple apexes: use the one with highest magnitude
+          let bestApex = toMerge[0];
+          for (const apex of toMerge) {
+            if (apex.mag > bestApex.mag) {
+              bestApex = apex;
+            }
+          }
+          finalApices.push(bestApex);
+        }
+        
+        i = j;
+      }
+      
+      apices.length = 0;
+      apices.push(...finalApices);
+    }
+
     // B. Create Offset Map (Anchors)
     // Initialize with null to signify "undefined/interpolate"
     const targetOffsets = new Array(n).fill(null);

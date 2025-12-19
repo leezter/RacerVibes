@@ -1317,7 +1317,7 @@ const { useEffect, useRef, useState } = React;
         function getLineDefaults(){
           const api = window.RacerAI;
           if (api && api.DEFAULT_LINE_CFG) return { ...api.DEFAULT_LINE_CFG };
-          return { apexAggression: 0.10, maxOffset: 0.65 };
+          return { apexAggression: 0.80, maxOffset: 0.95 };
         }
         const modeDefault = gripModeConfig && gripModeConfig.ai && gripModeConfig.ai.defaultDifficulty ? gripModeConfig.ai.defaultDifficulty : null;
         const initialAIDifficulty = loadStoredDifficulty() || sanitizeDifficulty(modeDefault) || sanitizeDifficulty("hard") || AVAILABLE_AI_DIFFICULTIES[0];
@@ -1374,8 +1374,8 @@ const { useEffect, useRef, useState } = React;
           const skillDefaults = getAISkillDefaults(initialAIDifficulty);
           return {
             difficulty: initialAIDifficulty,
-            apexAggression: lineDefaults.apexAggression ?? 0.10,
-            maxOffset: lineDefaults.maxOffset ?? 0.65,
+            apexAggression: lineDefaults.apexAggression ?? 0.80,
+            maxOffset: lineDefaults.maxOffset ?? 0.95,
             lookaheadBase: skillDefaults.lookaheadBase ?? 50,
             lookaheadSpeed: skillDefaults.lookaheadSpeed ?? 0.16,
             steerP: skillDefaults.steerP ?? 3.2,
