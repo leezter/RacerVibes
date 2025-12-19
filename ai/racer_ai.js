@@ -743,14 +743,26 @@
         if (toMerge.length === 1) {
           finalApices.push(toMerge[0]);
         } else {
-          // Merge multiple apexes: use the one with highest magnitude
-          let bestApex = toMerge[0];
-          for (const apex of toMerge) {
-            if (apex.mag > bestApex.mag) {
-              bestApex = apex;
+          // Check if the group contains apexes with DIFFERENT signs
+          // If so, these are OPPOSITE direction corners (e.g., chicane or S-curve)
+          // DO NOT merge them - keep them separate!
+          const signs = toMerge.map(a => a.sign);
+          const hasMixedSigns = signs.some(s => s !== signs[0]);
+          
+          if (hasMixedSigns) {
+            // Keep all apexes separate - don't merge opposite-direction corners
+            finalApices.push(...toMerge);
+          } else {
+            // Same direction: merge multiple apexes into one (e.g., long sweeping turn)
+            // Use the one with highest magnitude
+            let bestApex = toMerge[0];
+            for (const apex of toMerge) {
+              if (apex.mag > bestApex.mag) {
+                bestApex = apex;
+              }
             }
+            finalApices.push(bestApex);
           }
-          finalApices.push(bestApex);
         }
         
         i = j;
