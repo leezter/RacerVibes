@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Debug Racing Line Parameters</title>
+</head>
+<body>
+  <h1>Debug Racing Line Parameters</h1>
+  <div id="output"></div>
+  
+  <script src="utils/utils.js"></script>
+  <script src="ai/racer_ai.js"></script>
+  <script>
+    const output = document.getElementById('output');
+    
+    function log(msg) {
+      const p = document.createElement('p');
+      p.textContent = msg;
+      output.appendChild(p);
+    }
+    
+    log('=== Checking RacerAI.DEFAULT_LINE_CFG ===');
+    
+    if (window.RacerAI) {
+      log('✓ window.RacerAI exists');
+      
+      if (window.RacerAI.DEFAULT_LINE_CFG) {
+        log('✓ DEFAULT_LINE_CFG exists');
+        log('  apexAggression: ' + window.RacerAI.DEFAULT_LINE_CFG.apexAggression);
+        log('  maxOffset: ' + window.RacerAI.DEFAULT_LINE_CFG.maxOffset);
+      } else {
+        log('✗ DEFAULT_LINE_CFG is missing!');
+      }
+      
+      if (typeof window.RacerAI.buildRacingLine === 'function') {
+        log('✓ buildRacingLine function exists');
+        
+        // Test with a simple track
+        const centerline = [];
+        for (let i = 0; i < 100; i++) {
+          const angle = (i / 100) * Math.PI * 2;
+          centerline.push({
+            x: 500 + Math.cos(angle) * 300,
+            y: 500 + Math.sin(angle) * 300
+          });
+        }
+        
+        const roadWidth = 200;
+        
+        log('');
+        log('=== Test 1: Call with NO options ===');
+        const line1 = window.RacerAI.buildRacingLine(centerline, roadWidth);
+        log('Result: ' + line1.length + ' points');
+        
+        log('');
+        log('=== Test 2: Call with explicit options ===');
+        const line2 = window.RacerAI.buildRacingLine(centerline, roadWidth, {
+          apexAggression: 0.8,
+          maxOffset: 0.95
+        });
+        log('Result: ' + line2.length + ' points');
+        
+        // Calculate max offset to see actual usage
+        if (line2.length > 0) {
+          let maxDist = 0;
+          for (let i = 0; i < Math.min(line2.length, centerline.length); i++) {
+            const dx = line2[i].x - centerline[i].x;
+            const dy = line2[i].y - centerline[i].y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if (dist > maxDist) maxDist = dist;
+          }
+          const halfWidth = roadWidth / 2;
+          const usagePercent = (maxDist / halfWidth * 100).toFixed(1);
+          log('Max offset from center: ' + maxDist.toFixed(1) + 'px');
+          log('Half road width: ' + halfWidth + 'px');
+          log('Usage: ' + usagePercent + '% of half-width');
+          
+          const expectedUsableWidth = halfWidth * (0.65 + 0.33 * 0.8) * 0.95;
+          log('Expected usableWidth: ' + expectedUsableWidth.toFixed(1) + 'px (86.8%)');
+          
+          if (maxDist < expectedUsableWidth * 0.7) {
+            log('⚠️ WARNING: Racing line is not using enough track width!');
+            log('   Expected ~' + expectedUsableWidth.toFixed(1) + 'px but got ' + maxDist.toFixed(1) + 'px');
+          } else {
+            log('✓ Racing line uses appropriate track width');
+          }
+        }
+        
+      } else {
+        log('✗ buildRacingLine function missing!');
+      }
+      
+    } else {
+      log('✗ window.RacerAI does not exist!');
+    }
+  </script>
+</body>
+</html>
