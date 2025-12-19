@@ -6,8 +6,8 @@
   const DEFAULT_LINE_CFG = {
     sampleStep: 6,
     smoothingPasses: 5,
-    apexAggression: 0.7, // 0 = conservative (60% track width), 1 = aggressive (95% track width)
-    maxOffset: 0.9, // Maximum fraction of half-width to use
+    apexAggression: 0.8, // 0 = conservative (65% track width), 1 = aggressive (98% track width)  
+    maxOffset: 0.95, // Maximum fraction of half-width to use
     minRadius: 12,
     roadFriction: 1.1,
     gravity: 750, // px/s^2 to roughly match RacerPhysics defaults
@@ -463,9 +463,9 @@
 
     // 2. Setup Constraints
     const halfWidth = roadWidth / 2;
-    const maxOff = cfg.maxOffset !== undefined ? cfg.maxOffset : 0.85;
-    const aggression = clamp(cfg.apexAggression !== undefined ? cfg.apexAggression : 0.5, 0, 1);
-    const usableWidth = halfWidth * (0.6 + 0.35 * aggression) * maxOff;
+    const maxOff = cfg.maxOffset !== undefined ? cfg.maxOffset : 0.95; // Increased from 0.85
+    const aggression = clamp(cfg.apexAggression !== undefined ? cfg.apexAggression : 0.8, 0, 1);
+    const usableWidth = halfWidth * (0.65 + 0.33 * aggression) * maxOff; // More aggressive formula
 
     // 3. Calculate curvature at each point using wider window for stability
     const rawCurvatures = [];
