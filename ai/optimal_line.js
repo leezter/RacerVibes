@@ -259,7 +259,7 @@
    * Detect corners in the centerline curvature profile
    * Returns array of corner segments with entry, apex, and exit indices
    */
-  function detectCorners(centerlineCurvatures, kThreshold = 0.005) {
+  function detectCorners(centerlineCurvatures, kThreshold = 0.0015) {
     const n = centerlineCurvatures.length;
     const corners = [];
     
@@ -329,6 +329,11 @@
   function generateRacingLineTargets(n, corners, aMin, aMax) {
     const targets = new Array(n).fill(0);
     
+    if (corners.length === 0) {
+      // No corners detected - return centerline (all zeros)
+      return targets;
+    }
+    
     for (const corner of corners) {
       const { entry, apex, exit, sign } = corner;
       
@@ -338,7 +343,7 @@
         // For tracks that are mostly one big corner (like circles), use a constant offset
         // For minimum curvature, we want to run on the OUTSIDE of the turn (largest radius)
         const avgHalfWidth = (aMax[apex] - aMin[apex]) / 2;
-        const targetOffset = -sign * avgHalfWidth * 0.7; // OUTSIDE of turn (negative of inside direction)
+        const targetOffset = -sign * avgHalfWidth * 0.6; // OUTSIDE of turn (negative of inside direction)
         targets.fill(targetOffset);
         continue;
       }
@@ -354,9 +359,9 @@
       if (count === 0) count = 1; // Avoid division by zero
       avgHalfWidth /= count;
       
-      // Define inside/outside amounts (use 70% of available width)
-      const outsideAmount = avgHalfWidth * 0.7;
-      const insideAmount = avgHalfWidth * 0.85;
+      // Define inside/outside amounts - use more moderate values for smoother transitions
+      const outsideAmount = avgHalfWidth * 0.5;  // Reduced from 0.7
+      const insideAmount = avgHalfWidth * 0.6;   // Reduced from 0.85
       
       // Inside direction based on turn sign
       // Positive curvature = left turn → inside is +offset (left/outside normal direction)
@@ -368,11 +373,19 @@
       const aApex = insideSign * insideAmount;      // Tight apex
       const aExit = -insideSign * outsideAmount;    // Wide exit
       
-      // Interpolate from entry to apex
-      let segmentLength = entry <= apex ? apex - entry : n - entry + apex;
+      // EXTEND the transition zones beyond the detected corner for smoother approach/exit
+      // Add approach zone before entry (20% of track length or 30 points, whichever is smaller)
+      const approachLength = Math.min(Math.floor(n * 0.2), 30);
+      const exitLength = Math.min(Math.floor(n * 0.2), 30);
+      
+      const extendedEntry = (entry - approachLength + n) % n;
+      const extendedExit = (exit + exitLength) % n;
+      
+      // Interpolate from extended entry to apex (smooth approach)
+      let segmentLength = extendedEntry <= apex ? apex - extendedEntry : n - extendedEntry + apex;
       if (segmentLength > 0) {
         for (let j = 0; j <= segmentLength; j++) {
-          const idx = (entry + j) % n;
+          const idx = (extendedEntry + j) % n;
           const t = j / segmentLength;
           // Smooth cosine interpolation
           const blend = 0.5 - 0.5 * Math.cos(t * Math.PI);
@@ -382,8 +395,8 @@
         targets[entry] = aEntry;
       }
       
-      // Interpolate from apex to exit
-      segmentLength = apex <= exit ? exit - apex : n - apex + exit;
+      // Interpolate from apex to extended exit (smooth departure)
+      segmentLength = apex <= extendedExit ? extendedExit - apex : n - apex + extendedExit;
       if (segmentLength > 0) {
         for (let j = 0; j <= segmentLength; j++) {
           const idx = (apex + j) % n;
@@ -597,28 +610,34 @@
     // Step 5: Compute corridor bounds
     const { aMin, aMax } = computeCorridorBounds(resampled, normals, roadWidth, cfg.safetyMargin);
 
-    // Step 6: Detect corners for racing line bias
-    const corners = detectCorners(centerlineCurvatures, 0.003);
+    // Step 6: Detect corners for racing line bias (lowered threshold to 0.0015 for better detection)
+    const corners = detectCorners(centerlineCurvatures, 0.0015);
     const racingLineTargets = generateRacingLineTargets(n, corners, aMin, aMax);
     
-    if (cfg.debugMode && corners.length > 0) {
-      console.log(`Detected ${corners.length} corners`);
-      corners.forEach((c, i) => {
-        console.log(`  Corner ${i + 1}: entry=${c.entry}, apex=${c.apex}, exit=${c.exit}, sign=${c.sign > 0 ? 'left' : 'right'}`);
-      });
+    if (cfg.debugMode) {
+      if (corners.length > 0) {
+        console.log(`Detected ${corners.length} corners`);
+        corners.forEach((c, i) => {
+          const cornerLength = c.entry <= c.exit ? c.exit - c.entry + 1 : n - c.entry + c.exit + 1;
+          const pct = (cornerLength / n * 100).toFixed(1);
+          console.log(`  Corner ${i + 1}: entry=${c.entry}, apex=${c.apex}, exit=${c.exit}, length=${cornerLength} (${pct}%), sign=${c.sign > 0 ? 'left' : 'right'}`);
+        });
+      } else {
+        console.log('No corners detected - line will stay near centerline');
+      }
     }
 
-    // Step 7: Initialize offsets (start at targets for faster convergence)
-    let offsets = racingLineTargets.slice();
+    // Step 7: Initialize offsets at centerline, NOT at targets (let optimizer find the path)
+    let offsets = new Array(n).fill(0);
 
-    // Optimization parameters
+    // Optimization parameters - rebalanced for smoother, more natural racing lines
     const wCurvature = 1.0;       // Path curvature weight (primary: minimize bending)
-    const wFirstDeriv = 0.1;      // First derivative penalty (prevent large jumps)
-    const wSmooth = 0.5;          // Second derivative penalty (prevent wobble)
-    const wTarget = 2.0;          // Target bias weight (racing line pattern) - must be strong enough to guide the line
-    const step = 0.15;            // Gradient descent step size
+    const wFirstDeriv = 0.2;      // First derivative penalty (prevent large jumps) - increased
+    const wSmooth = 1.0;          // Second derivative penalty (prevent wobble) - increased
+    const wTarget = 0.8;          // Target bias weight (racing line pattern) - reduced to be gentler
+    const step = 0.12;            // Gradient descent step size - reduced for more stability
     const eps = 0.5;              // Finite difference epsilon
-    const maxStepSize = 8.0;      // Maximum offset change per iteration
+    const maxStepSize = 6.0;      // Maximum offset change per iteration - reduced
 
     // Log bounds info if debug mode
     if (cfg.debugMode) {
