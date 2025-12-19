@@ -21,7 +21,7 @@
   // Configuration constants
   const DEFAULT_CONFIG = {
     resampleStep: 12, // Arc-length spacing for centerline resampling
-    iterations: 200, // Number of smoothing iterations
+    iterations: 300, // Number of smoothing iterations - increased for smoother convergence
     lambda: 0.1, // Bending-energy smoothing strength (must be small for stability)
     safetyMargin: 15, // Safety margin from track edges (pixels)
     enableAntiWobble: false, // Optional low-pass filter to reduce oscillations
@@ -359,9 +359,9 @@
       if (count === 0) count = 1; // Avoid division by zero
       avgHalfWidth /= count;
       
-      // Define inside/outside amounts - use more moderate values for smoother transitions
-      const outsideAmount = avgHalfWidth * 0.5;  // Reduced from 0.7
-      const insideAmount = avgHalfWidth * 0.6;   // Reduced from 0.85
+      // Define inside/outside amounts - use moderate values for very smooth, natural transitions
+      const outsideAmount = avgHalfWidth * 0.4;  // Further reduced for gentler positioning
+      const insideAmount = avgHalfWidth * 0.5;   // Further reduced for smoother flow
       
       // Inside direction based on turn sign
       // Positive curvature = left turn → inside is +offset (left/outside normal direction)
@@ -373,35 +373,41 @@
       const aApex = insideSign * insideAmount;      // Tight apex
       const aExit = -insideSign * outsideAmount;    // Wide exit
       
-      // EXTEND the transition zones beyond the detected corner for smoother approach/exit
-      // Add approach zone before entry (20% of track length or 30 points, whichever is smaller)
-      const approachLength = Math.min(Math.floor(n * 0.2), 30);
-      const exitLength = Math.min(Math.floor(n * 0.2), 30);
+      // EXTEND the transition zones beyond the detected corner for very smooth approach/exit
+      // Add longer approach zone before entry (40% of track length or 50 points, whichever is smaller)
+      const approachLength = Math.min(Math.floor(n * 0.4), 50);
+      const exitLength = Math.min(Math.floor(n * 0.4), 50);
       
       const extendedEntry = (entry - approachLength + n) % n;
       const extendedExit = (exit + exitLength) % n;
       
-      // Interpolate from extended entry to apex (smooth approach)
+      // Interpolate from extended entry to apex (very smooth approach with S-curve)
       let segmentLength = extendedEntry <= apex ? apex - extendedEntry : n - extendedEntry + apex;
       if (segmentLength > 0) {
         for (let j = 0; j <= segmentLength; j++) {
           const idx = (extendedEntry + j) % n;
           const t = j / segmentLength;
-          // Smooth cosine interpolation
-          const blend = 0.5 - 0.5 * Math.cos(t * Math.PI);
+          // Double-cosine (S-curve) interpolation for extra smoothness
+          // First ease-in, then ease-out
+          const blend = t < 0.5 
+            ? 0.5 * (1 - Math.cos(t * 2 * Math.PI)) 
+            : 0.5 * (1 + Math.cos((t - 0.5) * 2 * Math.PI));
           targets[idx] = aEntry + blend * (aApex - aEntry);
         }
       } else {
         targets[entry] = aEntry;
       }
       
-      // Interpolate from apex to extended exit (smooth departure)
+      // Interpolate from apex to extended exit (very smooth departure with S-curve)
       segmentLength = apex <= extendedExit ? extendedExit - apex : n - apex + extendedExit;
       if (segmentLength > 0) {
         for (let j = 0; j <= segmentLength; j++) {
           const idx = (apex + j) % n;
           const t = j / segmentLength;
-          const blend = 0.5 - 0.5 * Math.cos(t * Math.PI);
+          // Double-cosine (S-curve) interpolation for extra smoothness
+          const blend = t < 0.5 
+            ? 0.5 * (1 - Math.cos(t * 2 * Math.PI)) 
+            : 0.5 * (1 + Math.cos((t - 0.5) * 2 * Math.PI));
           targets[idx] = aApex + blend * (aExit - aApex);
         }
       } else {
@@ -630,14 +636,14 @@
     // Step 7: Initialize offsets at centerline, NOT at targets (let optimizer find the path)
     let offsets = new Array(n).fill(0);
 
-    // Optimization parameters - rebalanced for smoother, more natural racing lines
+    // Optimization parameters - rebalanced for very smooth, gradual, natural racing lines
     const wCurvature = 1.0;       // Path curvature weight (primary: minimize bending)
-    const wFirstDeriv = 0.2;      // First derivative penalty (prevent large jumps) - increased
-    const wSmooth = 1.0;          // Second derivative penalty (prevent wobble) - increased
-    const wTarget = 0.8;          // Target bias weight (racing line pattern) - reduced to be gentler
-    const step = 0.12;            // Gradient descent step size - reduced for more stability
+    const wFirstDeriv = 0.3;      // First derivative penalty (prevent large jumps) - increased for smoothness
+    const wSmooth = 1.5;          // Second derivative penalty (prevent wobble) - increased for ultra-smooth
+    const wTarget = 0.5;          // Target bias weight (racing line pattern) - reduced further for gentle guidance
+    const step = 0.10;            // Gradient descent step size - reduced more for gradual convergence
     const eps = 0.5;              // Finite difference epsilon
-    const maxStepSize = 6.0;      // Maximum offset change per iteration - reduced
+    const maxStepSize = 4.0;      // Maximum offset change per iteration - reduced for smoother transitions
 
     // Log bounds info if debug mode
     if (cfg.debugMode) {
