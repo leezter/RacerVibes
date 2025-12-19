@@ -1317,7 +1317,7 @@ const { useEffect, useRef, useState } = React;
         function getLineDefaults(){
           const api = window.RacerAI;
           if (api && api.DEFAULT_LINE_CFG) return { ...api.DEFAULT_LINE_CFG };
-          return { apexAggression: 0.80, maxOffset: 0.95 };
+          return { apexAggression: 0.90, maxOffset: 0.98 }; // Updated to match new defaults
         }
         const modeDefault = gripModeConfig && gripModeConfig.ai && gripModeConfig.ai.defaultDifficulty ? gripModeConfig.ai.defaultDifficulty : null;
         const initialAIDifficulty = loadStoredDifficulty() || sanitizeDifficulty(modeDefault) || sanitizeDifficulty("hard") || AVAILABLE_AI_DIFFICULTIES[0];
@@ -1374,8 +1374,8 @@ const { useEffect, useRef, useState } = React;
           const skillDefaults = getAISkillDefaults(initialAIDifficulty);
           return {
             difficulty: initialAIDifficulty,
-            apexAggression: lineDefaults.apexAggression ?? 0.80,
-            maxOffset: lineDefaults.maxOffset ?? 0.95,
+            apexAggression: lineDefaults.apexAggression ?? 0.90,
+            maxOffset: lineDefaults.maxOffset ?? 0.98,
             lookaheadBase: skillDefaults.lookaheadBase ?? 50,
             lookaheadSpeed: skillDefaults.lookaheadSpeed ?? 0.16,
             steerP: skillDefaults.steerP ?? 3.2,
@@ -3532,8 +3532,8 @@ const { useEffect, useRef, useState } = React;
               const lineDefaults = (window.RacerAI.DEFAULT_LINE_CFG) || {};
               racingLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, { 
                 straightSpeed: 440,
-                apexAggression: lineDefaults.apexAggression ?? 0.8,  // Use updated defaults
-                maxOffset: lineDefaults.maxOffset ?? 0.95,           // Use updated defaults
+                apexAggression: lineDefaults.apexAggression ?? 0.90,  // Use updated defaults
+                maxOffset: lineDefaults.maxOffset ?? 0.98,           // Use updated defaults
                 useElasticBandSolver: false  // Disabled - use working anchor-based algorithm
               }) || [];
               baseRacingLine = racingLine.map((node) => ({ ...node }));

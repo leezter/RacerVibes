@@ -6,8 +6,8 @@
   const DEFAULT_LINE_CFG = {
     sampleStep: 6,
     smoothingPasses: 5,
-    apexAggression: 0.8, // 0 = conservative (65% track width), 1 = aggressive (98% track width)  
-    maxOffset: 0.95, // Maximum fraction of half-width to use
+    apexAggression: 0.9, // INCREASED: 0 = conservative (65% track width), 1 = aggressive (98% track width)  
+    maxOffset: 0.98, // INCREASED: Maximum fraction of half-width to use
     minRadius: 12,
     roadFriction: 1.1,
     gravity: 750, // px/s^2 to roughly match RacerPhysics defaults
@@ -463,9 +463,9 @@
 
     // 2. Setup Constraints
     const halfWidth = roadWidth / 2;
-    const maxOff = cfg.maxOffset !== undefined ? cfg.maxOffset : 0.95; // Increased from 0.85
-    const aggression = clamp(cfg.apexAggression !== undefined ? cfg.apexAggression : 0.8, 0, 1);
-    const usableWidth = halfWidth * (0.65 + 0.33 * aggression) * maxOff; // More aggressive formula
+    const maxOff = cfg.maxOffset !== undefined ? cfg.maxOffset : 0.98; // Increased from 0.95
+    const aggression = clamp(cfg.apexAggression !== undefined ? cfg.apexAggression : 0.9, 0, 1);
+    const usableWidth = halfWidth * (0.70 + 0.28 * aggression) * maxOff; // EVEN MORE aggressive formula
 
     // 3. Calculate curvature at each point using wider window for stability
     const rawCurvatures = [];
@@ -861,10 +861,10 @@
       // Map 0.002 (Threshold) -> 0.005 (Full Width Radius ~200px)
       const severity = clamp((apex.mag - 0.002) / 0.003, 0, 1);
 
-      // Use severity directly with a minimum floor for detected corners
-      // If an apex passed the displacement filter, it deserves at least 30% amplitude
-      // Sharp turns (high severity) get progressively more offset
-      let amplitude = Math.max(0.3, severity);
+      // Use severity directly with a HIGHER minimum floor for detected corners
+      // If an apex passed the displacement filter, it deserves at least 50% amplitude
+      // Sharp turns (high severity) get progressively more offset up to 100%
+      let amplitude = Math.max(0.5, severity); // INCREASED from 0.3 to 0.5
       
       const currentWidth = usableWidth * amplitude;
       
