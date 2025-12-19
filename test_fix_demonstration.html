@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Racing Line Fix Demonstration</title>
+  <style>
+    body {
+      font-family: 'Courier New', monospace;
+      background: #1a1a2e;
+      color: #eee;
+      padding: 20px;
+      margin: 0;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: #0ff;
+      border-bottom: 2px solid #0ff;
+      padding-bottom: 10px;
+    }
+    .section {
+      background: #16213e;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      border: 1px solid #0f3460;
+    }
+    .test-row {
+      display: flex;
+      gap: 20px;
+      margin: 20px 0;
+    }
+    .test-box {
+      flex: 1;
+      background: #0f3460;
+      padding: 15px;
+      border-radius: 5px;
+    }
+    canvas {
+      border: 2px solid #0ff;
+      border-radius: 5px;
+      background: #0a1929;
+      display: block;
+      margin: 10px auto;
+    }
+    .good { color: #4f4; }
+    .bad { color: #f44; }
+    .warn { color: #fa4; }
+    button {
+      background: #0ff;
+      color: #000;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: bold;
+      border-radius: 5px;
+      cursor: pointer;
+      margin: 5px;
+    }
+    button:hover {
+      background: #4ff;
+    }
+    .stats {
+      font-size: 14px;
+      line-height: 1.8;
+    }
+    .code {
+      background: #000;
+      padding: 10px;
+      border-radius: 3px;
+      font-size: 12px;
+      overflow-x: auto;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🏎️ Racing Line Fix Demonstration</h1>
+    
+    <div class="section">
+      <h2>Problem Diagnosis</h2>
+      <p class="warn">⚠️ <strong>Root Cause Found:</strong></p>
+      <p>The game was using <strong>cached/stored racing lines</strong> created with old conservative parameters (apexAggression=0.5, maxOffset=0.85).</p>
+      <p>Even though we updated the defaults to apexAggression=0.8 and maxOffset=0.95, the stored lines were never regenerated!</p>
+      
+      <div class="code">
+// OLD CODE (lines 3519-3522 in racer.html):<br>
+const storedLine = Array.isArray(T.racingLine) ? T.racingLine : null;<br>
+if (storedLine && storedLine.length) {<br>
+  baseRacingLine = storedLine.map((node) => ({ ...node }));<br>
+  racingLine = baseRacingLine.map((node) => ({ ...node }));<br>
+} else { /* generate new line */ }<br>
+<br>
+<span class="bad">// ❌ Problem: Old stored line with conservative params is reused!</span>
+      </div>
+      
+      <div class="code">
+// NEW CODE (FIXED):<br>
+// ALWAYS regenerate racing line to use updated parameters<br>
+if (window.RacerAI && typeof window.RacerAI.buildRacingLine === "function") {<br>
+  racingLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, { <br>
+    straightSpeed: 440,<br>
+    apexAggression: 0.8,  // <span class="good">✓ Use new aggressive defaults</span><br>
+    maxOffset: 0.95,       // <span class="good">✓ Use new aggressive defaults</span><br>
+    useElasticBandSolver: false<br>
+  }) || [];<br>
+}<br>
+<span class="good">// ✓ Solution: Always regenerate with current parameters!</span>
+      </div>
+    </div>
+    
+    <div class="section">
+      <h2>Visual Comparison Test</h2>
+      <p>Click buttons to see the difference between old and new racing line parameters:</p>
+      
+      <div style="text-align: center;">
+        <button onclick="testOldParams()">OLD Parameters (0.5, 0.85)</button>
+        <button onclick="testNewParams()">NEW Parameters (0.8, 0.95)</button>
+        <button onclick="testHairpin()">Test Hairpin Turn</button>
+      </div>
+      
+      <canvas id="canvas" width="800" height="500"></canvas>
+      
+      <div id="stats" class="stats"></div>
+    </div>
+    
+    <div class="section">
+      <h2>Expected Results</h2>
+      <div class="test-row">
+        <div class="test-box">
+          <h3 class="bad">❌ OLD (Conservative)</h3>
+          <ul>
+            <li>Max offset: ~66% of half-width</li>
+            <li>Timid corner cutting</li>
+            <li>Stays too close to centerline</li>
+            <li>Formula: halfWidth * (0.6 + 0.35 * 0.5) * 0.85 = 0.66</li>
+          </ul>
+        </div>
+        <div class="test-box">
+          <h3 class="good">✓ NEW (Aggressive)</h3>
+          <ul>
+            <li>Max offset: ~87% of half-width</li>
+            <li>Proper corner cutting</li>
+            <li>Uses full track width</li>
+            <li>Formula: halfWidth * (0.65 + 0.33 * 0.8) * 0.95 = 0.87</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script src="utils/utils.js"></script>
+  <script src="ai/racer_ai.js"></script>
+  
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const stats = document.getElementById('stats');
+    
+    function createSharpCorner() {
+      const points = [];
+      const r = 80;
+      const cx = 400, cy = 250;
+      
+      // Approach
+      for (let i = 0; i < 25; i++) {
+        points.push({ x: cx - r - 150 + i * 6, y: cy - r });
+      }
+      
+      // 90° Corner
+      for (let i = 0; i <= 25; i++) {
+        const angle = (Math.PI / 2) * (i / 25);
+        points.push({
+          x: cx - r * Math.cos(angle),
+          y: cy - r + r * Math.sin(angle)
+        });
+      }
+      
+      // Exit
+      for (let i = 1; i <= 25; i++) {
+        points.push({ x: cx, y: cy + i * 6 });
+      }
+      
+      return points;
+    }
+    
+    function createHairpin() {
+      const points = [];
+      const r = 60;
+      const cx = 400, cy = 250;
+      
+      // Approach
+      for (let i = 0; i < 20; i++) {
+        points.push({ x: cx - r - 100 + i * 5, y: cy });
+      }
+      
+      // 180° Hairpin
+      for (let i = 0; i <= 35; i++) {
+        const angle = Math.PI * (i / 35);
+        points.push({
+          x: cx - r * Math.cos(angle),
+          y: cy + r * Math.sin(angle)
+        });
+      }
+      
+      // Exit
+      for (let i = 1; i <= 20; i++) {
+        points.push({ x: cx + r + i * 5, y: cy });
+      }
+      
+      return points;
+    }
+    
+    function drawTest(centerline, trackWidth, apex Aggression, maxOffset, title) {
+      const halfWidth = trackWidth / 2;
+      
+      // Generate racing line
+      const racingLine = window.RacerAI.buildRacingLine(centerline, trackWidth, {
+        straightSpeed: 440,
+        apexAggression: apexAggression,
+        maxOffset: maxOffset
+      });
+      
+      // Calculate offsets
+      const offsets = [];
+      for (let i = 0; i < Math.min(centerline.length, racingLine.length); i++) {
+        const center = centerline[i];
+        let minDist = Infinity;
+        for (let j = 0; j < racingLine.length; j++) {
+          const dist = Math.hypot(racingLine[j].x - center.x, racingLine[j].y - center.y);
+          if (dist < minDist) minDist = dist;
+        }
+        offsets.push(minDist);
+      }
+      
+      const maxOff = Math.max(...offsets);
+      const avgOff = offsets.reduce((a, b) => a + b, 0) / offsets.length;
+      const percentHW = (maxOff / halfWidth * 100).toFixed(1);
+      
+      // Expected calculation
+      const expectedFactor = (0.65 + 0.33 * apexAggression) * maxOffset;
+      const expectedOff = halfWidth * expectedFactor;
+      const expectedPercent = (expectedFactor * 100).toFixed(1);
+      
+      // Clear canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Draw track boundaries
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < centerline.length - 1; i++) {
+        const p1 = centerline[i];
+        const p2 = centerline[i + 1];
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const len = Math.hypot(dx, dy);
+        const nx = -dy / len;
+        const ny = dx / len;
+        
+        ctx.beginPath();
+        ctx.moveTo(p1.x + nx * halfWidth, p1.y + ny * halfWidth);
+        ctx.lineTo(p2.x + nx * halfWidth, p2.y + ny * halfWidth);
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.moveTo(p1.x - nx * halfWidth, p1.y - ny * halfWidth);
+        ctx.lineTo(p2.x - nx * halfWidth, p2.y - ny * halfWidth);
+        ctx.stroke();
+      }
+      
+      // Draw centerline
+      ctx.strokeStyle = '#555';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      centerline.forEach((p, i) => {
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+      
+      // Draw racing line
+      const lineColor = apexAggression >= 0.75 ? '#0ff' : '#f80';
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      racingLine.forEach((p, i) => {
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
+      ctx.stroke();
+      
+      // Draw points
+      racingLine.forEach(p => {
+        ctx.fillStyle = lineColor;
+        ctx.fillRect(p.x - 3, p.y - 3, 6, 6);
+      });
+      
+      // Show statistics
+      const isGood = maxOff >= expectedOff * 0.9;
+      const statusClass = isGood ? 'good' : 'bad';
+      const statusText = isGood ? '✓ PASS' : '✗ FAIL';
+      
+      stats.innerHTML = `
+        <h3>${title} - <span class="${statusClass}">${statusText}</span></h3>
+        <p><strong>Parameters:</strong> apexAggression=${apexAggression}, maxOffset=${maxOffset}</p>
+        <p><strong>Track Width:</strong> ${trackWidth}px (half-width: ${halfWidth}px)</p>
+        <p><strong>Max Offset:</strong> ${maxOff.toFixed(1)}px (<span class="${statusClass}">${percentHW}%</span> of half-width)</p>
+        <p><strong>Avg Offset:</strong> ${avgOff.toFixed(1)}px</p>
+        <p><strong>Expected Max:</strong> ${expectedOff.toFixed(1)}px (${expectedPercent}% of half-width)</p>
+        <p><strong>Formula:</strong> halfWidth * (0.65 + 0.33 * ${apexAggression}) * ${maxOffset} = ${expectedFactor.toFixed(3)}</p>
+        <p><strong>Result:</strong> ${isGood ? 'Line uses adequate track width ✓' : 'Line too conservative ✗'}</p>
+      `;
+    }
+    
+    function testOldParams() {
+      const centerline = createSharpCorner();
+      drawTest(centerline, 180, 0.5, 0.85, 'OLD Parameters (Conservative)');
+    }
+    
+    function testNewParams() {
+      const centerline = createSharpCorner();
+      drawTest(centerline, 180, 0.8, 0.95, 'NEW Parameters (Aggressive)');
+    }
+    
+    function testHairpin() {
+      const centerline = createHairpin();
+      drawTest(centerline, 180, 0.8, 0.95, '180° Hairpin with NEW Parameters');
+    }
+    
+    // Auto-run
+    setTimeout(() => testNewParams(), 300);
+  </script>
+</body>
+</html>

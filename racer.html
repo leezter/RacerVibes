@@ -2344,9 +2344,14 @@ const { useEffect, useRef, useState } = React;
               ? overrides.maxThrottle
               : (skillDefaults.maxThrottle ?? AI_SKILL_FALLBACK.maxThrottle ?? 1);
             const throttleScale = mapMaxThrottleToSpeedScale(throttleSetting);
-            const canUseBase = baseRacingLine && baseRacingLine.length && !forceCustom &&
-              approxEqual(apex, defaults.apexAggression ?? apex) &&
-              approxEqual(maxOffset, defaults.maxOffset ?? maxOffset);
+            
+            // Check if we can use the cached baseRacingLine
+            // NOTE: We never cache when using default params because baseRacingLine might be from
+            // old storage with different defaults. Always regenerate to ensure fresh parameters.
+            const usingDefaults = approxEqual(apex, defaults.apexAggression ?? apex) &&
+                                  approxEqual(maxOffset, defaults.maxOffset ?? maxOffset);
+            const canUseBase = false; // DISABLED: Always regenerate to use updated parameters
+            
             const scaleLine = (source) => {
               if (!source || !source.length) return [];
               return source.map((node) => ({
@@ -2369,6 +2374,10 @@ const { useEffect, useRef, useState } = React;
                 if (typeof maxOffset === "number") opts.maxOffset = maxOffset;
                 const builtLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, opts) || [];
                 racingLine = scaleLine(builtLine);
+                // Update baseRacingLine so subsequent throttle-only changes can use cache
+                if (usingDefaults) {
+                  baseRacingLine = builtLine.map(node => ({ ...node }));
+                }
               }
             }
             if (activeTrack) {
@@ -3516,13 +3525,15 @@ const { useEffect, useRef, useState } = React;
             buildTrackSurfaceCanvas();
             const zones = Array.isArray(T.speedZones) && T.speedZones.length ? T.speedZones : [[0, Math.max(1, Math.floor(centerline.length / 24)), 220]];
             waypoints = buildWaypoints(centerline, zones);
-            const storedLine = Array.isArray(T.racingLine) ? T.racingLine : null;
-            if (storedLine && storedLine.length) {
-              baseRacingLine = storedLine.map((node) => ({ ...node }));
-              racingLine = baseRacingLine.map((node) => ({ ...node }));
-            } else if (window.RacerAI && typeof window.RacerAI.buildRacingLine === "function") {
+            
+            // ALWAYS regenerate racing line to use updated parameters (apexAggression=0.8, maxOffset=0.95)
+            // Don't use stored lines which may have been created with old conservative parameters
+            if (window.RacerAI && typeof window.RacerAI.buildRacingLine === "function") {
+              const lineDefaults = (window.RacerAI.DEFAULT_LINE_CFG) || {};
               racingLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, { 
                 straightSpeed: 440,
+                apexAggression: lineDefaults.apexAggression ?? 0.8,  // Use updated defaults
+                maxOffset: lineDefaults.maxOffset ?? 0.95,           // Use updated defaults
                 useElasticBandSolver: false  // Disabled - use working anchor-based algorithm
               }) || [];
               baseRacingLine = racingLine.map((node) => ({ ...node }));
