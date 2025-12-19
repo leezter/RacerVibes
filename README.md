@@ -9,6 +9,27 @@ What’s included
 - Pause when app/tab hidden
 - Optional Screen Wake Lock (keeps the display on while playing)
 - PWA manifest + service worker
+- **NEW**: Elastic Band Racing Line Solver - Mathematical racing line optimization
+
+## Racing Line Solver
+
+The game now includes two racing line generation algorithms:
+
+1. **Anchor-Based (Default)**: Fast, explicit apex detection
+2. **Elastic Band Solver (New)**: Iterative gradient descent for minimum curvature paths
+
+See [docs/racing-line-solver.md](docs/racing-line-solver.md) for detailed documentation.
+
+### Quick Example
+
+```javascript
+// Use the new elastic band solver
+const racingLine = RacerAI.buildRacingLine(centerline, trackWidth, {
+  useElasticBandSolver: true,
+  apexAggression: 0.7,
+  elasticBandIterations: 75
+});
+```
 
 How to run locally (Windows PowerShell)
 1. Serve the folder over HTTP (service workers need http/https). You can use Python or Node.
