@@ -1037,7 +1037,11 @@
     // No additional path smoothing needed - it destroys anchor positions.
 
     // 7.5 Straighten wavering sections (removes unnecessary weaving on lumpy tracks)
-    path = straightenPath(path, points, usableWidth, smoothCurvatures);
+    // CRITICAL FIX: Pass the ACTUAL track boundary (halfWidth * maxOff), not usableWidth
+    // usableWidth is already scaled by the formula and is what we WANT to use
+    // straightenPath should only prevent going beyond the track boundaries
+    const trackBoundary = halfWidth * maxOff;
+    path = straightenPath(path, points, trackBoundary, smoothCurvatures);
 
     // 7.6 Fix Direction Reversals (prevent path from folding back on itself)
     // When anchors are close together with opposite offsets, the path can zigzag
