@@ -2296,7 +2296,10 @@ const { useEffect, useRef, useState } = React;
           const LAPS_TO_FINISH = 3;
           let aiCars = []; // array of AI cars
           let racingLine = [];
-          let baseRacingLine = [];
+          let baseRacingLine = []; // For backward compatibility with stored tracks
+          let baseAnchorLine = []; // Base line for Anchor algorithm
+          let baseOptimalLine = []; // Base line for Optimal algorithm
+          let lastGeneratedAlgorithm = 'ANCHOR'; // Track which algorithm generated the base line
           let aiDifficulty = initialAIDifficulty;
           function buildControllerPreset(){
             const overrides = aiControlsRef.current;
@@ -2372,9 +2375,8 @@ const { useEffect, useRef, useState } = React;
               ? overrides.maxThrottle
               : (skillDefaults.maxThrottle ?? AI_SKILL_FALLBACK.maxThrottle ?? 1);
             const throttleScale = mapMaxThrottleToSpeedScale(throttleSetting);
-            const canUseBase = baseRacingLine && baseRacingLine.length && !forceCustom &&
-              approxEqual(apex, defaults.apexAggression ?? apex) &&
-              approxEqual(maxOffset, defaults.maxOffset ?? maxOffset);
+            const algorithm = racingLineAlgorithmRef.current || 'ANCHOR';
+            
             const scaleLine = (source) => {
               if (!source || !source.length) return [];
               return source.map((node) => ({
@@ -2382,13 +2384,22 @@ const { useEffect, useRef, useState } = React;
                 targetSpeed: Math.min(MAX_AI_TARGET_SPEED, (node.targetSpeed || 0) * throttleScale)
               }));
             };
-            if (canUseBase) {
-              racingLine = scaleLine(baseRacingLine);
+            
+            // Check if we can use a cached base line
+            const canUseAnchorBase = algorithm === 'ANCHOR' && baseAnchorLine && baseAnchorLine.length && !forceCustom &&
+              approxEqual(apex, defaults.apexAggression ?? apex) &&
+              approxEqual(maxOffset, defaults.maxOffset ?? maxOffset);
+            const canUseOptimalBase = algorithm === 'OPTIMAL_LINE' && baseOptimalLine && baseOptimalLine.length && !forceCustom;
+            
+            if (canUseAnchorBase) {
+              racingLine = scaleLine(baseAnchorLine);
+              setAnchorRacingLine(racingLine);
+            } else if (canUseOptimalBase) {
+              racingLine = scaleLine(baseOptimalLine);
+              setOptimalRacingLine(racingLine);
             } else {
-              const algorithm = racingLineAlgorithmRef.current || 'ANCHOR';
-              
               if (algorithm === 'OPTIMAL_LINE' && window.RacerOptimalLine && typeof window.RacerOptimalLine.generate === "function") {
-                // Use optimal min-curvature algorithm
+                // Use optimal min-curvature algorithm (apex aggression does NOT affect this)
                 console.log('Using Optimal Racing Line (Min-Curvature)');
                 const optimalOpts = {
                   debugMode: true, // Enable debug logging to verify algorithm behavior
@@ -2418,11 +2429,13 @@ const { useEffect, useRef, useState } = React;
                 });
                 
                 racingLine = scaleLine(lineWithSpeed);
+                baseOptimalLine = lineWithSpeed.map((node) => ({ ...node })); // Store unscaled base
                 setOptimalRacingLine(racingLine);
+                lastGeneratedAlgorithm = 'OPTIMAL_LINE';
               } else {
-                // Use anchor algorithm (default)
+                // Use anchor algorithm (default) - apex aggression DOES affect this
                 if (!window.RacerAI || typeof window.RacerAI.buildRacingLine !== "function") {
-                  const fallbackLine = baseRacingLine.length ? baseRacingLine : racingLine;
+                  const fallbackLine = baseAnchorLine.length ? baseAnchorLine : (baseRacingLine.length ? baseRacingLine : racingLine);
                   racingLine = scaleLine(fallbackLine);
                 } else {
                   const opts = { straightSpeed: (window.RacerAI.DEFAULT_LINE_CFG && window.RacerAI.DEFAULT_LINE_CFG.straightSpeed) || 520 };
@@ -2430,8 +2443,13 @@ const { useEffect, useRef, useState } = React;
                   if (typeof maxOffset === "number") opts.maxOffset = maxOffset;
                   const builtLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, opts) || [];
                   racingLine = scaleLine(builtLine);
+                  // Only save as base if using default parameters
+                  if (approxEqual(apex, defaults.apexAggression ?? apex) && approxEqual(maxOffset, defaults.maxOffset ?? maxOffset)) {
+                    baseAnchorLine = builtLine.map((node) => ({ ...node })); // Store unscaled base
+                  }
                 }
                 setAnchorRacingLine(racingLine);
+                lastGeneratedAlgorithm = 'ANCHOR';
               }
             }
             if (activeTrack) {
@@ -3582,14 +3600,18 @@ const { useEffect, useRef, useState } = React;
             const storedLine = Array.isArray(T.racingLine) ? T.racingLine : null;
             if (storedLine && storedLine.length) {
               baseRacingLine = storedLine.map((node) => ({ ...node }));
+              baseAnchorLine = storedLine.map((node) => ({ ...node })); // Initialize anchor base from stored
               racingLine = baseRacingLine.map((node) => ({ ...node }));
             } else if (window.RacerAI && typeof window.RacerAI.buildRacingLine === "function") {
               racingLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, { straightSpeed: 440 }) || [];
               baseRacingLine = racingLine.map((node) => ({ ...node }));
+              baseAnchorLine = racingLine.map((node) => ({ ...node })); // Initialize anchor base
             } else {
               racingLine = [];
               baseRacingLine = [];
+              baseAnchorLine = [];
             }
+            baseOptimalLine = []; // Optimal line needs to be generated on demand
             if (activeTrack) {
               activeTrack.racingLine = racingLine;
             }
