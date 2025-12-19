@@ -21,7 +21,7 @@
   // Configuration constants
   const DEFAULT_CONFIG = {
     resampleStep: 12, // Arc-length spacing for centerline resampling
-    iterations: 300, // Number of smoothing iterations - increased for smoother convergence
+    iterations: 200, // Number of smoothing iterations - reduced since we converge faster now
     lambda: 0.1, // Bending-energy smoothing strength (must be small for stability)
     safetyMargin: 15, // Safety margin from track edges (pixels)
     enableAntiWobble: false, // Optional low-pass filter to reduce oscillations
@@ -258,14 +258,15 @@
   /**
    * Detect corners in the centerline curvature profile
    * Returns array of corner segments with entry, apex, and exit indices
+   * CRITICAL: We want to detect real corners, not tiny bumps/waves
    */
-  function detectCorners(centerlineCurvatures, kThreshold = 0.0015) {
+  function detectCorners(centerlineCurvatures, kThreshold = 0.004) {
     const n = centerlineCurvatures.length;
     const corners = [];
     
-    // Smooth curvatures with moving average to reduce noise
+    // Smooth curvatures MORE aggressively to filter out noise/bumps
     const smoothed = new Array(n);
-    const windowSize = 15;
+    const windowSize = 25; // Increased from 15 to filter bumps better
     for (let i = 0; i < n; i++) {
       let sum = 0;
       for (let j = -windowSize; j <= windowSize; j++) {
@@ -304,13 +305,16 @@
             ? cornerEnd - cornerStart + 1
             : n - cornerStart + cornerEnd + 1;
           
-          if (cornerLength > 5) { // Minimum corner length
+          // CRITICAL: Require minimum corner length to avoid treating bumps as corners
+          // Also require sustained high curvature (not just a spike)
+          if (cornerLength > 15 && maxCurvMag > kThreshold * 1.5) {
             corners.push({
               entry: cornerStart,
               apex: maxCurvIdx,
               exit: cornerEnd,
               sign: Math.sign(smoothed[maxCurvIdx]),
-              magnitude: maxCurvMag
+              magnitude: maxCurvMag,
+              length: cornerLength
             });
           }
           
@@ -359,9 +363,16 @@
       if (count === 0) count = 1; // Avoid division by zero
       avgHalfWidth /= count;
       
-      // Define inside/outside amounts - use moderate values for very smooth, natural transitions
-      const outsideAmount = avgHalfWidth * 0.4;  // Further reduced for gentler positioning
-      const insideAmount = avgHalfWidth * 0.5;   // Further reduced for smoother flow
+      // Define inside/outside amounts based on corner severity
+      // For real corners (not bumps), use aggressive positioning to match reference
+      const cornerSeverity = corner.magnitude; // Higher magnitude = sharper corner
+      
+      // Scale targets based on corner severity, but be more aggressive overall
+      const baseOutside = 0.65; // Was 0.4 - now much more aggressive
+      const baseInside = 0.75;  // Was 0.5 - now much tighter on apex
+      
+      const outsideAmount = avgHalfWidth * baseOutside;
+      const insideAmount = avgHalfWidth * baseInside;
       
       // Inside direction based on turn sign
       // Positive curvature = left turn → inside is +offset (left/outside normal direction)
@@ -373,41 +384,36 @@
       const aApex = insideSign * insideAmount;      // Tight apex
       const aExit = -insideSign * outsideAmount;    // Wide exit
       
-      // EXTEND the transition zones beyond the detected corner for very smooth approach/exit
-      // Add longer approach zone before entry (40% of track length or 50 points, whichever is smaller)
-      const approachLength = Math.min(Math.floor(n * 0.4), 50);
-      const exitLength = Math.min(Math.floor(n * 0.4), 50);
+      // Transition zones: scale based on corner length for natural flow
+      // Shorter for sharp corners, longer for gentle sweepers
+      const approachLength = Math.min(Math.floor(cornerLength * 0.7), 35);
+      const exitLength = Math.min(Math.floor(cornerLength * 0.7), 35);
       
       const extendedEntry = (entry - approachLength + n) % n;
       const extendedExit = (exit + exitLength) % n;
       
-      // Interpolate from extended entry to apex (very smooth approach with S-curve)
+      // Interpolate from extended entry to apex (smooth approach with simple cosine)
       let segmentLength = extendedEntry <= apex ? apex - extendedEntry : n - extendedEntry + apex;
       if (segmentLength > 0) {
         for (let j = 0; j <= segmentLength; j++) {
           const idx = (extendedEntry + j) % n;
           const t = j / segmentLength;
-          // Double-cosine (S-curve) interpolation for extra smoothness
-          // First ease-in, then ease-out
-          const blend = t < 0.5 
-            ? 0.5 * (1 - Math.cos(t * 2 * Math.PI)) 
-            : 0.5 * (1 + Math.cos((t - 0.5) * 2 * Math.PI));
+          // Simple cosine interpolation for smooth but direct transitions
+          const blend = 0.5 - 0.5 * Math.cos(t * Math.PI);
           targets[idx] = aEntry + blend * (aApex - aEntry);
         }
       } else {
         targets[entry] = aEntry;
       }
       
-      // Interpolate from apex to extended exit (very smooth departure with S-curve)
+      // Interpolate from apex to extended exit (smooth exit with simple cosine)
       segmentLength = apex <= extendedExit ? extendedExit - apex : n - apex + extendedExit;
       if (segmentLength > 0) {
         for (let j = 0; j <= segmentLength; j++) {
           const idx = (apex + j) % n;
           const t = j / segmentLength;
-          // Double-cosine (S-curve) interpolation for extra smoothness
-          const blend = t < 0.5 
-            ? 0.5 * (1 - Math.cos(t * 2 * Math.PI)) 
-            : 0.5 * (1 + Math.cos((t - 0.5) * 2 * Math.PI));
+          // Simple cosine interpolation for smooth but direct transitions
+          const blend = 0.5 - 0.5 * Math.cos(t * Math.PI);
           targets[idx] = aApex + blend * (aExit - aApex);
         }
       } else {
@@ -616,8 +622,8 @@
     // Step 5: Compute corridor bounds
     const { aMin, aMax } = computeCorridorBounds(resampled, normals, roadWidth, cfg.safetyMargin);
 
-    // Step 6: Detect corners for racing line bias (lowered threshold to 0.0015 for better detection)
-    const corners = detectCorners(centerlineCurvatures, 0.0015);
+    // Step 6: Detect corners for racing line bias (raised threshold to 0.004 to ignore bumps/waves)
+    const corners = detectCorners(centerlineCurvatures, 0.004);
     const racingLineTargets = generateRacingLineTargets(n, corners, aMin, aMax);
     
     if (cfg.debugMode) {
@@ -636,14 +642,14 @@
     // Step 7: Initialize offsets at centerline, NOT at targets (let optimizer find the path)
     let offsets = new Array(n).fill(0);
 
-    // Optimization parameters - rebalanced for very smooth, gradual, natural racing lines
+    // Optimization parameters - rebalanced for tight, professional racing lines
     const wCurvature = 1.0;       // Path curvature weight (primary: minimize bending)
-    const wFirstDeriv = 0.3;      // First derivative penalty (prevent large jumps) - increased for smoothness
-    const wSmooth = 1.5;          // Second derivative penalty (prevent wobble) - increased for ultra-smooth
-    const wTarget = 0.5;          // Target bias weight (racing line pattern) - reduced further for gentle guidance
-    const step = 0.10;            // Gradient descent step size - reduced more for gradual convergence
+    const wFirstDeriv = 0.15;     // First derivative penalty - REDUCED to allow sharper transitions
+    const wSmooth = 0.8;          // Second derivative penalty - REDUCED to allow tighter lines
+    const wTarget = 1.2;          // Target bias weight - INCREASED to follow racing line more strongly
+    const step = 0.15;            // Gradient descent step size - INCREASED for faster convergence to targets
     const eps = 0.5;              // Finite difference epsilon
-    const maxStepSize = 4.0;      // Maximum offset change per iteration - reduced for smoother transitions
+    const maxStepSize = 8.0;      // Maximum offset change per iteration - INCREASED to reach targets faster
 
     // Log bounds info if debug mode
     if (cfg.debugMode) {
