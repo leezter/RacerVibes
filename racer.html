@@ -11,6 +11,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://unpkg.com/planck-js@0.3.0/dist/planck.min.js"></script>
   <script src="utils/utils.js"></script>
+  <script src="racing_line_solver.js"></script>
   <script src="ai/racer_ai.js"></script>
   <script src="utils/storage-utils.js"></script>
   <script type="module" src="physics.js"></script>
@@ -2360,7 +2361,12 @@ const { useEffect, useRef, useState } = React;
                 const fallbackLine = baseRacingLine.length ? baseRacingLine : racingLine;
                 racingLine = scaleLine(fallbackLine);
               } else {
-                const opts = { straightSpeed: (window.RacerAI.DEFAULT_LINE_CFG && window.RacerAI.DEFAULT_LINE_CFG.straightSpeed) || 520 };
+                const opts = { 
+                  straightSpeed: (window.RacerAI.DEFAULT_LINE_CFG && window.RacerAI.DEFAULT_LINE_CFG.straightSpeed) || 520,
+                  useElasticBandSolver: true,
+                  elasticBandIterations: 100,
+                  elasticBandSmoothing: 0.6
+                };
                 if (typeof apex === "number") opts.apexAggression = apex;
                 if (typeof maxOffset === "number") opts.maxOffset = maxOffset;
                 const builtLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, opts) || [];
@@ -3517,7 +3523,12 @@ const { useEffect, useRef, useState } = React;
               baseRacingLine = storedLine.map((node) => ({ ...node }));
               racingLine = baseRacingLine.map((node) => ({ ...node }));
             } else if (window.RacerAI && typeof window.RacerAI.buildRacingLine === "function") {
-              racingLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, { straightSpeed: 440 }) || [];
+              racingLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, { 
+                straightSpeed: 440,
+                useElasticBandSolver: true,
+                elasticBandIterations: 100,
+                elasticBandSmoothing: 0.6
+              }) || [];
               baseRacingLine = racingLine.map((node) => ({ ...node }));
             } else {
               racingLine = [];
