@@ -389,10 +389,72 @@
     return result;
   }
 
+  /**
+   * Enrich a simple path with racing line metadata (curvature, speed, etc.)
+   * Used by both anchor-based and elastic band solvers
+   */
+  function enrichRacingLine(path, cfg) {
+    if (!path || path.length < 3) return [];
+    
+    const n = path.length;
+    const g = cfg.gravity || 750;
+    const minRadius = cfg.minRadius || 12;
+    const straightSpeed = cfg.straightSpeed || 3000;
+    const cornerSpeedFloor = cfg.cornerSpeedFloor || 140;
+    
+    let arc = 0;
+    return path.map((pt, idx) => {
+      const prev = path[(idx - 1 + n) % n];
+      const next = path[(idx + 1) % n];
+      const segLen = Math.hypot(next.x - pt.x, next.y - pt.y) || 1;
+      arc += segLen;
+      
+      const tangent = { x: (next.x - pt.x) / segLen, y: (next.y - pt.y) / segLen };
+      const normal = { x: -tangent.y, y: tangent.x };
+      const curvature = signedCurvature(prev, pt, next);
+      const radiusPx = Math.max(minRadius, Math.abs(1 / (curvature || 1e-4)));
+      const rawSpeed = Math.sqrt(Math.max(0, (cfg.roadFriction || 1.1) * g * radiusPx));
+      const targetSpeed = clamp(rawSpeed, cornerSpeedFloor, straightSpeed);
+      
+      return {
+        index: idx,
+        s: arc,
+        x: pt.x,
+        y: pt.y,
+        tangent,
+        normal,
+        curvature,
+        radius: radiusPx,
+        targetSpeed,
+      };
+    });
+  }
+
   function buildRacingLine(centerline, roadWidth, options = {}) {
     if (!Array.isArray(centerline) || centerline.length < 3) return [];
     const cfg = { ...DEFAULT_LINE_CFG, ...options };
 
+    // NEW: Option to use the elastic band solver instead of anchor-based
+    if (cfg.useElasticBandSolver && global.RacingLineSolver) {
+      try {
+        const solver = new global.RacingLineSolver({
+          resampleSpacing: cfg.elasticBandSpacing || 10,
+          iterations: cfg.elasticBandIterations || 75,
+          optimizationFactor: cfg.apexAggression !== undefined ? cfg.apexAggression : 0.7,
+          smoothingStrength: cfg.elasticBandSmoothing || 0.5,
+        });
+        
+        const optimizedPath = solver.solve(centerline, roadWidth);
+        
+        // Convert to full racing line format with metadata
+        return enrichRacingLine(optimizedPath, cfg);
+      } catch (err) {
+        console.warn('Elastic band solver failed, falling back to anchor-based:', err);
+        // Fall through to anchor-based solver
+      }
+    }
+
+    // ORIGINAL: Anchor-based racing line generation
     // 1. Resample centerline to fine spacing for smooth curves
     const step = 12; // Finer spacing for smoother curves
     const points = resample(centerline, step);

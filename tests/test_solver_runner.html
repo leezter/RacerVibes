@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Racing Line Solver Tests (Elastic Band Algorithm)</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 { color: #00d9ff; margin-bottom: 20px; }
+    .subtitle { color: #888; font-size: 14px; margin-top: -15px; margin-bottom: 20px; }
+    
+    .controls {
+      margin-bottom: 20px;
+    }
+    button {
+      background: #00d9ff;
+      color: #1a1a2e;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 6px;
+      margin-right: 10px;
+    }
+    button:hover { background: #00b8d9; }
+    button:disabled { background: #666; cursor: not-allowed; }
+    
+    .summary {
+      background: #2a2a4e;
+      padding: 15px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 18px;
+    }
+    .summary.all-pass { border-left: 4px solid #00ff88; }
+    .summary.has-fail { border-left: 4px solid #ff4444; }
+    
+    .test-list { list-style: none; padding: 0; margin: 0; }
+    .test-item {
+      background: #2a2a4e;
+      margin-bottom: 10px;
+      padding: 15px 20px;
+      border-radius: 8px;
+      border-left: 4px solid #666;
+    }
+    .test-item.pass { border-left-color: #00ff88; }
+    .test-item.fail { border-left-color: #ff4444; }
+    .test-item.pending { border-left-color: #ffaa00; }
+    
+    .test-name {
+      font-weight: bold;
+      font-size: 16px;
+      margin-bottom: 5px;
+    }
+    .test-status {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: bold;
+      margin-left: 10px;
+    }
+    .test-status.pass { background: #00ff88; color: #000; }
+    .test-status.fail { background: #ff4444; color: #fff; }
+    .test-status.pending { background: #ffaa00; color: #000; }
+    
+    .test-message {
+      color: #aaa;
+      font-size: 14px;
+      margin-top: 5px;
+    }
+    
+    .visualizer {
+      margin-top: 30px;
+      background: #2a2a4e;
+      border-radius: 8px;
+      padding: 20px;
+    }
+    .visualizer h2 { margin-top: 0; color: #00d9ff; }
+    canvas {
+      background: #1a1a2e;
+      border-radius: 4px;
+      display: block;
+      margin: 10px auto;
+      border: 2px solid #444;
+    }
+    select, input[type="number"] {
+      background: #1a1a2e;
+      color: #eee;
+      border: 1px solid #444;
+      padding: 8px 12px;
+      font-size: 14px;
+      border-radius: 4px;
+      margin-right: 10px;
+    }
+    .config-row {
+      margin: 10px 0;
+    }
+    .config-row label {
+      display: inline-block;
+      width: 180px;
+      color: #aaa;
+    }
+    .legend {
+      margin-top: 15px;
+      font-size: 14px;
+    }
+    .legend-item {
+      display: inline-block;
+      margin-right: 20px;
+      margin-bottom: 5px;
+    }
+    .legend-color {
+      display: inline-block;
+      width: 30px;
+      height: 3px;
+      vertical-align: middle;
+      margin-right: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🏎️ Racing Line Solver Tests</h1>
+  <div class="subtitle">Elastic Band Algorithm - Iterative Gradient Descent</div>
+  
+  <div class="controls">
+    <button id="runAllBtn">Run All Tests</button>
+    <button id="runSelectedBtn">Run Selected</button>
+  </div>
+  
+  <div id="summary" class="summary" style="display:none;"></div>
+  
+  <ul id="testList" class="test-list"></ul>
+  
+  <div class="visualizer">
+    <h2>Track Visualizer</h2>
+    
+    <div class="config-row">
+      <label>Track Shape:</label>
+      <select id="trackSelect">
+        <option value="hairpin">Hairpin</option>
+        <option value="scurve">S-Curve</option>
+        <option value="circle">Circle</option>
+      </select>
+    </div>
+    
+    <div class="config-row">
+      <label>Optimization Factor:</label>
+      <input type="number" id="optFactorInput" min="0" max="1" step="0.1" value="0.7">
+      <span style="color: #888;">(0.0 = conservative, 1.0 = aggressive)</span>
+    </div>
+    
+    <div class="config-row">
+      <label>Smoothing Strength:</label>
+      <input type="number" id="smoothingInput" min="0" max="1" step="0.1" value="0.5">
+      <span style="color: #888;">(force applied per iteration)</span>
+    </div>
+    
+    <div class="config-row">
+      <label>Iterations:</label>
+      <input type="number" id="iterationsInput" min="10" max="300" step="10" value="75">
+    </div>
+    
+    <button id="visualizeBtn">Generate Racing Line</button>
+    
+    <div class="legend">
+      <div class="legend-item">
+        <span class="legend-color" style="background: #444; height: 20px; width: 20px;"></span>
+        Track Surface
+      </div>
+      <div class="legend-item">
+        <span class="legend-color" style="background: #666;"></span>
+        Centerline
+      </div>
+      <div class="legend-item">
+        <span class="legend-color" style="background: #00d9ff; height: 4px;"></span>
+        Racing Line (Solver)
+      </div>
+      <div class="legend-item">
+        <span class="legend-color" style="background: #ff4444; height: 6px; width: 6px; border-radius: 50%;"></span>
+        High Curvature Points
+      </div>
+    </div>
+    
+    <canvas id="trackCanvas" width="1000" height="700"></canvas>
+  </div>
+
+  <!-- Load dependencies -->
+  <script src="../racing_line_solver.js"></script>
+  <script src="racing_line_solver_tests.js"></script>
+  
+  <script>
+    const testListEl = document.getElementById('testList');
+    const summaryEl = document.getElementById('summary');
+    const runAllBtn = document.getElementById('runAllBtn');
+    const runSelectedBtn = document.getElementById('runSelectedBtn');
+    const trackSelect = document.getElementById('trackSelect');
+    const visualizeBtn = document.getElementById('visualizeBtn');
+    const optFactorInput = document.getElementById('optFactorInput');
+    const smoothingInput = document.getElementById('smoothingInput');
+    const iterationsInput = document.getElementById('iterationsInput');
+    const canvas = document.getElementById('trackCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Populate test list
+    function populateTests() {
+      testListEl.innerHTML = '';
+      RacingLineSolverTests.tests.forEach((test, idx) => {
+        const li = document.createElement('li');
+        li.className = 'test-item pending';
+        li.innerHTML = `
+          <input type="checkbox" checked data-idx="${idx}">
+          <span class="test-name">${test.name}</span>
+          <span class="test-status pending">PENDING</span>
+          <div class="test-message">Click "Run" to execute</div>
+        `;
+        testListEl.appendChild(li);
+      });
+    }
+
+    // Update test result in UI
+    function updateTestResult(idx, result) {
+      const item = testListEl.children[idx];
+      const status = item.querySelector('.test-status');
+      const message = item.querySelector('.test-message');
+      
+      item.className = `test-item ${result.pass ? 'pass' : 'fail'}`;
+      status.className = `test-status ${result.pass ? 'pass' : 'fail'}`;
+      status.textContent = result.pass ? 'PASS' : 'FAIL';
+      message.textContent = result.message;
+    }
+
+    // Run all tests
+    runAllBtn.onclick = function() {
+      runAllBtn.disabled = true;
+      const result = RacingLineSolverTests.runAll();
+      
+      result.results.forEach((r, idx) => {
+        updateTestResult(idx, r);
+      });
+      
+      summaryEl.style.display = 'block';
+      summaryEl.className = `summary ${result.failed === 0 ? 'all-pass' : 'has-fail'}`;
+      summaryEl.textContent = `Results: ${result.passed}/${result.passed + result.failed} tests passed`;
+      
+      runAllBtn.disabled = false;
+    };
+
+    // Run selected tests
+    runSelectedBtn.onclick = function() {
+      const checkboxes = testListEl.querySelectorAll('input[type="checkbox"]:checked');
+      let passed = 0, failed = 0;
+      
+      checkboxes.forEach(cb => {
+        const idx = parseInt(cb.dataset.idx);
+        const result = RacingLineSolverTests.runTest(idx);
+        updateTestResult(idx, result);
+        if (result.pass) passed++; else failed++;
+      });
+      
+      summaryEl.style.display = 'block';
+      summaryEl.className = `summary ${failed === 0 ? 'all-pass' : 'has-fail'}`;
+      summaryEl.textContent = `Results: ${passed}/${passed + failed} tests passed`;
+    };
+
+    // Visualize track and racing line
+    visualizeBtn.onclick = function() {
+      const trackType = trackSelect.value;
+      const tracks = RacingLineSolverTests.tracks;
+      
+      let centerline;
+      switch (trackType) {
+        case 'hairpin':
+          centerline = tracks.generateHairpin(500, 550, 250, 120, 1);
+          break;
+        case 'scurve':
+          centerline = tracks.generateSCurve(100, 200, 800, 40, 2);
+          break;
+        case 'circle':
+          centerline = tracks.generateCircle(500, 350, 250, 80);
+          break;
+      }
+      
+      const roadWidth = 200;
+      const optimizationFactor = parseFloat(optFactorInput.value);
+      const smoothingStrength = parseFloat(smoothingInput.value);
+      const iterations = parseInt(iterationsInput.value);
+      
+      const solver = new RacingLineSolver({
+        optimizationFactor,
+        smoothingStrength,
+        iterations
+      });
+      
+      const startTime = performance.now();
+      const racingLine = solver.solve(centerline, roadWidth);
+      const endTime = performance.now();
+      
+      console.log(`Solver completed in ${(endTime - startTime).toFixed(2)}ms`);
+      console.log(`Generated ${racingLine.length} points`);
+      
+      // Clear canvas
+      ctx.fillStyle = '#1a1a2e';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Draw track surface
+      ctx.strokeStyle = '#444';
+      ctx.lineWidth = roadWidth;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(centerline[0].x, centerline[0].y);
+      for (let i = 1; i < centerline.length; i++) {
+        ctx.lineTo(centerline[i].x, centerline[i].y);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      
+      // Draw centerline
+      ctx.strokeStyle = '#666';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.moveTo(centerline[0].x, centerline[0].y);
+      for (let i = 1; i < centerline.length; i++) {
+        ctx.lineTo(centerline[i].x, centerline[i].y);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      ctx.setLineDash([]);
+      
+      // Draw racing line
+      ctx.strokeStyle = '#00d9ff';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(racingLine[0].x, racingLine[0].y);
+      for (let i = 1; i < racingLine.length; i++) {
+        ctx.lineTo(racingLine[i].x, racingLine[i].y);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      
+      // Draw racing line dots
+      ctx.fillStyle = 'rgba(0, 217, 255, 0.4)';
+      for (let i = 0; i < racingLine.length; i += 5) {
+        ctx.beginPath();
+        ctx.arc(racingLine[i].x, racingLine[i].y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      
+      // Calculate and mark high-curvature points
+      const curvatures = [];
+      const n = racingLine.length;
+      for (let i = 0; i < n; i++) {
+        const prev = racingLine[(i - 1 + n) % n];
+        const curr = racingLine[i];
+        const next = racingLine[(i + 1) % n];
+        
+        const v1x = curr.x - prev.x;
+        const v1y = curr.y - prev.y;
+        const v2x = next.x - curr.x;
+        const v2y = next.y - curr.y;
+        
+        const len1 = Math.hypot(v1x, v1y) || 1;
+        const len2 = Math.hypot(v2x, v2y) || 1;
+        
+        const cross = (v1x / len1) * (v2y / len2) - (v1y / len1) * (v2x / len2);
+        const avgLen = (len1 + len2) / 2;
+        
+        curvatures.push(Math.abs(cross / avgLen));
+      }
+      
+      ctx.fillStyle = '#ff4444';
+      for (let i = 0; i < racingLine.length; i++) {
+        if (curvatures[i] > 0.002) {
+          ctx.beginPath();
+          ctx.arc(racingLine[i].x, racingLine[i].y, 6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      
+      // Show stats
+      console.log('Curvature stats:', {
+        max: Math.max(...curvatures).toFixed(5),
+        avg: (curvatures.reduce((a, b) => a + b, 0) / curvatures.length).toFixed(5),
+        highCurvPoints: curvatures.filter(c => c > 0.002).length
+      });
+    };
+
+    // Initialize
+    populateTests();
+    
+    // Auto-visualize on load
+    visualizeBtn.click();
+  </script>
+</body>
+</html>
