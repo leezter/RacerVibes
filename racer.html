@@ -12,6 +12,7 @@
   <script src="https://unpkg.com/planck-js@0.3.0/dist/planck.min.js"></script>
   <script src="utils/utils.js"></script>
   <script src="ai/racer_ai.js"></script>
+  <script src="ai/optimal_line.js"></script>
   <script src="utils/storage-utils.js"></script>
   <script type="module" src="physics.js"></script>
     <script src="decor_generator.js"></script>
@@ -1393,6 +1394,34 @@ const { useEffect, useRef, useState } = React;
           showAiLineRef.current = showAiLine;
           try { localStorage.setItem(AI_LINE_VIS_KEY, showAiLine ? "1" : "0"); } catch(_){ }
         }, [showAiLine]);
+        
+        // Racing line algorithm selection
+        const RACING_LINE_ALGORITHMS = ['ANCHOR', 'OPTIMAL_LINE'];
+        const RACING_LINE_LABELS = {
+          ANCHOR: 'Anchor (Default)',
+          OPTIMAL_LINE: 'Optimal Racing Line (Min-Curvature)'
+        };
+        const [racingLineAlgorithm, setRacingLineAlgorithm] = useState(() => {
+          try {
+            const stored = localStorage.getItem('racingLineAlgorithm');
+            return RACING_LINE_ALGORITHMS.includes(stored) ? stored : 'ANCHOR';
+          } catch(_) {
+            return 'ANCHOR';
+          }
+        });
+        const racingLineAlgorithmRef = useRef(racingLineAlgorithm);
+        useEffect(() => {
+          racingLineAlgorithmRef.current = racingLineAlgorithm;
+          try { localStorage.setItem('racingLineAlgorithm', racingLineAlgorithm); } catch(_){ }
+        }, [racingLineAlgorithm]);
+        
+        // Visualization options for racing lines
+        const [showLineComparison, setShowLineComparison] = useState(false);
+        const [showCorridorBounds, setShowCorridorBounds] = useState(false);
+        
+        // Store both racing lines for comparison
+        const [anchorRacingLine, setAnchorRacingLine] = useState([]);
+        const [optimalRacingLine, setOptimalRacingLine] = useState([]);
         const [clonePlayerGearbox, setClonePlayerGearbox] = useState(() => loadStoredCloneGearbox());
         const clonePlayerGearboxRef = useRef(clonePlayerGearbox);
         useEffect(() => {
@@ -2267,7 +2296,10 @@ const { useEffect, useRef, useState } = React;
           const LAPS_TO_FINISH = 3;
           let aiCars = []; // array of AI cars
           let racingLine = [];
-          let baseRacingLine = [];
+          let baseRacingLine = []; // For backward compatibility with stored tracks
+          let baseAnchorLine = []; // Base line for Anchor algorithm
+          let baseOptimalLine = []; // Base line for Optimal algorithm
+          let lastGeneratedAlgorithm = 'ANCHOR'; // Track which algorithm generated the base line
           let aiDifficulty = initialAIDifficulty;
           function buildControllerPreset(){
             const overrides = aiControlsRef.current;
@@ -2343,9 +2375,8 @@ const { useEffect, useRef, useState } = React;
               ? overrides.maxThrottle
               : (skillDefaults.maxThrottle ?? AI_SKILL_FALLBACK.maxThrottle ?? 1);
             const throttleScale = mapMaxThrottleToSpeedScale(throttleSetting);
-            const canUseBase = baseRacingLine && baseRacingLine.length && !forceCustom &&
-              approxEqual(apex, defaults.apexAggression ?? apex) &&
-              approxEqual(maxOffset, defaults.maxOffset ?? maxOffset);
+            const algorithm = racingLineAlgorithmRef.current || 'ANCHOR';
+            
             const scaleLine = (source) => {
               if (!source || !source.length) return [];
               return source.map((node) => ({
@@ -2353,18 +2384,72 @@ const { useEffect, useRef, useState } = React;
                 targetSpeed: Math.min(MAX_AI_TARGET_SPEED, (node.targetSpeed || 0) * throttleScale)
               }));
             };
-            if (canUseBase) {
-              racingLine = scaleLine(baseRacingLine);
+            
+            // Check if we can use a cached base line
+            const canUseAnchorBase = algorithm === 'ANCHOR' && baseAnchorLine && baseAnchorLine.length && !forceCustom &&
+              approxEqual(apex, defaults.apexAggression ?? apex) &&
+              approxEqual(maxOffset, defaults.maxOffset ?? maxOffset);
+            const canUseOptimalBase = algorithm === 'OPTIMAL_LINE' && baseOptimalLine && baseOptimalLine.length && !forceCustom;
+            
+            if (canUseAnchorBase) {
+              racingLine = scaleLine(baseAnchorLine);
+              setAnchorRacingLine(racingLine);
+            } else if (canUseOptimalBase) {
+              racingLine = scaleLine(baseOptimalLine);
+              setOptimalRacingLine(racingLine);
             } else {
-              if (!window.RacerAI || typeof window.RacerAI.buildRacingLine !== "function") {
-                const fallbackLine = baseRacingLine.length ? baseRacingLine : racingLine;
-                racingLine = scaleLine(fallbackLine);
+              if (algorithm === 'OPTIMAL_LINE' && window.RacerOptimalLine && typeof window.RacerOptimalLine.generate === "function") {
+                // Use optimal min-curvature algorithm (apex aggression does NOT affect this)
+                console.log('Using Optimal Racing Line (Min-Curvature)');
+                const optimalOpts = {
+                  debugMode: true, // Enable debug logging to verify algorithm behavior
+                  safetyMargin: 15,
+                  iterations: 200,
+                  lambda: 0.1,
+                  enableAntiWobble: false,
+                };
+                const builtLine = window.RacerOptimalLine.generate(centerline, ROAD_WIDTH, optimalOpts) || [];
+                
+                // Optimal line doesn't have targetSpeed yet, so add basic speed calculation
+                const lineWithSpeed = builtLine.map((p, i) => {
+                  // Simple speed model - slower in high curvature areas
+                  const prev = builtLine[(i - 1 + builtLine.length) % builtLine.length];
+                  const next = builtLine[(i + 1) % builtLine.length];
+                  const v1x = p.x - prev.x;
+                  const v1y = p.y - prev.y;
+                  const v2x = next.x - p.x;
+                  const v2y = next.y - p.y;
+                  const len1 = Math.hypot(v1x, v1y) || 1;
+                  const len2 = Math.hypot(v2x, v2y) || 1;
+                  const cross = Math.abs((v1x / len1) * (v2y / len2) - (v1y / len1) * (v2x / len2));
+                  const curvature = cross / ((len1 + len2) / 2);
+                  const radius = curvature > 0.0001 ? 1 / curvature : 10000;
+                  const targetSpeed = Math.min(MAX_AI_TARGET_SPEED, Math.sqrt(radius * 750 * 0.95)); // gravity * friction
+                  return { ...p, targetSpeed, curvature };
+                });
+                
+                racingLine = scaleLine(lineWithSpeed);
+                baseOptimalLine = lineWithSpeed.map((node) => ({ ...node })); // Store unscaled base
+                setOptimalRacingLine(racingLine);
+                lastGeneratedAlgorithm = 'OPTIMAL_LINE';
               } else {
-                const opts = { straightSpeed: (window.RacerAI.DEFAULT_LINE_CFG && window.RacerAI.DEFAULT_LINE_CFG.straightSpeed) || 520 };
-                if (typeof apex === "number") opts.apexAggression = apex;
-                if (typeof maxOffset === "number") opts.maxOffset = maxOffset;
-                const builtLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, opts) || [];
-                racingLine = scaleLine(builtLine);
+                // Use anchor algorithm (default) - apex aggression DOES affect this
+                if (!window.RacerAI || typeof window.RacerAI.buildRacingLine !== "function") {
+                  const fallbackLine = baseAnchorLine.length ? baseAnchorLine : (baseRacingLine.length ? baseRacingLine : racingLine);
+                  racingLine = scaleLine(fallbackLine);
+                } else {
+                  const opts = { straightSpeed: (window.RacerAI.DEFAULT_LINE_CFG && window.RacerAI.DEFAULT_LINE_CFG.straightSpeed) || 520 };
+                  if (typeof apex === "number") opts.apexAggression = apex;
+                  if (typeof maxOffset === "number") opts.maxOffset = maxOffset;
+                  const builtLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, opts) || [];
+                  racingLine = scaleLine(builtLine);
+                  // Only save as base if using default parameters
+                  if (approxEqual(apex, defaults.apexAggression ?? apex) && approxEqual(maxOffset, defaults.maxOffset ?? maxOffset)) {
+                    baseAnchorLine = builtLine.map((node) => ({ ...node })); // Store unscaled base
+                  }
+                }
+                setAnchorRacingLine(racingLine);
+                lastGeneratedAlgorithm = 'ANCHOR';
               }
             }
             if (activeTrack) {
@@ -3515,14 +3600,18 @@ const { useEffect, useRef, useState } = React;
             const storedLine = Array.isArray(T.racingLine) ? T.racingLine : null;
             if (storedLine && storedLine.length) {
               baseRacingLine = storedLine.map((node) => ({ ...node }));
+              baseAnchorLine = storedLine.map((node) => ({ ...node })); // Initialize anchor base from stored
               racingLine = baseRacingLine.map((node) => ({ ...node }));
             } else if (window.RacerAI && typeof window.RacerAI.buildRacingLine === "function") {
               racingLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, { straightSpeed: 440 }) || [];
               baseRacingLine = racingLine.map((node) => ({ ...node }));
+              baseAnchorLine = racingLine.map((node) => ({ ...node })); // Initialize anchor base
             } else {
               racingLine = [];
               baseRacingLine = [];
+              baseAnchorLine = [];
             }
+            baseOptimalLine = []; // Optimal line needs to be generated on demand
             if (activeTrack) {
               activeTrack.racingLine = racingLine;
             }
@@ -4053,12 +4142,85 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               ctx.restore();
             }
 
-            if (showAiLineRef.current && racingLine && racingLine.length > 1) {
-              strokeAiRacingLine(ctx, racingLine, {
-                width: Math.max(2, ROAD_WIDTH * 0.12),
-                dash: [28, 18],
-                alpha: 0.8
-              });
+            // Draw corridor bounds if enabled (debug visualization)
+            if (showCorridorBounds && racingLine && racingLine.length > 1 && racingLine[0].centerX !== undefined) {
+              ctx.save();
+              ctx.strokeStyle = "rgba(255, 200, 0, 0.4)";
+              ctx.lineWidth = 1;
+              ctx.setLineDash([5, 5]);
+              
+              // Draw left and right bounds
+              const leftBound = [];
+              const rightBound = [];
+              for (let i = 0; i < racingLine.length; i++) {
+                const node = racingLine[i];
+                if (node.centerX !== undefined && node.normalX !== undefined) {
+                  leftBound.push({
+                    x: node.centerX + node.normalX * node.aMax,
+                    y: node.centerY + node.normalY * node.aMax
+                  });
+                  rightBound.push({
+                    x: node.centerX + node.normalX * node.aMin,
+                    y: node.centerY + node.normalY * node.aMin
+                  });
+                }
+              }
+              
+              // Draw bounds
+              if (leftBound.length > 1) {
+                ctx.beginPath();
+                for (let i = 0; i < leftBound.length; i++) {
+                  const p = leftBound[i];
+                  if (i === 0) ctx.moveTo(p.x, p.y);
+                  else ctx.lineTo(p.x, p.y);
+                }
+                ctx.closePath();
+                ctx.stroke();
+              }
+              if (rightBound.length > 1) {
+                ctx.beginPath();
+                for (let i = 0; i < rightBound.length; i++) {
+                  const p = rightBound[i];
+                  if (i === 0) ctx.moveTo(p.x, p.y);
+                  else ctx.lineTo(p.x, p.y);
+                }
+                ctx.closePath();
+                ctx.stroke();
+              }
+              
+              ctx.restore();
+            }
+            
+            // Draw racing lines
+            if (showAiLineRef.current) {
+              if (showLineComparison) {
+                // Draw both lines for comparison
+                if (anchorRacingLine && anchorRacingLine.length > 1) {
+                  strokeAiRacingLine(ctx, anchorRacingLine, {
+                    width: Math.max(2, ROAD_WIDTH * 0.12),
+                    dash: [28, 18],
+                    alpha: 0.7,
+                    color: "rgba(96, 165, 250, 0.85)" // Blue for Anchor
+                  });
+                }
+                if (optimalRacingLine && optimalRacingLine.length > 1) {
+                  strokeAiRacingLine(ctx, optimalRacingLine, {
+                    width: Math.max(2, ROAD_WIDTH * 0.12),
+                    dash: [20, 12],
+                    alpha: 0.8,
+                    color: "rgba(239, 68, 68, 0.9)" // Red for Optimal
+                  });
+                }
+              } else if (racingLine && racingLine.length > 1) {
+                // Draw active racing line
+                const isOptimal = racingLineAlgorithmRef.current === 'OPTIMAL_LINE';
+                strokeAiRacingLine(ctx, racingLine, {
+                  width: Math.max(2, ROAD_WIDTH * 0.12),
+                  dash: isOptimal ? [20, 12] : [28, 18],
+                  alpha: 0.8,
+                  color: isOptimal ? "rgba(239, 68, 68, 0.9)" : "rgba(96, 165, 250, 0.85)"
+                });
+              }
             }
 
             // Skids and labels
@@ -4172,20 +4334,55 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
               ctx.save(); ctx.beginPath(); ctx.rect(x+2,y+2,mw-4,mh-4); ctx.clip();
               ctx.lineWidth = Math.max(1, ROAD_WIDTH*0.12*s);
               ctx.strokeStyle = "#9aa5b1"; ctx.beginPath(); for (let i=0;i<centerline.length;i++){ const p=centerline[i]; const px=p.x*s+ox, py=p.y*s+oy; if(i===0)ctx.moveTo(px,py); else ctx.lineTo(px,py);} ctx.stroke();
-              if (showAiLineRef.current && racingLine && racingLine.length > 1) {
-                ctx.strokeStyle = "rgba(96,165,250,0.9)";
-                ctx.lineWidth = Math.max(1, ROAD_WIDTH*0.08*s);
-                ctx.setLineDash([8, 6]);
-                ctx.beginPath();
-                for (let i=0;i<racingLine.length;i++){
-                  const node = racingLine[i];
-                  const lx = node.x*s+ox;
-                  const ly = node.y*s+oy;
-                  if(i===0)ctx.moveTo(lx,ly); else ctx.lineTo(lx,ly);
+              if (showAiLineRef.current) {
+                if (showLineComparison) {
+                  // Draw both lines for comparison
+                  if (anchorRacingLine && anchorRacingLine.length > 1) {
+                    ctx.strokeStyle = "rgba(96,165,250,0.9)";
+                    ctx.lineWidth = Math.max(1, ROAD_WIDTH*0.08*s);
+                    ctx.setLineDash([8, 6]);
+                    ctx.beginPath();
+                    for (let i=0;i<anchorRacingLine.length;i++){
+                      const node = anchorRacingLine[i];
+                      const lx = node.x*s+ox;
+                      const ly = node.y*s+oy;
+                      if(i===0)ctx.moveTo(lx,ly); else ctx.lineTo(lx,ly);
+                    }
+                    ctx.closePath();
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                  }
+                  if (optimalRacingLine && optimalRacingLine.length > 1) {
+                    ctx.strokeStyle = "rgba(239,68,68,0.9)";
+                    ctx.lineWidth = Math.max(1, ROAD_WIDTH*0.08*s);
+                    ctx.setLineDash([6, 4]);
+                    ctx.beginPath();
+                    for (let i=0;i<optimalRacingLine.length;i++){
+                      const node = optimalRacingLine[i];
+                      const lx = node.x*s+ox;
+                      const ly = node.y*s+oy;
+                      if(i===0)ctx.moveTo(lx,ly); else ctx.lineTo(lx,ly);
+                    }
+                    ctx.closePath();
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                  }
+                } else if (racingLine && racingLine.length > 1) {
+                  const isOptimal = racingLineAlgorithmRef.current === 'OPTIMAL_LINE';
+                  ctx.strokeStyle = isOptimal ? "rgba(239,68,68,0.9)" : "rgba(96,165,250,0.9)";
+                  ctx.lineWidth = Math.max(1, ROAD_WIDTH*0.08*s);
+                  ctx.setLineDash(isOptimal ? [6, 4] : [8, 6]);
+                  ctx.beginPath();
+                  for (let i=0;i<racingLine.length;i++){
+                    const node = racingLine[i];
+                    const lx = node.x*s+ox;
+                    const ly = node.y*s+oy;
+                    if(i===0)ctx.moveTo(lx,ly); else ctx.lineTo(lx,ly);
+                  }
+                  ctx.closePath();
+                  ctx.stroke();
+                  ctx.setLineDash([]);
                 }
-                ctx.closePath();
-                ctx.stroke();
-                ctx.setLineDash([]);
               }
               // cars
               function dot(col, px,py){ ctx.fillStyle=col; ctx.beginPath(); ctx.arc(px,py,3,0,Math.PI*2); ctx.fill(); }
@@ -4957,6 +5154,21 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                   ))}
                 </select>
               </label>
+              <label title="Select the racing line generation algorithm">
+                <span>Racing line algorithm</span>
+                <select 
+                  value={racingLineAlgorithm} 
+                  onChange={(e) => {
+                    setRacingLineAlgorithm(e.target.value);
+                    // Regenerate racing line with new algorithm
+                    setTimeout(() => runApplyAiLineOverrides({ forceCustom: true }), 0);
+                  }}
+                >
+                  {RACING_LINE_ALGORITHMS.map((alg) => (
+                    <option key={alg} value={alg}>{RACING_LINE_LABELS[alg]}</option>
+                  ))}
+                </select>
+              </label>
               <label title="Show or hide the path AI cars are targeting.">
                 <span>Show racing line</span>
                 <div className="field" style={{ justifyContent: "flex-end" }}>
@@ -4964,6 +5176,43 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                     type="checkbox"
                     checked={showAiLine}
                     onChange={(e) => setShowAiLine(e.target.checked)}
+                  />
+                </div>
+              </label>
+              <label title="Overlay both racing line algorithms for comparison">
+                <span>Compare lines (A/B)</span>
+                <div className="field" style={{ justifyContent: "flex-end" }}>
+                  <input
+                    type="checkbox"
+                    checked={showLineComparison}
+                    onChange={(e) => {
+                      const isEnabled = e.target.checked;
+                      setShowLineComparison(isEnabled);
+                      if (isEnabled) {
+                        // Generate both lines asynchronously to avoid blocking
+                        const savedAlg = racingLineAlgorithmRef.current;
+                        Promise.resolve().then(() => {
+                          racingLineAlgorithmRef.current = 'ANCHOR';
+                          runApplyAiLineOverrides({ forceCustom: true });
+                        }).then(() => new Promise(resolve => setTimeout(resolve, 10))).then(() => {
+                          racingLineAlgorithmRef.current = 'OPTIMAL_LINE';
+                          runApplyAiLineOverrides({ forceCustom: true });
+                        }).then(() => new Promise(resolve => setTimeout(resolve, 10))).then(() => {
+                          racingLineAlgorithmRef.current = savedAlg;
+                          runApplyAiLineOverrides({ forceCustom: true });
+                        });
+                      }
+                    }}
+                  />
+                </div>
+              </label>
+              <label title="Show corridor bounds used by the optimal line algorithm (Dev mode)">
+                <span>Show corridor bounds</span>
+                <div className="field" style={{ justifyContent: "flex-end" }}>
+                  <input
+                    type="checkbox"
+                    checked={showCorridorBounds}
+                    onChange={(e) => setShowCorridorBounds(e.target.checked)}
                   />
                 </div>
               </label>
