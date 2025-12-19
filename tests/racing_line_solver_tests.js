@@ -151,6 +151,11 @@
 
   const tests = [];
 
+  // Test constants
+  const SMOOTHNESS_TOLERANCE_FACTOR = 1.5; // Allow racing line to be up to 50% less smooth on gentle curves
+  const MAX_CIRCLE_OFFSET_STD_DEV = 20; // Maximum standard deviation for circle consistency (px)
+  const MIN_WIDTH_USAGE_PERCENT = 0.25; // Minimum track width usage for aggressive settings
+
   /**
    * TEST 1: Basic functionality - solver returns valid output
    */
@@ -232,7 +237,7 @@
       // Racing line should be reasonable (not much worse than center)
       // Gentle S-curves are already quite smooth, so solver may not improve much
       const improvement = ((centerSmoothness - racingSmoothness) / centerSmoothness) * 100;
-      const pass = racingSmoothness < centerSmoothness * 1.5; // Allow up to 50% worse for edge cases
+      const pass = racingSmoothness < centerSmoothness * SMOOTHNESS_TOLERANCE_FACTOR;
       
       return {
         pass,
@@ -345,7 +350,7 @@
       const stdDev = Math.sqrt(variance);
       
       // Should have low variance (consistent offset)
-      const pass = stdDev < 20;
+      const pass = stdDev < MAX_CIRCLE_OFFSET_STD_DEV;
       
       return {
         pass,
@@ -436,7 +441,7 @@
       
       // Should use at least 25% of available width (realistic for elastic band solver)
       // Note: Elastic band naturally finds smooth paths which may not use full width
-      const pass = maxOffset > halfWidth * 0.25;
+      const pass = maxOffset > halfWidth * MIN_WIDTH_USAGE_PERCENT;
       
       return {
         pass,

@@ -224,7 +224,8 @@
           // Calculate how much this point should move based on local curvature
           // Higher curvature = more aggressive cutting
           const curvature = Math.abs(curvatures[i]);
-          const curvatureFactor = Math.min(1, curvature * 200); // Scale curvature to 0-1
+          const CURVATURE_SCALE_FACTOR = 200; // Controls how aggressively to respond to curves
+          const curvatureFactor = Math.min(1, curvature * CURVATURE_SCALE_FACTOR);
           
           // Blend smoothing strength with optimization factor and curvature
           const effectiveStrength = this.smoothingStrength * (0.5 + 0.5 * this.optimizationFactor * (1 + curvatureFactor));
