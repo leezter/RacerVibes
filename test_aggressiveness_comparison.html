@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Racing Line Aggressiveness Comparison</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      padding: 20px;
+      margin: 0;
+    }
+    h1 {
+      color: #00d4ff;
+      text-align: center;
+    }
+    .comparison {
+      display: flex;
+      justify-content: space-around;
+      margin: 30px 0;
+      flex-wrap: wrap;
+    }
+    .box {
+      background: #16213e;
+      border: 2px solid #0f3460;
+      border-radius: 10px;
+      padding: 20px;
+      margin: 10px;
+      min-width: 300px;
+    }
+    .box h2 {
+      color: #ff6b6b;
+      margin-top: 0;
+      text-align: center;
+    }
+    .box.new h2 {
+      color: #4ecdc4;
+    }
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px;
+      margin: 5px 0;
+      background: #0f3460;
+      border-radius: 5px;
+    }
+    .metric .label {
+      color: #aaa;
+    }
+    .metric .value {
+      color: #fff;
+      font-weight: bold;
+    }
+    .metric.highlight .value {
+      color: #4ecdc4;
+      font-size: 1.2em;
+    }
+    canvas {
+      border: 2px solid #0f3460;
+      border-radius: 10px;
+      display: block;
+      margin: 20px auto;
+      background: #0a0e27;
+    }
+    .legend {
+      text-align: center;
+      margin: 10px 0;
+    }
+    .legend span {
+      display: inline-block;
+      margin: 0 15px;
+    }
+    .legend .color {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      vertical-align: middle;
+      margin-right: 5px;
+      border-radius: 3px;
+    }
+    .improvement {
+      background: #1e3a5f;
+      padding: 15px;
+      border-left: 4px solid #4ecdc4;
+      margin: 20px 0;
+      border-radius: 5px;
+    }
+    .improvement h3 {
+      color: #4ecdc4;
+      margin-top: 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>🏁 Racing Line Aggressiveness Comparison</h1>
+  
+  <div class="comparison">
+    <div class="box">
+      <h2>❌ ORIGINAL (Before Changes)</h2>
+      <div class="metric">
+        <span class="label">Apex Aggression:</span>
+        <span class="value">0.70</span>
+      </div>
+      <div class="metric">
+        <span class="label">Max Offset:</span>
+        <span class="value">0.90</span>
+      </div>
+      <div class="metric">
+        <span class="label">Formula:</span>
+        <span class="value">(0.6 + 0.35 * agg)</span>
+      </div>
+      <div class="metric">
+        <span class="label">Min Amplitude:</span>
+        <span class="value">30%</span>
+      </div>
+      <div class="metric highlight">
+        <span class="label">Track Width Usage:</span>
+        <span class="value">76.0%</span>
+      </div>
+      <div class="metric">
+        <span class="label">Min Offset:</span>
+        <span class="value">22.8 px</span>
+      </div>
+      <div class="metric">
+        <span class="label">Max Offset:</span>
+        <span class="value">76.1 px</span>
+      </div>
+    </div>
+    
+    <div class="box new">
+      <h2>✅ NEW (After Maximum Aggressiveness)</h2>
+      <div class="metric">
+        <span class="label">Apex Aggression:</span>
+        <span class="value">0.90</span>
+      </div>
+      <div class="metric">
+        <span class="label">Max Offset:</span>
+        <span class="value">0.98</span>
+      </div>
+      <div class="metric">
+        <span class="label">Formula:</span>
+        <span class="value">(0.70 + 0.28 * agg)</span>
+      </div>
+      <div class="metric">
+        <span class="label">Min Amplitude:</span>
+        <span class="value">50%</span>
+      </div>
+      <div class="metric highlight">
+        <span class="label">Track Width Usage:</span>
+        <span class="value">93.3%</span>
+      </div>
+      <div class="metric">
+        <span class="label">Min Offset:</span>
+        <span class="value">46.7 px</span>
+      </div>
+      <div class="metric">
+        <span class="label">Max Offset:</span>
+        <span class="value">93.3 px</span>
+      </div>
+    </div>
+  </div>
+  
+  <div class="improvement">
+    <h3>📈 Improvement Summary</h3>
+    <div class="metric">
+      <span class="label">Track Width Usage Increase:</span>
+      <span class="value">+22.7%</span>
+    </div>
+    <div class="metric">
+      <span class="label">Minimum Offset Increase:</span>
+      <span class="value">+104.8% (2x more aggressive)</span>
+    </div>
+    <div class="metric">
+      <span class="label">Maximum Offset Increase:</span>
+      <span class="value">+22.6%</span>
+    </div>
+  </div>
+  
+  <canvas id="visualizer" width="800" height="600"></canvas>
+  
+  <div class="legend">
+    <span><div class="color" style="background:#444;"></div>Track Centerline</span>
+    <span><div class="color" style="background:#ff6b6b;"></div>Original Line (76%)</span>
+    <span><div class="color" style="background:#4ecdc4;"></div>New Line (93.3%)</span>
+    <span><div class="color" style="background:#333;opacity:0.3;"></div>Track Boundaries</span>
+  </div>
+  
+  <script>
+    const canvas = document.getElementById('visualizer');
+    const ctx = canvas.getContext('2d');
+    
+    // Draw a simple hairpin turn to demonstrate the difference
+    const centerX = 400;
+    const centerY = 300;
+    const trackWidth = 200; // Half-width = 100px
+    const halfWidth = trackWidth / 2;
+    
+    // Calculate offsets
+    const originalOffset = halfWidth * 0.760; // 76%
+    const newOffset = halfWidth * 0.933; // 93.3%
+    
+    // Draw track boundaries
+    ctx.fillStyle = '#333';
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 200, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 200 - trackWidth, 0, Math.PI * 2);
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    
+    // Draw centerline
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, 200 - halfWidth, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    
+    // Draw original racing line (76%)
+    ctx.strokeStyle = '#ff6b6b';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    const originalRadius = 200 - halfWidth + originalOffset;
+    ctx.arc(centerX, centerY, originalRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Draw new racing line (93.3%)
+    ctx.strokeStyle = '#4ecdc4';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    const newRadius = 200 - halfWidth + newOffset;
+    ctx.arc(centerX, centerY, newRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Add labels
+    ctx.fillStyle = '#fff';
+    ctx.font = '14px "Segoe UI"';
+    ctx.textAlign = 'center';
+    
+    ctx.fillStyle = '#ff6b6b';
+    ctx.fillText('Original: 76% width', centerX, centerY - originalRadius - 10);
+    
+    ctx.fillStyle = '#4ecdc4';
+    ctx.fillText('New: 93.3% width', centerX, centerY - newRadius - 10);
+    
+    // Draw arrow showing improvement
+    ctx.strokeStyle = '#4ecdc4';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(centerX, centerY - originalRadius);
+    ctx.lineTo(centerX, centerY - newRadius);
+    ctx.stroke();
+    
+    // Arrow head
+    ctx.beginPath();
+    ctx.moveTo(centerX - 5, centerY - newRadius + 10);
+    ctx.lineTo(centerX, centerY - newRadius);
+    ctx.lineTo(centerX + 5, centerY - newRadius + 10);
+    ctx.stroke();
+    
+    ctx.fillStyle = '#4ecdc4';
+    ctx.fillText(`+${(newOffset - originalOffset).toFixed(1)}px`, centerX + 40, centerY - (originalRadius + newRadius) / 2);
+  </script>
+</body>
+</html>
