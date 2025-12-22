@@ -17,7 +17,7 @@ The AI uses an **Anchor-Based** algorithm to generate the optimal racing line. T
     *   **Amplitude Scaling**: The lateral offset of the anchors is scaled by the **Curvature Severity**.
     *   **Severity Formula**: `rawSeverity = clamp((curvature - 0.002) / 0.003, 0, 1)`, then `severity = pow(rawSeverity, 0.7)` — maps curvature to 0-1 range with power curve for more aggressive sharp corners.
     *   **Minimum Floor**: Detected corners get at least 25% amplitude (`amplitude = max(0.25, severity)`).
-    *   **Sharp Turns**: Higher severity means progressively more offset, up to ~85% of half-width (configurable via `apexAggression` and `maxOffset`).
+    *   **Sharp Turns**: Higher severity means progressively more offset, up to ~94% of half-width with default settings (`apexAggression=0.9`, `maxOffset=0.98`).
 6.  **Linear Interpolation**: The algorithm linearly interpolates between anchors. This creates **Straight Diagonal Lines** between corners.
 7.  **Anchor-Preserving Smoothing**: A smoothing pass blends the sharp corners at anchors while preserving the anchor positions themselves.
 8.  **Path Straightening**: A chord-based optimization pass eliminates unnecessary weaving on "lumpy" track sections.
