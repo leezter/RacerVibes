@@ -403,7 +403,10 @@
     const halfWidth = roadWidth / 2;
     const maxOff = cfg.maxOffset !== undefined ? cfg.maxOffset : 0.85;
     const aggression = clamp(cfg.apexAggression !== undefined ? cfg.apexAggression : 0.5, 0, 1);
-    const usableWidth = halfWidth * (0.6 + 0.35 * aggression) * maxOff;
+    // Simplified formula: directly interpolate between conservative and aggressive
+    // At aggression=1.0: use full maxOff
+    // At aggression=0.0: use 60% of maxOff
+    const usableWidth = halfWidth * maxOff * (0.6 + 0.4 * aggression);
 
     // 3. Calculate curvature at each point using wider window for stability
     const rawCurvatures = [];
