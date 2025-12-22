@@ -6,8 +6,8 @@
   const DEFAULT_LINE_CFG = {
     sampleStep: 6,
     smoothingPasses: 5,
-    apexAggression: 0.85, // 0 = conservative (60% track width), 1 = aggressive (95% track width)
-    maxOffset: 0.95, // Maximum fraction of half-width to use
+    apexAggression: 0.9, // 0 = conservative (60% track width), 1 = aggressive (up to maxOffset)
+    maxOffset: 0.98, // Maximum fraction of half-width to use (very close to track edge)
     minRadius: 12,
     roadFriction: 1.1,
     gravity: 750, // px/s^2 to roughly match RacerPhysics defaults
