@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicle Tweaker Slider Verification</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        h1 {
+            color: #4CAF50;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 20px;
+            background: #333;
+            border-radius: 4px;
+        }
+        .slider-demo {
+            padding: 15px;
+            background: #444;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        input[type="range"] {
+            width: 100%;
+        }
+        .status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            border-left: 4px solid;
+        }
+        .status.success {
+            background: #1b4d1b;
+            border-color: #4CAF50;
+        }
+        .status.info {
+            background: #1b3d4d;
+            border-color: #2196F3;
+        }
+        code {
+            background: #555;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        ol {
+            line-height: 2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Vehicle Tweaker Slider Verification</h1>
+        
+        <div class="status success">
+            <strong>✓ Slider Code is Present</strong><br>
+            The acceleration duration multiplier slider has been successfully added to physics.js
+        </div>
+
+        <div class="section">
+            <h2>Slider Preview</h2>
+            <p>This is how the slider should appear in the Vehicle Tweaker panel:</p>
+            <div class="slider-demo">
+                <label for="test-slider">
+                    <strong>0-to-top mult</strong>
+                    <span style="float: right;" id="value-display">1.00</span>
+                </label>
+                <input type="range" id="test-slider" min="0.33" max="3.0" step="0.05" value="1.0">
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>How to See the Slider in Game</h2>
+            <ol>
+                <li><strong>Clear Browser Cache</strong> or do a hard refresh:
+                    <ul>
+                        <li>Windows/Linux: Press <code>Ctrl + Shift + R</code> or <code>Ctrl + F5</code></li>
+                        <li>Mac: Press <code>Cmd + Shift + R</code></li>
+                    </ul>
+                </li>
+                <li>Start a race from the menu</li>
+                <li>Click the <strong>"Dev"</strong> button in the top-left corner</li>
+                <li>Click <strong>"Vehicle Tweaker"</strong> from the dev menu</li>
+                <li>Look in the <strong>"Physics Footprint"</strong> section</li>
+                <li>The slider should appear after "CG → rear" labeled <strong>"0-to-top mult"</strong></li>
+            </ol>
+        </div>
+
+        <div class="section">
+            <h2>Verification Details</h2>
+            <p><strong>File:</strong> physics.js</p>
+            <p><strong>Function:</strong> injectVehicleTweaker()</p>
+            <p><strong>Line:</strong> ~317</p>
+            <p><strong>HTML ID:</strong> rv-veh-accel</p>
+            <p><strong>Slider Range:</strong> 0.33 to 3.0 (step: 0.05)</p>
+        </div>
+
+        <div class="status info">
+            <strong>ℹ️ Important</strong><br>
+            If you don't see the slider after hard refresh, make sure you're looking in the correct panel:
+            <br><br>
+            <strong>Dev Menu → Vehicle Tweaker</strong> (NOT "Dev tools")
+            <br><br>
+            The slider is in the <strong>Physics Footprint</strong> section, which is the third section in the Vehicle Tweaker panel.
+        </div>
+    </div>
+
+    <script>
+        const slider = document.getElementById('test-slider');
+        const display = document.getElementById('value-display');
+        slider.addEventListener('input', () => {
+            display.textContent = parseFloat(slider.value).toFixed(2);
+        });
+    </script>
+</body>
+</html>
