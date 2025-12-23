@@ -593,7 +593,7 @@ const { useEffect, useRef, useState } = React;
           brakeAggro: { min: 0.4, max: 1.8 },
           brakingLookaheadFactor: { min: 0.8, max: 2.0 },
           searchWindow: { min: 30, max: 100 },
-          corneringGrip: { min: 0.7, max: 1.0 },
+          corneringGrip: { min: 0.7, max: 1.05 },
           slipThreshold: { min: 0.7, max: 1.0 }
         };
         const MAX_AI_TARGET_SPEED = 2600;
@@ -618,7 +618,7 @@ const { useEffect, useRef, useState } = React;
           brakeAggro: "Scales brake commands; crank it up if AI dives too deep into corners.",
           brakingLookaheadFactor: "How far ahead to look when anticipating braking zones; higher = earlier braking.",
           searchWindow: "Search window size for tracking the racing line; larger = more stable but slower to react.",
-          corneringGrip: "Grip confidence multiplier (0.7-1.0); lower = more conservative cornering.",
+          corneringGrip: "Grip confidence multiplier (0.7-1.05); lower = more conservative cornering, higher = more aggressive (>1.0 pushes beyond normal limits).",
           slipThreshold: "Traction circle limit (0.7-1.0); how much combined steering+braking the AI can use."
         };
         const getAiControlDescription = (key) => AI_CONTROL_DESCRIPTIONS[key] || "";
@@ -5359,7 +5359,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                   <input
                     type="range"
                     min={0.7}
-                    max={1.0}
+                    max={1.05}
                     step={0.01}
                     value={aiControls.corneringGrip}
                     onChange={(e) => handleAiControlChange("corneringGrip", parseFloat(e.target.value))}
@@ -5367,7 +5367,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                   <input
                     type="number"
                     min={0.7}
-                    max={1.0}
+                    max={1.05}
                     step={0.01}
                     value={aiControls.corneringGrip.toFixed(2)}
                     onChange={(e) => handleAiControlChange("corneringGrip", parseFloat(e.target.value))}

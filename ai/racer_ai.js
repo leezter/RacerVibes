@@ -55,14 +55,14 @@
       steerD: 0.1,
       lookaheadBase: 40,
       lookaheadSpeed: 0.14,
-      brakingLookaheadFactor: 1.4,
+      brakingLookaheadFactor: 1.35, // Slightly later braking (was 1.4)
       cornerMargin: 22,
       searchWindow: 56,
       speedHysteresis: 10,
       cornerEntryFactor: 0.6,
       minTargetSpeed: 110,
-      corneringGrip: 0.95,
-      slipThreshold: 0.95,
+      corneringGrip: 0.98, // More confident cornering (was 0.95)
+      slipThreshold: 0.98, // More combined input allowed (was 0.95)
     },
     hard: {
       maxThrottle: 1.5,
@@ -71,13 +71,13 @@
       steerD: 0.22,
       lookaheadBase: 42, // Increased from 30 (More stable lines)
       lookaheadSpeed: 0.17,
-      brakingLookaheadFactor: 1.3, // Brake slightly earlier (Safety margin)
+      brakingLookaheadFactor: 1.2, // Brake later for faster cornering (was 1.3)
       cornerMargin: 0,
       searchWindow: 80, // Track line better
       speedHysteresis: 5,
       cornerEntryFactor: 0.85,
       minTargetSpeed: 130,
-      corneringGrip: 0.99, // 99% Confidence (REALISTIC limit) - Fixes sharp bend crashes
+      corneringGrip: 1.02, // Slightly above physics limits for aggressive cornering (was 0.99)
       slipThreshold: 1.0, // 100% Limit (No sliding allowance)
     },
   };
@@ -1187,7 +1187,7 @@
 
       // 4. Smooth speeds to prevent abrupt braking changes
       const speeds = line.map(p => p.targetSpeed);
-      const smoothSpeeds = smoothValues(speeds, 12, 0.5); // Heavy smoothing for velocity profile
+      const smoothSpeeds = smoothValues(speeds, 8, 0.4); // Reduced smoothing to preserve higher corner speeds
       for (let i = 0; i < n; i++) {
         line[i].targetSpeed = smoothSpeeds[i];
       }
