@@ -6,8 +6,8 @@
   const DEFAULT_LINE_CFG = {
     sampleStep: 6,
     smoothingPasses: 5,
-    apexAggression: 0.9, // 0 = conservative (60% track width), 1 = aggressive (up to maxOffset)
-    maxOffset: 0.98, // Maximum fraction of half-width to use (very close to track edge)
+    apexAggression: 1.0, // 0 = conservative (60% track width), 1 = aggressive (use full maxOffset)
+    maxOffset: 1.0, // Maximum fraction of half-width to use (go to track edge)
     minRadius: 12,
     roadFriction: 1.1,
     gravity: 750, // px/s^2 to roughly match RacerPhysics defaults
@@ -739,14 +739,14 @@
       const rawSeverity = clamp((apex.mag - 0.002) / 0.003, 0, 1);
       
       // Apply a power curve to make sharp corners more aggressive
-      // This gives sharper corners (high severity) more offset while keeping gentle corners conservative
-      // Power of 0.7 creates a curve that rises faster for sharper turns
-      const severity = Math.pow(rawSeverity, 0.7);
+      // Power of 0.6 creates a steeper curve that rises faster for sharper turns
+      // This ensures even medium-sharp corners get significant offset
+      const severity = Math.pow(rawSeverity, 0.6);
 
       // Use severity with a lower minimum floor for very gentle corners
       // Sharp turns (severity near 1.0) get full amplitude
       // Gentle turns (severity near 0) get minimal amplitude
-      let amplitude = Math.max(0.25, severity);
+      let amplitude = Math.max(0.2, severity);
       
       const currentWidth = usableWidth * amplitude;
       
