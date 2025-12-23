@@ -2429,6 +2429,20 @@ const { useEffect, useRef, useState } = React;
               if (prev[key] === bounded) return prev;
               return { ...prev, [key]: bounded };
             });
+            
+            // Line-related parameters require racing line rebuild
+            const lineParams = ['apexAggression', 'maxOffset', 'roadFriction', 'minRadius', 'straightSpeed', 'cornerSpeedFloor'];
+            if (lineParams.includes(key)) {
+              // Defer the rebuild slightly to allow state to update first
+              setTimeout(() => {
+                applyAiLineOverrides({ forceCustom: true });
+              }, 0);
+            } else {
+              // Non-line parameters only need controller rebuild
+              setTimeout(() => {
+                rebuildAIControllers();
+              }, 0);
+            }
           }
           applyAiLineOverridesRef.current = applyAiLineOverrides;
           rebuildAIControllersRef.current = rebuildAIControllers;
