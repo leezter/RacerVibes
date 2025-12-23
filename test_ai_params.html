@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AI Parameters Test</title>
+  <script src="ai/racer_ai.js"></script>
+  <script>
+    window.addEventListener('load', function() {
+      console.log('Testing AI Parameters...');
+      
+      // Check if DEFAULT_LINE_CFG has the parameters
+      if (window.RacerAI && window.RacerAI.DEFAULT_LINE_CFG) {
+        const cfg = window.RacerAI.DEFAULT_LINE_CFG;
+        console.log('DEFAULT_LINE_CFG.straightSpeed:', cfg.straightSpeed);
+        console.log('DEFAULT_LINE_CFG.cornerSpeedFloor:', cfg.cornerSpeedFloor);
+        
+        if (cfg.straightSpeed === 3000) {
+          console.log('✓ straightSpeed default is correct');
+        }
+        if (cfg.cornerSpeedFloor === 140) {
+          console.log('✓ cornerSpeedFloor default is correct');
+        }
+      } else {
+        console.error('RacerAI not available');
+      }
+      
+      // Test buildRacingLine with custom parameters
+      if (window.RacerAI && typeof window.RacerAI.buildRacingLine === 'function') {
+        console.log('✓ buildRacingLine function is available');
+        
+        // Create a simple test track
+        const centerline = [
+          {x: 0, y: 0}, {x: 100, y: 0}, {x: 200, y: 100}, 
+          {x: 200, y: 200}, {x: 100, y: 300}, {x: 0, y: 300}, 
+          {x: 0, y: 200}, {x: 0, y: 100}
+        ];
+        
+        // Test with custom speed parameters
+        const line = window.RacerAI.buildRacingLine(centerline, 60, {
+          straightSpeed: 4000,
+          cornerSpeedFloor: 200
+        });
+        
+        if (line && line.length > 0) {
+          console.log('✓ buildRacingLine accepts custom speed parameters');
+          console.log('Generated', line.length, 'points');
+          
+          // Check if speeds are within expected range
+          const speeds = line.map(p => p.targetSpeed);
+          const maxSpeed = Math.max(...speeds);
+          const minSpeed = Math.min(...speeds);
+          console.log('Speed range:', minSpeed.toFixed(0), '-', maxSpeed.toFixed(0));
+          
+          if (minSpeed >= 200 && maxSpeed <= 4000) {
+            console.log('✓ Speed parameters are being applied correctly');
+          }
+        }
+      }
+      
+      document.getElementById('result').innerHTML = 'Check console for test results';
+    });
+  </script>
+</head>
+<body>
+  <h1>AI Parameters Test</h1>
+  <div id="result">Loading...</div>
+</body>
+</html>
