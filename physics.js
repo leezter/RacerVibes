@@ -1109,7 +1109,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     }
     const basePowerMult = (base && base.enginePowerMult != null) ? base.enginePowerMult : 1;
     const accelDurMult = (base && base.accelDurationMult != null) ? base.accelDurationMult : 1.0;
-    const effectivePowerMult = basePowerMult / (accelDurMult * accelDurMult);
+    const accelDurMultSq = accelDurMult * accelDurMult;
+    const effectivePowerMult = basePowerMult / accelDurMultSq;
     if (car.gearbox && (car.gearbox.c.powerMult == null)) {
       car.gearbox.c.powerMult = effectivePowerMult;
     }
@@ -1177,7 +1178,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     const muLat = onRoad ? P.muLatRoad : P.muLatGrass;
     const muLong = onRoad ? P.muLongRoad : P.muLongGrass;
   const accelDurMult = (P.accelDurationMult != null) ? P.accelDurationMult : 1.0;
-  const dragK = (P.dragK / (accelDurMult * accelDurMult)) * (onRoad?1:0.7); // slightly less aero on grass due to lower speeds
+  const accelDurMultSq = accelDurMult * accelDurMult;
+  const dragK = (P.dragK / accelDurMultSq) * (onRoad?1:0.7); // slightly less aero on grass due to lower speeds
   const rollK = P.rollK  * (onRoad?1.0:1.6); // higher rolling on grass
 
     // Body-frame velocity
@@ -2594,7 +2596,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
         c.physics.params = { ...c.physics.params, ...p };
         if (c.gearbox instanceof Gearbox) {
           const accelDurMult = (p.accelDurationMult != null) ? p.accelDurationMult : 1.0;
-          c.gearbox.c.powerMult = powerMult / (accelDurMult * accelDurMult);
+          const accelDurMultSq = accelDurMult * accelDurMult;
+          c.gearbox.c.powerMult = powerMult / accelDurMultSq;
         }
         if (c.physics.planckBody) {
           const body = c.physics.planckBody;
@@ -2699,7 +2702,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
         // Also sync gearbox power multiplier with accelDurationMult applied
         if (car.gearbox instanceof Gearbox && sourceParams.enginePowerMult != null) {
           const accelDurMult = (sourceParams.accelDurationMult != null) ? sourceParams.accelDurationMult : 1.0;
-          car.gearbox.c.powerMult = sourceParams.enginePowerMult / (accelDurMult * accelDurMult);
+          const accelDurMultSq = accelDurMult * accelDurMult;
+          car.gearbox.c.powerMult = sourceParams.enginePowerMult / accelDurMultSq;
         }
 
         // Update Planck body properties if present
