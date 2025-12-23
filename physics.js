@@ -234,7 +234,13 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
   let sharedPlanckRefresh = null;
 
   function injectVehicleTweaker(bridge = {}, getCars){
-    if (document.getElementById('rv-vehicle-tweaker')) return;
+    const existing = document.getElementById('rv-vehicle-tweaker');
+    if (existing) {
+      // Check if the accel slider exists (added in v1.1)
+      if (document.getElementById('rv-veh-accel')) return;
+      // Old version detected, remove and re-inject
+      existing.remove();
+    }
     ensureDevPanelStyles();
     const listKinds = typeof bridge.listKinds === 'function'
       ? bridge.listKinds
