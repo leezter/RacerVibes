@@ -573,22 +573,24 @@ const { useEffect, useRef, useState } = React;
           steerD: 0.16,
           lookaheadBase: 50,
           lookaheadSpeed: 0.16,
-          cornerMargin: 0,
-          steerCutThrottle: 0.3,
+          brakingLookaheadFactor: 1.4,
           searchWindow: 56,
-          speedHysteresis: 10,
-          cornerEntryFactor: 0.6,
-          minTargetSpeed: 110
+          corneringGrip: 0.95,
+          slipThreshold: 0.95
         };
         const AI_CONTROL_LIMITS = {
           apexAggression: { min: 0, max: 1 },
           maxOffset: { min: 0.2, max: 0.65 },
           lookaheadBase: { min: 20, max: 80 },
           lookaheadSpeed: { min: 0.08, max: 0.25 },
-          steerP: { min: 0.8, max: 3.2 },
-          maxThrottle: { min: 0.6, max: 1.2 },
-          brakeAggro: { min: 0.4, max: 1.6 },
-          cornerMargin: { min: 0, max: 60 }
+          steerP: { min: 0.8, max: 5.0 },
+          steerD: { min: 0, max: 0.5 },
+          maxThrottle: { min: 0.6, max: 1.5 },
+          brakeAggro: { min: 0.4, max: 1.8 },
+          brakingLookaheadFactor: { min: 0.8, max: 2.0 },
+          searchWindow: { min: 30, max: 100 },
+          corneringGrip: { min: 0.7, max: 1.0 },
+          slipThreshold: { min: 0.7, max: 1.0 }
         };
         const MAX_AI_TARGET_SPEED = 2600;
         function mapMaxThrottleToSpeedScale(value) {
@@ -603,9 +605,13 @@ const { useEffect, useRef, useState } = React;
           lookaheadBase: "Baseline distance ahead (in px) the AI samples along the racing line when slow.",
           lookaheadSpeed: "Adds extra lookahead based on speed, helping fast cars anticipate corners.",
           steerP: "Primary steering gain; higher values react faster but can oscillate.",
+          steerD: "Steering derivative gain; dampens oscillation and smooths steering corrections.",
           maxThrottle: "Controls both throttle aggression and how high the AI pushes top speed.",
           brakeAggro: "Scales brake commands; crank it up if AI dives too deep into corners.",
-          cornerMargin: "Extra speed cushion the AI removes before corners to stay stable."
+          brakingLookaheadFactor: "How far ahead to look when anticipating braking zones; higher = earlier braking.",
+          searchWindow: "Search window size for tracking the racing line; larger = more stable but slower to react.",
+          corneringGrip: "Grip confidence multiplier (0.7-1.0); lower = more conservative cornering.",
+          slipThreshold: "Traction circle limit (0.7-1.0); how much combined steering+braking the AI can use."
         };
         const getAiControlDescription = (key) => AI_CONTROL_DESCRIPTIONS[key] || "";
         // Recovery settings for AI cars that get stuck or face the wrong way.
@@ -1378,9 +1384,13 @@ const { useEffect, useRef, useState } = React;
             lookaheadBase: skillDefaults.lookaheadBase ?? 50,
             lookaheadSpeed: skillDefaults.lookaheadSpeed ?? 0.16,
             steerP: skillDefaults.steerP ?? 3.2,
+            steerD: skillDefaults.steerD ?? 0.1,
             maxThrottle: skillDefaults.maxThrottle ?? 1.2,
             brakeAggro: skillDefaults.brakeAggro ?? 0.62,
-            cornerMargin: skillDefaults.cornerMargin ?? 0
+            brakingLookaheadFactor: skillDefaults.brakingLookaheadFactor ?? 1.4,
+            searchWindow: skillDefaults.searchWindow ?? 56,
+            corneringGrip: skillDefaults.corneringGrip ?? 0.95,
+            slipThreshold: skillDefaults.slipThreshold ?? 0.95
           };
         });
         const aiControlsRef = useRef(aiControls);
@@ -1530,7 +1540,7 @@ const { useEffect, useRef, useState } = React;
         }, [aiControls.apexAggression, aiControls.maxOffset, aiControls.maxThrottle]);
         useEffect(() => {
           runRebuildAiControllers();
-        }, [aiControls.difficulty, aiControls.lookaheadBase, aiControls.lookaheadSpeed, aiControls.steerP, aiControls.maxThrottle, aiControls.brakeAggro, aiControls.cornerMargin]);
+        }, [aiControls.difficulty, aiControls.lookaheadBase, aiControls.lookaheadSpeed, aiControls.steerP, aiControls.steerD, aiControls.maxThrottle, aiControls.brakeAggro, aiControls.brakingLookaheadFactor, aiControls.searchWindow, aiControls.corneringGrip, aiControls.slipThreshold]);
         function reloadTrack() {
           const loader = loadTrackRef.current;
           if (typeof loader === "function") {
@@ -2278,9 +2288,13 @@ const { useEffect, useRef, useState } = React;
               maxThrottle: overrides.maxThrottle,
               brakeAggro: overrides.brakeAggro,
               steerP: overrides.steerP,
+              steerD: overrides.steerD,
               lookaheadBase: overrides.lookaheadBase,
               lookaheadSpeed: overrides.lookaheadSpeed,
-              cornerMargin: overrides.cornerMargin,
+              brakingLookaheadFactor: overrides.brakingLookaheadFactor,
+              searchWindow: overrides.searchWindow,
+              corneringGrip: overrides.corneringGrip,
+              slipThreshold: overrides.slipThreshold,
               id: (overrides.difficulty || base.id || aiDifficulty)
             };
           }
@@ -2324,9 +2338,13 @@ const { useEffect, useRef, useState } = React;
                 lookaheadBase: defaults.lookaheadBase ?? prev.lookaheadBase,
                 lookaheadSpeed: defaults.lookaheadSpeed ?? prev.lookaheadSpeed,
                 steerP: defaults.steerP ?? prev.steerP,
+                steerD: defaults.steerD ?? prev.steerD,
                 maxThrottle: defaults.maxThrottle ?? prev.maxThrottle,
                 brakeAggro: defaults.brakeAggro ?? prev.brakeAggro,
-                cornerMargin: defaults.cornerMargin ?? prev.cornerMargin
+                brakingLookaheadFactor: defaults.brakingLookaheadFactor ?? prev.brakingLookaheadFactor,
+                searchWindow: defaults.searchWindow ?? prev.searchWindow,
+                corneringGrip: defaults.corneringGrip ?? prev.corneringGrip,
+                slipThreshold: defaults.slipThreshold ?? prev.slipThreshold
               }));
             }
             rebuildAIControllers();
@@ -5073,7 +5091,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                   <input
                     type="range"
                     min={0.8}
-                    max={3.2}
+                    max={5.0}
                     step={0.05}
                     value={aiControls.steerP}
                     onChange={(e) => handleAiControlChange("steerP", parseFloat(e.target.value))}
@@ -5081,10 +5099,31 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                   <input
                     type="number"
                     min={0.8}
-                    max={3.2}
+                    max={5.0}
                     step={0.05}
                     value={aiControls.steerP.toFixed(2)}
                     onChange={(e) => handleAiControlChange("steerP", parseFloat(e.target.value))}
+                  />
+                </div>
+              </label>
+              <label title={getAiControlDescription("steerD")}>
+                <span>Steer damping (D)</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={0}
+                    max={0.5}
+                    step={0.01}
+                    value={aiControls.steerD}
+                    onChange={(e) => handleAiControlChange("steerD", parseFloat(e.target.value))}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    max={0.5}
+                    step={0.01}
+                    value={aiControls.steerD.toFixed(2)}
+                    onChange={(e) => handleAiControlChange("steerD", parseFloat(e.target.value))}
                   />
                 </div>
               </label>
@@ -5094,7 +5133,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                   <input
                     type="range"
                     min={0.6}
-                    max={1.2}
+                    max={1.5}
                     step={0.01}
                     value={aiControls.maxThrottle}
                     onChange={(e) => handleAiControlChange("maxThrottle", parseFloat(e.target.value))}
@@ -5102,7 +5141,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                   <input
                     type="number"
                     min={0.6}
-                    max={1.2}
+                    max={1.5}
                     step={0.01}
                     value={aiControls.maxThrottle.toFixed(2)}
                     onChange={(e) => handleAiControlChange("maxThrottle", parseFloat(e.target.value))}
@@ -5115,7 +5154,7 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                   <input
                     type="range"
                     min={0.4}
-                    max={1.6}
+                    max={1.8}
                     step={0.02}
                     value={aiControls.brakeAggro}
                     onChange={(e) => handleAiControlChange("brakeAggro", parseFloat(e.target.value))}
@@ -5123,31 +5162,94 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                   <input
                     type="number"
                     min={0.4}
-                    max={1.6}
+                    max={1.8}
                     step={0.02}
                     value={aiControls.brakeAggro.toFixed(2)}
                     onChange={(e) => handleAiControlChange("brakeAggro", parseFloat(e.target.value))}
                   />
                 </div>
               </label>
-              <label title={getAiControlDescription("cornerMargin")}>
-                <span>Corner margin</span>
+              <label title={getAiControlDescription("brakingLookaheadFactor")}>
+                <span>Braking lookahead</span>
                 <div className="field">
                   <input
                     type="range"
-                    min={0}
-                    max={60}
-                    step={1}
-                    value={aiControls.cornerMargin}
-                    onChange={(e) => handleAiControlChange("cornerMargin", parseFloat(e.target.value))}
+                    min={0.8}
+                    max={2.0}
+                    step={0.05}
+                    value={aiControls.brakingLookaheadFactor}
+                    onChange={(e) => handleAiControlChange("brakingLookaheadFactor", parseFloat(e.target.value))}
                   />
                   <input
                     type="number"
-                    min={0}
-                    max={60}
+                    min={0.8}
+                    max={2.0}
+                    step={0.05}
+                    value={aiControls.brakingLookaheadFactor.toFixed(2)}
+                    onChange={(e) => handleAiControlChange("brakingLookaheadFactor", parseFloat(e.target.value))}
+                  />
+                </div>
+              </label>
+              <label title={getAiControlDescription("searchWindow")}>
+                <span>Search window</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={30}
+                    max={100}
                     step={1}
-                    value={Math.round(aiControls.cornerMargin)}
-                    onChange={(e) => handleAiControlChange("cornerMargin", parseFloat(e.target.value))}
+                    value={aiControls.searchWindow}
+                    onChange={(e) => handleAiControlChange("searchWindow", parseFloat(e.target.value))}
+                  />
+                  <input
+                    type="number"
+                    min={30}
+                    max={100}
+                    step={1}
+                    value={Math.round(aiControls.searchWindow)}
+                    onChange={(e) => handleAiControlChange("searchWindow", parseFloat(e.target.value))}
+                  />
+                </div>
+              </label>
+              <label title={getAiControlDescription("corneringGrip")}>
+                <span>Cornering grip</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={0.7}
+                    max={1.0}
+                    step={0.01}
+                    value={aiControls.corneringGrip}
+                    onChange={(e) => handleAiControlChange("corneringGrip", parseFloat(e.target.value))}
+                  />
+                  <input
+                    type="number"
+                    min={0.7}
+                    max={1.0}
+                    step={0.01}
+                    value={aiControls.corneringGrip.toFixed(2)}
+                    onChange={(e) => handleAiControlChange("corneringGrip", parseFloat(e.target.value))}
+                  />
+                </div>
+              </label>
+              <label title={getAiControlDescription("slipThreshold")}>
+                <span>Slip threshold</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={0.7}
+                    max={1.0}
+                    step={0.01}
+                    value={aiControls.slipThreshold}
+                    onChange={(e) => handleAiControlChange("slipThreshold", parseFloat(e.target.value))}
+                  />
+                  <input
+                    type="number"
+                    min={0.7}
+                    max={1.0}
+                    step={0.01}
+                    value={aiControls.slipThreshold.toFixed(2)}
+                    onChange={(e) => handleAiControlChange("slipThreshold", parseFloat(e.target.value))}
                   />
                 </div>
               </label>
