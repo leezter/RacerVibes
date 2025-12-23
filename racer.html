@@ -2425,15 +2425,20 @@ const { useEffect, useRef, useState } = React;
             if (!Number.isFinite(value)) return;
             const limits = AI_CONTROL_LIMITS[key];
             const bounded = limits ? clamp(value, limits.min, limits.max) : value;
+            
+            // Update state
             setAIControls((prev) => {
               if (prev[key] === bounded) return prev;
-              return { ...prev, [key]: bounded };
+              const next = { ...prev, [key]: bounded };
+              // Immediately update ref for synchronous access in callbacks
+              aiControlsRef.current = next;
+              return next;
             });
             
             // Line-related parameters require racing line rebuild
             const lineParams = ['apexAggression', 'maxOffset', 'roadFriction', 'minRadius', 'straightSpeed', 'cornerSpeedFloor'];
             if (lineParams.includes(key)) {
-              // Defer the rebuild slightly to allow state to update first
+              // Rebuild racing line immediately with updated ref
               setTimeout(() => {
                 applyAiLineOverrides({ forceCustom: true });
               }, 0);
