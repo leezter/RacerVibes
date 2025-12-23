@@ -148,8 +148,8 @@ The implementation has been verified to:
 4. Final speeds are multiplied by difficulty scale from `maxThrottle` parameter
 
 ### Related Code
-- `ai/racer_ai.js` line 6-16: `DEFAULT_LINE_CFG` definition
-- `ai/racer_ai.js` line 1041: Speed clamping with `cornerSpeedFloor`
-- `ai/racer_ai.js` line 1179-1186: Runtime speed sanitization
-- `racer.html` line 586-587: UI limits definition
-- `racer.html` line 5114-5159: UI controls implementation
+- `ai/racer_ai.js`: `DEFAULT_LINE_CFG` definition and default values
+- `ai/racer_ai.js`: `buildRacingLine()` function - speed clamping with parameters
+- `ai/racer_ai.js`: `createController()` function - runtime speed sanitization
+- `racer.html`: `AI_CONTROL_LIMITS` - parameter bounds definition
+- `racer.html`: AI Controls panel UI - slider and input controls
