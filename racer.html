@@ -1327,6 +1327,9 @@ const { useEffect, useRef, useState } = React;
           }
           return control;
         }
+        // Fallback defaults if RacerAI module fails to load (should never happen in practice)
+        // These match DEFAULT_LINE_CFG in ai/racer_ai.js
+        // Note: Duplication is acceptable here as fallback is only used in error cases
         function getLineDefaults(){
           const api = window.RacerAI;
           if (api && api.DEFAULT_LINE_CFG) return { ...api.DEFAULT_LINE_CFG };
