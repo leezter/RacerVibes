@@ -3559,7 +3559,11 @@ const { useEffect, useRef, useState } = React;
               baseRacingLine = storedLine.map((node) => ({ ...node }));
               racingLine = baseRacingLine.map((node) => ({ ...node }));
             } else if (window.RacerAI && typeof window.RacerAI.buildRacingLine === "function") {
-              racingLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, { straightSpeed: 440 }) || [];
+              const defaults = getLineDefaults();
+              racingLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, { 
+                straightSpeed: defaults.straightSpeed, 
+                cornerSpeedFloor: defaults.cornerSpeedFloor 
+              }) || [];
               baseRacingLine = racingLine.map((node) => ({ ...node }));
             } else {
               racingLine = [];
