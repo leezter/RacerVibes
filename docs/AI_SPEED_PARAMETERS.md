@@ -5,9 +5,9 @@ Two new parameters have been added to the AI Controls panel to enable faster AI 
 
 ## New Parameters
 
-### 1. Straight Speed (1500-5000 px/s)
-- **Default**: 3000 px/s (~220 mph)
-- **Description**: Maximum target speed on straights
+### 1. Straight Speed (1500-5000 pixels/s)
+- **Default**: 3000 pixels/s (~220 mph)
+- **Description**: Maximum target speed on straights (pixels/s)
 - **Purpose**: Controls how fast AI racers will go on straight sections of the track
 - **Impact**: Higher values result in faster straight-line speed and reduced lap times
 - **Location**: AI Controls panel → Line settings section
@@ -18,9 +18,9 @@ Two new parameters have been added to the AI Controls panel to enable faster AI 
 - **Aggressive** (3500-4500): Pushes vehicle performance
 - **Maximum** (4500-5000): At or near vehicle top speed limits
 
-### 2. Corner Speed Floor (80-300 px/s)
-- **Default**: 140 px/s
-- **Description**: Minimum speed floor in corners
+### 2. Corner Speed Floor (80-300 pixels/s)
+- **Default**: 140 pixels/s
+- **Description**: Minimum speed floor in corners (pixels/s)
 - **Purpose**: Sets the minimum speed AI will maintain through corners
 - **Impact**: Higher values mean AI carries more speed through corners, reducing lap times
 - **Location**: AI Controls panel → Line settings section
@@ -74,7 +74,7 @@ These parameters work together with existing AI Controls:
 
 | Parameter | Effect on Speed |
 |-----------|----------------|
-| **maxThrottle** | Multiplies all target speeds (0.6-1.5 = 1x to 6x scale) |
+| **maxThrottle** | Scales all target speeds (0.6 = 1x, 1.0 = 4.3x, 1.2+ = 6x) |
 | **roadFriction** | Affects cornering speed calculations (higher = faster corners) |
 | **corneringGrip** | AI confidence level (0.7 = conservative, 1.0 = aggressive) |
 | **apexAggression** | Racing line positioning (affects optimal corner speed) |

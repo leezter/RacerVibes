@@ -159,11 +159,11 @@ AI Behavior:
 
 | Setting | Straight Speed | Corner Floor | Lap Time | Best For |
 |---------|---------------|--------------|----------|----------|
-| Slow | 2000 | 100 | Baseline -30% | Practice |
+| Slow | 2000 | 100 | -30% | Practice |
 | Default | 3000 | 140 | Baseline | Normal racing |
-| Fast | 3500 | 180 | Baseline +15% | Competition |
-| Faster | 4000 | 220 | Baseline +25% | Challenge |
-| Maximum | 5000 | 280 | Baseline +35% | Expert mode |
+| Fast | 3500 | 180 | +15% | Competition |
+| Faster | 4000 | 220 | +25% | Challenge |
+| Maximum | 5000 | 280 | +35% | Expert mode |
 
 ## Troubleshooting
 
