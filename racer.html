@@ -583,6 +583,8 @@ const { useEffect, useRef, useState } = React;
           maxOffset: { min: 0.2, max: 0.65 },
           roadFriction: { min: 0.8, max: 1.5 },
           minRadius: { min: 8, max: 20 },
+          straightSpeed: { min: 1500, max: 5000 },
+          cornerSpeedFloor: { min: 80, max: 300 },
           lookaheadBase: { min: 20, max: 80 },
           lookaheadSpeed: { min: 0.08, max: 0.25 },
           steerP: { min: 0.8, max: 5.0 },
@@ -606,6 +608,8 @@ const { useEffect, useRef, useState } = React;
           maxOffset: "Caps how far the generated racing line can drift away from the centerline.",
           roadFriction: "Grip multiplier for calculating corner speeds in the racing line; higher = faster through corners.",
           minRadius: "Minimum corner radius constraint (px); lower = allows tighter line geometry in hairpins.",
+          straightSpeed: "Maximum target speed on straights (px/s); increase for faster lap times. Default: 3000 (~220 mph).",
+          cornerSpeedFloor: "Minimum speed floor in corners (px/s); increase to maintain higher corner speeds.",
           lookaheadBase: "Baseline distance ahead (in px) the AI samples along the racing line when slow.",
           lookaheadSpeed: "Adds extra lookahead based on speed, helping fast cars anticipate corners.",
           steerP: "Primary steering gain; higher values react faster but can oscillate.",
@@ -1326,7 +1330,7 @@ const { useEffect, useRef, useState } = React;
         function getLineDefaults(){
           const api = window.RacerAI;
           if (api && api.DEFAULT_LINE_CFG) return { ...api.DEFAULT_LINE_CFG };
-          return { apexAggression: 0.10, maxOffset: 0.65, roadFriction: 1.1, minRadius: 12 };
+          return { apexAggression: 0.10, maxOffset: 0.65, roadFriction: 1.1, minRadius: 12, straightSpeed: 3000, cornerSpeedFloor: 140 };
         }
         const modeDefault = gripModeConfig && gripModeConfig.ai && gripModeConfig.ai.defaultDifficulty ? gripModeConfig.ai.defaultDifficulty : null;
         const initialAIDifficulty = loadStoredDifficulty() || sanitizeDifficulty(modeDefault) || sanitizeDifficulty("hard") || AVAILABLE_AI_DIFFICULTIES[0];
@@ -1387,6 +1391,8 @@ const { useEffect, useRef, useState } = React;
             maxOffset: lineDefaults.maxOffset ?? 0.65,
             roadFriction: lineDefaults.roadFriction ?? 1.1,
             minRadius: lineDefaults.minRadius ?? 12,
+            straightSpeed: lineDefaults.straightSpeed ?? 3000,
+            cornerSpeedFloor: lineDefaults.cornerSpeedFloor ?? 140,
             lookaheadBase: skillDefaults.lookaheadBase ?? 50,
             lookaheadSpeed: skillDefaults.lookaheadSpeed ?? 0.16,
             steerP: skillDefaults.steerP ?? 3.2,
@@ -2365,6 +2371,8 @@ const { useEffect, useRef, useState } = React;
             const maxOffset = overrides ? overrides.maxOffset : defaults.maxOffset;
             const roadFriction = overrides ? overrides.roadFriction : defaults.roadFriction;
             const minRadius = overrides ? overrides.minRadius : defaults.minRadius;
+            const straightSpeed = overrides ? overrides.straightSpeed : defaults.straightSpeed;
+            const cornerSpeedFloor = overrides ? overrides.cornerSpeedFloor : defaults.cornerSpeedFloor;
             const throttleSetting = overrides && Number.isFinite(overrides.maxThrottle)
               ? overrides.maxThrottle
               : (skillDefaults.maxThrottle ?? AI_SKILL_FALLBACK.maxThrottle ?? 1);
@@ -2373,7 +2381,9 @@ const { useEffect, useRef, useState } = React;
               approxEqual(apex, defaults.apexAggression ?? apex) &&
               approxEqual(maxOffset, defaults.maxOffset ?? maxOffset) &&
               approxEqual(roadFriction, defaults.roadFriction ?? roadFriction) &&
-              approxEqual(minRadius, defaults.minRadius ?? minRadius);
+              approxEqual(minRadius, defaults.minRadius ?? minRadius) &&
+              approxEqual(straightSpeed, defaults.straightSpeed ?? straightSpeed) &&
+              approxEqual(cornerSpeedFloor, defaults.cornerSpeedFloor ?? cornerSpeedFloor);
             const scaleLine = (source) => {
               if (!source || !source.length) return [];
               return source.map((node) => ({
@@ -2393,6 +2403,8 @@ const { useEffect, useRef, useState } = React;
                 if (typeof maxOffset === "number") opts.maxOffset = maxOffset;
                 if (typeof roadFriction === "number") opts.roadFriction = roadFriction;
                 if (typeof minRadius === "number") opts.minRadius = minRadius;
+                if (typeof straightSpeed === "number") opts.straightSpeed = straightSpeed;
+                if (typeof cornerSpeedFloor === "number") opts.cornerSpeedFloor = cornerSpeedFloor;
                 const builtLine = window.RacerAI.buildRacingLine(centerline, ROAD_WIDTH, opts) || [];
                 racingLine = scaleLine(builtLine);
               }
@@ -5096,6 +5108,48 @@ function roundRect(ctx, x, y, w, h, r){ r = Math.min(r, w/2, h/2); ctx.beginPath
                     step={1}
                     value={Math.round(aiControls.minRadius)}
                     onChange={(e) => handleAiControlChange("minRadius", parseFloat(e.target.value))}
+                  />
+                </div>
+              </label>
+              <label title={getAiControlDescription("straightSpeed")}>
+                <span>Straight speed</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={1500}
+                    max={5000}
+                    step={100}
+                    value={aiControls.straightSpeed}
+                    onChange={(e) => handleAiControlChange("straightSpeed", parseFloat(e.target.value))}
+                  />
+                  <input
+                    type="number"
+                    min={1500}
+                    max={5000}
+                    step={100}
+                    value={Math.round(aiControls.straightSpeed)}
+                    onChange={(e) => handleAiControlChange("straightSpeed", parseFloat(e.target.value))}
+                  />
+                </div>
+              </label>
+              <label title={getAiControlDescription("cornerSpeedFloor")}>
+                <span>Corner floor</span>
+                <div className="field">
+                  <input
+                    type="range"
+                    min={80}
+                    max={300}
+                    step={10}
+                    value={aiControls.cornerSpeedFloor}
+                    onChange={(e) => handleAiControlChange("cornerSpeedFloor", parseFloat(e.target.value))}
+                  />
+                  <input
+                    type="number"
+                    min={80}
+                    max={300}
+                    step={10}
+                    value={Math.round(aiControls.cornerSpeedFloor)}
+                    onChange={(e) => handleAiControlChange("cornerSpeedFloor", parseFloat(e.target.value))}
                   />
                 </div>
               </label>
