@@ -15,9 +15,9 @@ The AI uses an **Anchor-Based** algorithm to generate the optimal racing line. T
 4.  **Smart Entry/Exit Placement**: Entry and exit anchors are moved closer to the apex if they would fall on a straight section (curvature < `MIN_CURVATURE_FOR_ANCHOR = 0.002`). This prevents corner offsets from bleeding into unrelated straight sections.
 5.  **Anchor Placement & Severity Scaling**: For each corner, it places three key anchors (Entry, Apex, Exit).
     *   **Amplitude Scaling**: The lateral offset of the anchors is scaled by the **Curvature Severity**.
-    *   **Severity Formula**: `severity = clamp((curvature - 0.002) / 0.003, 0, 1)` — maps curvature to 0-1 range.
-    *   **Minimum Floor**: Detected corners always get at least 30% amplitude (`amplitude = max(0.3, severity)`).
-    *   **Sharp Turns**: Higher severity means progressively more offset, up to full track width.
+    *   **Severity Formula**: `rawSeverity = clamp((curvature - 0.002) / 0.003, 0, 1)`, then `severity = pow(rawSeverity, 0.6)` — maps curvature to 0-1 range with power curve for aggressive sharp corners.
+    *   **Minimum Floor**: Detected corners get at least 20% amplitude (`amplitude = max(0.2, severity)`).
+    *   **Sharp Turns**: Higher severity uses full track width with maximum settings (`apexAggression=1.0`, `maxOffset=1.0`) — sharp corners use 100% of half-width.
 6.  **Linear Interpolation**: The algorithm linearly interpolates between anchors. This creates **Straight Diagonal Lines** between corners.
 7.  **Anchor-Preserving Smoothing**: A smoothing pass blends the sharp corners at anchors while preserving the anchor positions themselves.
 8.  **Path Straightening**: A chord-based optimization pass eliminates unnecessary weaving on "lumpy" track sections.

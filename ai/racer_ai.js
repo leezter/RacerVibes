@@ -6,8 +6,8 @@
   const DEFAULT_LINE_CFG = {
     sampleStep: 6,
     smoothingPasses: 5,
-    apexAggression: 0.7, // 0 = conservative (60% track width), 1 = aggressive (95% track width)
-    maxOffset: 0.9, // Maximum fraction of half-width to use
+    apexAggression: 1.0, // 0 = conservative (60% track width), 1 = aggressive (use full maxOffset)
+    maxOffset: 1.0, // Maximum fraction of half-width to use (go to track edge)
     minRadius: 12,
     roadFriction: 1.1,
     gravity: 750, // px/s^2 to roughly match RacerPhysics defaults
@@ -403,7 +403,10 @@
     const halfWidth = roadWidth / 2;
     const maxOff = cfg.maxOffset !== undefined ? cfg.maxOffset : 0.85;
     const aggression = clamp(cfg.apexAggression !== undefined ? cfg.apexAggression : 0.5, 0, 1);
-    const usableWidth = halfWidth * (0.6 + 0.35 * aggression) * maxOff;
+    // Simplified formula: directly interpolate between conservative and aggressive widths
+    // At aggression=1.0: usableWidth = halfWidth * maxOff (full maximum offset)
+    // At aggression=0.0: usableWidth = halfWidth * maxOff * 0.6 (conservative, 60% of max)
+    const usableWidth = halfWidth * maxOff * (0.6 + 0.4 * aggression);
 
     // 3. Calculate curvature at each point using wider window for stability
     const rawCurvatures = [];
@@ -733,12 +736,17 @@
       // Small curvature (Gentle bend) -> Stay near center.
       // High curvature (Sharp turn) -> Use full width.
       // Map 0.002 (Threshold) -> 0.005 (Full Width Radius ~200px)
-      const severity = clamp((apex.mag - 0.002) / 0.003, 0, 1);
+      const rawSeverity = clamp((apex.mag - 0.002) / 0.003, 0, 1);
+      
+      // Apply a power curve to make sharp corners more aggressive
+      // Power of 0.6 creates a steeper curve that rises faster for sharper turns
+      // This ensures even medium-sharp corners get significant offset
+      const severity = Math.pow(rawSeverity, 0.6);
 
-      // Use severity directly with a minimum floor for detected corners
-      // If an apex passed the displacement filter, it deserves at least 30% amplitude
-      // Sharp turns (high severity) get progressively more offset
-      let amplitude = Math.max(0.3, severity);
+      // Use severity with a lower minimum floor for very gentle corners
+      // Sharp turns (severity near 1.0) get full amplitude
+      // Gentle turns (severity near 0) get minimal amplitude
+      let amplitude = Math.max(0.2, severity);
       
       const currentWidth = usableWidth * amplitude;
       
