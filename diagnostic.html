@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehicle Tweaker Diagnostic</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        .container {
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        h1 {
+            color: #FF5252;
+        }
+        .diagnostic-box {
+            background: #333;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+            border-left: 4px solid #FF5252;
+        }
+        .code-block {
+            background: #1a1a1a;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+        .instruction {
+            background: #2d4d5d;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 4px;
+            border-left: 4px solid #2196F3;
+        }
+        .instruction h3 {
+            margin-top: 0;
+            color: #2196F3;
+        }
+        .warning {
+            background: #4d3d1b;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 4px;
+            border-left: 4px solid #FFC107;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .result {
+            background: #1a1a1a;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+            min-height: 100px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Vehicle Tweaker Diagnostic Tool</h1>
+        
+        <div class="diagnostic-box">
+            <h2>Purpose</h2>
+            <p>This tool will help diagnose why the acceleration slider is not appearing in your Vehicle Tweaker panel.</p>
+        </div>
+
+        <div class="instruction">
+            <h3>Instructions</h3>
+            <ol>
+                <li>Start a race in the game (open racer.html in another tab)</li>
+                <li>Come back to this tab</li>
+                <li>Click the buttons below to run diagnostics</li>
+                <li>Copy the results and share them with @copilot</li>
+            </ol>
+        </div>
+
+        <div class="warning">
+            <strong>⚠️ Important:</strong> Make sure you have the game loaded in another browser tab before running these diagnostics!
+        </div>
+
+        <h2>Diagnostic Tests</h2>
+
+        <div style="margin: 20px 0;">
+            <button onclick="checkPanel()">1. Check if Panel Exists</button>
+            <button onclick="checkSlider()">2. Check if Slider Exists</button>
+            <button onclick="checkPhysicsJS()">3. Check physics.js Loaded</button>
+            <button onclick="checkFunction()">4. Check Function Available</button>
+            <button onclick="runAll()">Run All Tests</button>
+        </div>
+
+        <h3>Results:</h3>
+        <div class="result" id="results">Click a button above to run diagnostics...</div>
+
+        <div class="instruction" style="margin-top: 30px;">
+            <h3>Manual Console Check</h3>
+            <p>You can also run this in the browser console while the game is loaded:</p>
+            <div class="code-block">
+// Check if panel exists
+console.log('Panel exists:', !!document.getElementById('rv-vehicle-tweaker'));
+
+// Check if slider exists
+console.log('Slider exists:', !!document.getElementById('rv-veh-accel'));
+
+// Check physics.js
+console.log('RacerPhysics available:', typeof window.RacerPhysics);
+
+// Check function
+console.log('injectVehicleTweaker available:', 
+  typeof window.RacerPhysics?.injectVehicleTweaker);
+
+// Get panel HTML (if exists)
+const panel = document.getElementById('rv-vehicle-tweaker');
+if (panel) {
+  console.log('Panel HTML length:', panel.innerHTML.length);
+  console.log('Has accel slider:', panel.innerHTML.includes('rv-veh-accel'));
+}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function log(message) {
+            const results = document.getElementById('results');
+            results.textContent += message + '\n';
+        }
+
+        function clearResults() {
+            document.getElementById('results').textContent = '';
+        }
+
+        function checkPanel() {
+            clearResults();
+            log('=== Panel Check ===');
+            
+            // Try to access the game window
+            const gameWindow = window.opener || window;
+            const panel = gameWindow.document.getElementById('rv-vehicle-tweaker');
+            
+            if (panel) {
+                log('✓ Panel exists in DOM');
+                log('  Panel class: ' + panel.className);
+                log('  Panel children: ' + panel.children.length);
+                const htmlSnippet = panel.innerHTML.substring(0, 200);
+                log('  HTML start: ' + htmlSnippet + '...');
+            } else {
+                log('✗ Panel NOT found in DOM');
+                log('  This means the panel was never injected or was removed');
+            }
+        }
+
+        function checkSlider() {
+            clearResults();
+            log('=== Slider Check ===');
+            
+            const gameWindow = window.opener || window;
+            const slider = gameWindow.document.getElementById('rv-veh-accel');
+            const sliderVal = gameWindow.document.getElementById('rv-veh-accel-v');
+            
+            if (slider) {
+                log('✓ Slider EXISTS in DOM');
+                log('  Slider value: ' + slider.value);
+                log('  Slider min: ' + slider.min);
+                log('  Slider max: ' + slider.max);
+            } else {
+                log('✗ Slider NOT found in DOM');
+                
+                // Check if it's in the panel HTML
+                const panel = gameWindow.document.getElementById('rv-vehicle-tweaker');
+                if (panel) {
+                    const hasInHTML = panel.innerHTML.includes('rv-veh-accel');
+                    log('  In panel HTML: ' + hasInHTML);
+                    if (!hasInHTML) {
+                        log('  → Old version of panel is still loaded!');
+                    }
+                }
+            }
+            
+            if (sliderVal) {
+                log('✓ Slider value display exists');
+            } else {
+                log('✗ Slider value display NOT found');
+            }
+        }
+
+        function checkPhysicsJS() {
+            clearResults();
+            log('=== physics.js Check ===');
+            
+            const gameWindow = window.opener || window;
+            
+            if (typeof gameWindow.RacerPhysics !== 'undefined') {
+                log('✓ RacerPhysics is loaded');
+                log('  Type: ' + typeof gameWindow.RacerPhysics);
+                log('  Keys: ' + Object.keys(gameWindow.RacerPhysics).join(', '));
+            } else {
+                log('✗ RacerPhysics NOT loaded');
+                log('  physics.js may not be loaded yet or failed to load');
+            }
+        }
+
+        function checkFunction() {
+            clearResults();
+            log('=== Function Check ===');
+            
+            const gameWindow = window.opener || window;
+            const func = gameWindow.RacerPhysics?.injectVehicleTweaker;
+            
+            if (func) {
+                log('✓ injectVehicleTweaker function exists');
+                log('  Type: ' + typeof func);
+                log('  Function length: ' + func.length + ' parameters');
+            } else {
+                log('✗ injectVehicleTweaker function NOT found');
+            }
+            
+            // Check VEHICLE_DEFAULTS
+            const defaults = gameWindow.RacerPhysics?.defaults;
+            if (defaults) {
+                log('\n✓ VEHICLE_DEFAULTS accessible');
+                const gt = defaults.GT;
+                if (gt) {
+                    log('  GT vehicle config exists');
+                    log('  Has accelDurationMult: ' + ('accelDurationMult' in gt));
+                    if ('accelDurationMult' in gt) {
+                        log('  accelDurationMult value: ' + gt.accelDurationMult);
+                    }
+                }
+            }
+        }
+
+        function runAll() {
+            clearResults();
+            log('=== FULL DIAGNOSTIC REPORT ===\n');
+            
+            const gameWindow = window.opener || window;
+            
+            // 1. Panel check
+            log('1. PANEL CHECK:');
+            const panel = gameWindow.document.getElementById('rv-vehicle-tweaker');
+            log('   Exists: ' + !!panel);
+            
+            // 2. Slider check
+            log('\n2. SLIDER CHECK:');
+            const slider = gameWindow.document.getElementById('rv-veh-accel');
+            log('   Exists: ' + !!slider);
+            
+            // 3. physics.js check
+            log('\n3. PHYSICS.JS CHECK:');
+            log('   Loaded: ' + (typeof gameWindow.RacerPhysics !== 'undefined'));
+            
+            // 4. Function check
+            log('\n4. FUNCTION CHECK:');
+            const func = gameWindow.RacerPhysics?.injectVehicleTweaker;
+            log('   Available: ' + !!func);
+            
+            // 5. Vehicle defaults check
+            log('\n5. VEHICLE DEFAULTS CHECK:');
+            const gt = gameWindow.RacerPhysics?.defaults?.GT;
+            if (gt) {
+                log('   GT config exists: true');
+                log('   Has accelDurationMult: ' + ('accelDurationMult' in gt));
+                if ('accelDurationMult' in gt) {
+                    log('   Value: ' + gt.accelDurationMult);
+                }
+            } else {
+                log('   GT config: NOT FOUND');
+            }
+            
+            // 6. Panel HTML check
+            if (panel) {
+                log('\n6. PANEL HTML CHECK:');
+                log('   HTML contains "rv-veh-accel": ' + panel.innerHTML.includes('rv-veh-accel'));
+                log('   HTML contains "0-to-top mult": ' + panel.innerHTML.includes('0-to-top mult'));
+                log('   HTML contains "Physics Footprint": ' + panel.innerHTML.includes('Physics Footprint'));
+            }
+            
+            log('\n=== END REPORT ===');
+            log('\nPlease copy this entire report and share with @copilot');
+        }
+    </script>
+</body>
+</html>
