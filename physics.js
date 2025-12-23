@@ -46,6 +46,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgToFront: 20,
       cgToRear: 22,
   enginePowerMult: 1.65,
+  accelDurationMult: 1.0,
   brakeForce: 600,
       maxSteer: 0.55,
       steerSpeed: 6.0,
@@ -86,6 +87,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgToFront: 17,
       cgToRear: 19,
   enginePowerMult: 1.65,
+  accelDurationMult: 1.0,
   brakeForce: 600,
       maxSteer: 0.50,
       steerSpeed: 5.0,
@@ -125,6 +127,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgToFront: 16,
       cgToRear: 18,
   enginePowerMult: 1.65,
+  accelDurationMult: 1.0,
   brakeForce: 600,
       maxSteer: 0.58,
       steerSpeed: 6.5,
@@ -164,6 +167,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgToFront: 27,
       cgToRear: 30,
   enginePowerMult: 1.65,
+  accelDurationMult: 1.0,
   brakeForce: 600,
       maxSteer: 0.40,
       steerSpeed: 3.5,
@@ -274,6 +278,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       wheelbase: 'Distance between axles (px). Influences stability and weight transfer.',
       cgFront: 'Distance from the CG to the front axle. Adjust for balance on braking.',
       cgRear: 'Distance from the CG to the rear axle. Adjust for traction on throttle.',
+      accelDuration: '0-to-top-speed duration multiplier. Higher = slower acceleration (maintains top speed by adjusting drag).',
       syncActive: 'Force currently spawned cars to rebuild physics bodies with the latest settings.',
       resetSelection: 'Restore the selected vehicle(s) to their original geometry defaults.'
     };
@@ -309,6 +314,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
           <div class="rv-row"><label for="rv-veh-wheel"><span${tipAttr('wheelbase')}>Wheelbase</span></label><input id="rv-veh-wheel" type="range" min="20" max="140" step="1"><div class="val" id="rv-veh-wheel-v"></div></div>
           <div class="rv-row"><label for="rv-veh-cgf"><span${tipAttr('cgFront')}>CG → front</span></label><input id="rv-veh-cgf" type="range" min="5" max="120" step="1"><div class="val" id="rv-veh-cgf-v"></div></div>
           <div class="rv-row"><label for="rv-veh-cgr"><span${tipAttr('cgRear')}>CG → rear</span></label><input id="rv-veh-cgr" type="range" min="5" max="120" step="1"><div class="val" id="rv-veh-cgr-v"></div></div>
+          <div class="rv-row"><label for="rv-veh-accel"><span${tipAttr('accelDuration')}>0-to-top mult</span></label><input id="rv-veh-accel" type="range" min="0.33" max="3.0" step="0.05"><div class="val" id="rv-veh-accel-v"></div></div>
         </div>
         <div class="rv-row rv-btns">
           <button id="rv-veh-sync" class="rv-mini"${tipAttr('syncActive')}>Sync active cars</button>
@@ -337,6 +343,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgfVal: document.getElementById('rv-veh-cgf-v'),
       cgr: document.getElementById('rv-veh-cgr'),
       cgrVal: document.getElementById('rv-veh-cgr-v'),
+      accel: document.getElementById('rv-veh-accel'),
+      accelVal: document.getElementById('rv-veh-accel-v'),
       sync: document.getElementById('rv-veh-sync'),
       reset: document.getElementById('rv-veh-reset')
     };
@@ -392,6 +400,11 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
         if (els.cgr) {
           els.cgr.value = phys.cgToRear;
           if (els.cgrVal) els.cgrVal.textContent = `${Math.round(phys.cgToRear)}`;
+        }
+        if (els.accel) {
+          const accelMult = phys.accelDurationMult != null ? phys.accelDurationMult : 1.0;
+          els.accel.value = accelMult;
+          if (els.accelVal) els.accelVal.textContent = accelMult.toFixed(2);
         }
       }
     }
@@ -502,6 +515,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
         } else if (prop === 'cgToRear') {
           base.cgToRear = value;
           base.wheelbase = clamp(base.cgToFront + base.cgToRear, 5, 180);
+        } else if (prop === 'accelDurationMult') {
+          base.accelDurationMult = value;
         }
       }
       refreshActiveCarPhysics(targets);
@@ -527,6 +542,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
           VEHICLE_DEFAULTS[kind].wheelbase = physDefaults[kind].wheelbase;
           VEHICLE_DEFAULTS[kind].cgToFront = physDefaults[kind].cgToFront;
           VEHICLE_DEFAULTS[kind].cgToRear = physDefaults[kind].cgToRear;
+          VEHICLE_DEFAULTS[kind].accelDurationMult = physDefaults[kind].accelDurationMult != null ? physDefaults[kind].accelDurationMult : 1.0;
         }
       }
       refreshActiveCarPhysics(targets);
@@ -587,6 +603,12 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       els.cgr.addEventListener('input', ()=>{
         const v = clamp(+els.cgr.value || 0, 5, 120);
         applyPhysChange('cgToRear', v);
+      });
+    }
+    if (els.accel) {
+      els.accel.addEventListener('input', ()=>{
+        const v = clamp(+els.accel.value || 1.0, 0.33, 3.0);
+        applyPhysChange('accelDurationMult', v);
       });
     }
     if (els.reset) els.reset.addEventListener('click', resetSelection);
@@ -1086,8 +1108,10 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       car.gearbox = new Gearbox(gearboxDefaults);
     }
     const basePowerMult = (base && base.enginePowerMult != null) ? base.enginePowerMult : 1;
+    const accelDurMult = (base && base.accelDurationMult != null) ? base.accelDurationMult : 1.0;
+    const effectivePowerMult = basePowerMult / (accelDurMult * accelDurMult);
     if (car.gearbox && (car.gearbox.c.powerMult == null)) {
-      car.gearbox.c.powerMult = basePowerMult;
+      car.gearbox.c.powerMult = effectivePowerMult;
     }
     return car.physics;
   }
@@ -1152,7 +1176,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     const onRoad = surface && surface.onRoad !== false;
     const muLat = onRoad ? P.muLatRoad : P.muLatGrass;
     const muLong = onRoad ? P.muLongRoad : P.muLongGrass;
-  const dragK = P.dragK * (onRoad?1:0.7); // slightly less aero on grass due to lower speeds
+  const accelDurMult = (P.accelDurationMult != null) ? P.accelDurationMult : 1.0;
+  const dragK = (P.dragK / (accelDurMult * accelDurMult)) * (onRoad?1:0.7); // slightly less aero on grass due to lower speeds
   const rollK = P.rollK  * (onRoad?1.0:1.6); // higher rolling on grass
 
     // Body-frame velocity
@@ -2568,7 +2593,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
         if (!c.physics) initCar(c, c.kind);
         c.physics.params = { ...c.physics.params, ...p };
         if (c.gearbox instanceof Gearbox) {
-          c.gearbox.c.powerMult = powerMult;
+          const accelDurMult = (p.accelDurationMult != null) ? p.accelDurationMult : 1.0;
+          c.gearbox.c.powerMult = powerMult / (accelDurMult * accelDurMult);
         }
         if (c.physics.planckBody) {
           const body = c.physics.planckBody;
@@ -2638,6 +2664,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
         // Clone safe physics parameters (not steering mode stuff)
         const safeParams = {
           enginePowerMult: sourceParams.enginePowerMult,
+          accelDurationMult: sourceParams.accelDurationMult,
           brakeForce: sourceParams.brakeForce,
           mass: sourceParams.mass,
           dragK: sourceParams.dragK,
@@ -2669,9 +2696,10 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
         // Merge into car's physics params
         car.physics.params = { ...car.physics.params, ...safeParams };
 
-        // Also sync gearbox power multiplier
+        // Also sync gearbox power multiplier with accelDurationMult applied
         if (car.gearbox instanceof Gearbox && sourceParams.enginePowerMult != null) {
-          car.gearbox.c.powerMult = sourceParams.enginePowerMult;
+          const accelDurMult = (sourceParams.accelDurationMult != null) ? sourceParams.accelDurationMult : 1.0;
+          car.gearbox.c.powerMult = sourceParams.enginePowerMult / (accelDurMult * accelDurMult);
         }
 
         // Update Planck body properties if present
