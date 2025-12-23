@@ -2398,7 +2398,11 @@ const { useEffect, useRef, useState } = React;
                 const fallbackLine = baseRacingLine.length ? baseRacingLine : racingLine;
                 racingLine = scaleLine(fallbackLine);
               } else {
-                const opts = { straightSpeed: (window.RacerAI.DEFAULT_LINE_CFG && window.RacerAI.DEFAULT_LINE_CFG.straightSpeed) || 520 };
+                const lineDefaults = getLineDefaults();
+                const opts = { 
+                  straightSpeed: lineDefaults.straightSpeed,
+                  cornerSpeedFloor: lineDefaults.cornerSpeedFloor
+                };
                 if (typeof apex === "number") opts.apexAggression = apex;
                 if (typeof maxOffset === "number") opts.maxOffset = maxOffset;
                 if (typeof roadFriction === "number") opts.roadFriction = roadFriction;
