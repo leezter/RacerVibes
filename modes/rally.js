@@ -6,8 +6,8 @@
       defaultDifficulty: 'hard',
       difficulties: ['easy', 'medium', 'hard'],
       count: 7,
-      vehicleType: 'Rally'
-    }
+      vehicleType: 'Rally',
+    },
   };
   const modesApi = global.RacerModes;
   if (!modesApi || typeof modesApi.register !== 'function') {
