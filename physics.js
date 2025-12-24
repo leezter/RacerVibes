@@ -432,13 +432,26 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       if (!cars.length) return;
       for (const car of cars) {
         const base = VEHICLE_DEFAULTS[car.kind];
-        if (base && car.physics && car.physics.params) {
+        if (!base) continue;
+        
+        // Ensure physics is initialized
+        if (!car.physics || !car.physics.params) {
+          initCar(car, car.kind);
+        }
+        
+        if (car.physics && car.physics.params) {
           car.physics.params.wheelbase = base.wheelbase;
           car.physics.params.cgToFront = base.cgToFront;
           car.physics.params.cgToRear = base.cgToRear;
           car.physics.params.accelDurationMult = base.accelDurationMult != null ? base.accelDurationMult : 1.0;
           car.physics.a = base.cgToFront;
           car.physics.b = base.cgToRear;
+          
+          // Ensure gearbox exists
+          if (!car.gearbox) {
+            car.gearbox = new Gearbox(gearboxDefaults);
+          }
+          
           // Update gearbox power with accelDurationMult applied
           if (car.gearbox && car.gearbox.c) {
             const basePowerMult = base.enginePowerMult != null ? base.enginePowerMult : 1;
