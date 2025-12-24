@@ -472,6 +472,11 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
         removePlanckBody(car);
       }
       registerPlanckCars(cars);
+      
+      // If clone physics is enabled, sync changes to all AI cars through the clone system
+      if (els.clonePhysics && els.clonePhysics.checked) {
+        applyClonePhysicsToAI();
+      }
     }
       sharedPlanckRefresh = refreshActiveCarPhysics;
 
