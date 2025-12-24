@@ -323,7 +323,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
           <div class="rv-row"><label for="rv-veh-wheel"><span${tipAttr('wheelbase')}>Wheelbase</span></label><input id="rv-veh-wheel" type="range" min="20" max="140" step="1"><div class="val" id="rv-veh-wheel-v"></div></div>
           <div class="rv-row"><label for="rv-veh-cgf"><span${tipAttr('cgFront')}>CG → front</span></label><input id="rv-veh-cgf" type="range" min="5" max="120" step="1"><div class="val" id="rv-veh-cgf-v"></div></div>
           <div class="rv-row"><label for="rv-veh-cgr"><span${tipAttr('cgRear')}>CG → rear</span></label><input id="rv-veh-cgr" type="range" min="5" max="120" step="1"><div class="val" id="rv-veh-cgr-v"></div></div>
-          <div class="rv-row"><label for="rv-veh-accel"><span${tipAttr('accelDuration')}>0-to-top mult</span></label><input id="rv-veh-accel" type="range" min="0.33" max="3.0" step="0.05"><div class="val" id="rv-veh-accel-v"></div></div>
+          <div class="rv-row"><label for="rv-veh-accel"><span${tipAttr('accelDuration')}>0-to-top mult</span></label><input id="rv-veh-accel" type="range" min="1.0" max="3.0" step="0.1"><div class="val" id="rv-veh-accel-v"></div></div>
         </div>
         <div class="rv-row rv-btns">
           <button id="rv-veh-sync" class="rv-mini"${tipAttr('syncActive')}>Sync active cars</button>
@@ -616,7 +616,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     }
     if (els.accel) {
       els.accel.addEventListener('input', ()=>{
-        const v = clamp(+els.accel.value || 1.0, 0.33, 3.0);
+        const v = clamp(+els.accel.value || 1.0, 1.0, 3.0);
         applyPhysChange('accelDurationMult', v);
       });
     }
