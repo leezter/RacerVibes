@@ -436,8 +436,16 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
           car.physics.params.wheelbase = base.wheelbase;
           car.physics.params.cgToFront = base.cgToFront;
           car.physics.params.cgToRear = base.cgToRear;
+          car.physics.params.accelDurationMult = base.accelDurationMult != null ? base.accelDurationMult : 1.0;
           car.physics.a = base.cgToFront;
           car.physics.b = base.cgToRear;
+          // Update gearbox power with accelDurationMult applied
+          if (car.gearbox instanceof Gearbox) {
+            const basePowerMult = base.enginePowerMult != null ? base.enginePowerMult : 1;
+            const accelDurMult = base.accelDurationMult != null ? base.accelDurationMult : 1.0;
+            const accelDurMultSq = accelDurMult * accelDurMult;
+            car.gearbox.c.powerMult = basePowerMult / accelDurMultSq;
+          }
           const art = artState[car.kind];
           const collider = colliderState[car.kind];
           const mass = car.physics.params.mass || base.mass || 1;
