@@ -440,7 +440,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
           car.physics.a = base.cgToFront;
           car.physics.b = base.cgToRear;
           // Update gearbox power with accelDurationMult applied
-          if (car.gearbox instanceof Gearbox) {
+          if (car.gearbox && car.gearbox.c) {
             const basePowerMult = base.enginePowerMult != null ? base.enginePowerMult : 1;
             const accelDurMult = base.accelDurationMult != null ? base.accelDurationMult : 1.0;
             const accelDurMultSq = accelDurMult * accelDurMult;
