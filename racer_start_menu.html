@@ -1802,10 +1802,30 @@
           <!-- Game Mode View -->
           <div class="view active" id="modeView">
             <div class="mode-cards">
-              <div class="mode-card selected" data-mode="race">
+              <div class="mode-card selected" data-mode="grip">
                 <div class="mode-icon">🏆</div>
-                <div class="mode-name">Race</div>
-                <div class="mode-desc">Compete against AI opponents. Battle for position, master each corner, and cross the finish line first.</div>
+                <div class="mode-name">Grip</div>
+                <div class="mode-desc">Classic mixed vehicle racing. 9 AI opponents in different vehicle types compete on the track.</div>
+              </div>
+              <div class="mode-card" data-mode="gt">
+                <div class="mode-icon">🚗</div>
+                <div class="mode-name">GT</div>
+                <div class="mode-desc">GT-only race. 7 AI opponents in GT cars compete for victory.</div>
+              </div>
+              <div class="mode-card" data-mode="openwheel">
+                <div class="mode-icon">🏎️</div>
+                <div class="mode-name">Open Wheel</div>
+                <div class="mode-desc">Formula racing. 7 AI opponents in F1 cars battle at high speed.</div>
+              </div>
+              <div class="mode-card" data-mode="rally">
+                <div class="mode-icon">🚙</div>
+                <div class="mode-name">Rally</div>
+                <div class="mode-desc">Rally racing. 7 AI opponents in rally cars tackle any surface.</div>
+              </div>
+              <div class="mode-card" data-mode="truck">
+                <div class="mode-icon">🚚</div>
+                <div class="mode-name">Truck</div>
+                <div class="mode-desc">Truck racing. 7 AI opponents in heavy trucks compete for supremacy.</div>
               </div>
               <div class="mode-card time-trial" data-mode="time-trial">
                 <div class="mode-icon">⏱️</div>
@@ -1893,7 +1913,7 @@
           <div class="selection-summary">
             <div class="summary-item">
               <span class="summary-label">Mode:</span>
-              <span class="summary-value" id="summaryMode">Race</span>
+              <span class="summary-value" id="summaryMode">Grip</span>
             </div>
             <div class="summary-item">
               <span class="summary-label">Vehicle:</span>
@@ -1922,7 +1942,7 @@
         
         // ===== State =====
         const state = {
-          mode: 'race',
+          mode: 'grip',
           vehicle: 'GT',
           track: 'Le Mans',
           currentView: 'mode'
@@ -2002,7 +2022,8 @@
             modeCards.forEach(c => c.classList.remove('selected'));
             card.classList.add('selected');
             state.mode = card.dataset.mode;
-            summaryMode.textContent = card.dataset.mode === 'race' ? 'Race' : 'Time Trial';
+            const modeName = card.querySelector('.mode-name').textContent;
+            summaryMode.textContent = modeName;
           });
         });
         

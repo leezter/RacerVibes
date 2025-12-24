@@ -107,6 +107,10 @@
 
     <script src="modes/registry.js"></script>
     <script src="modes/grip.js"></script>
+    <script src="modes/gt.js"></script>
+    <script src="modes/openwheel.js"></script>
+    <script src="modes/rally.js"></script>
+    <script src="modes/truck.js"></script>
     <script type="text/babel" data-presets="env,react">
 // Utility: request fullscreen politely
 function requestFullscreen(el){
@@ -351,6 +355,12 @@ const { useEffect, useRef, useState } = React;
       }
 
       const START_PAYLOAD = readStartPayload();
+
+      function getCurrentModeConfig() {
+        if (!window.RacerModes || typeof window.RacerModes.get !== 'function') return null;
+        const modeId = START_PAYLOAD && START_PAYLOAD.mode ? START_PAYLOAD.mode : 'grip';
+        return window.RacerModes.get(modeId);
+      }
 
       function getInitialTrack() {
         if (START_PAYLOAD && typeof START_PAYLOAD.track === 'string') {
@@ -843,6 +853,7 @@ const { useEffect, useRef, useState } = React;
           
           return newControl;
         }
+        const currentModeConfig = getCurrentModeConfig();
         const gripModeConfig = (window.RacerModes && typeof window.RacerModes.get === "function") ? window.RacerModes.get("grip") : null;
         function sanitizeDifficulty(value){
           if (!value || typeof value !== "string") return null;
@@ -1335,7 +1346,7 @@ const { useEffect, useRef, useState } = React;
           if (api && api.DEFAULT_LINE_CFG) return { ...api.DEFAULT_LINE_CFG };
           return { apexAggression: 0.10, maxOffset: 0.65, roadFriction: 1.1, minRadius: 12, straightSpeed: 3000, cornerSpeedFloor: 140 };
         }
-        const modeDefault = gripModeConfig && gripModeConfig.ai && gripModeConfig.ai.defaultDifficulty ? gripModeConfig.ai.defaultDifficulty : null;
+        const modeDefault = currentModeConfig && currentModeConfig.ai && currentModeConfig.ai.defaultDifficulty ? currentModeConfig.ai.defaultDifficulty : null;
         const initialAIDifficulty = loadStoredDifficulty() || sanitizeDifficulty(modeDefault) || sanitizeDifficulty("hard") || AVAILABLE_AI_DIFFICULTIES[0];
         const canvasRef = useRef(null);
             const trackMapRef = useRef(null);
@@ -2288,7 +2299,8 @@ const { useEffect, useRef, useState } = React;
             player.gearbox = new Gearbox(gbxCfg);
             try { if (window.RacerPhysics) window.RacerPhysics.initCar(player, player.kind); } catch(_){}
           }).catch(err => console.warn('Gearbox init failed', err));
-          const DEFAULT_AI_CAR_COUNT = 9;
+          const modeConfig = getCurrentModeConfig();
+          const DEFAULT_AI_CAR_COUNT = (modeConfig && modeConfig.ai && typeof modeConfig.ai.count === 'number') ? modeConfig.ai.count : 9;
           const LAPS_TO_FINISH = 3;
           let aiCars = []; // array of AI cars
           let racingLine = [];
@@ -3694,7 +3706,8 @@ const { useEffect, useRef, useState } = React;
             const gap = 38;       // gap along forward axis
             const lateral = 18;   // side column spacing
             const colors = ["#1e88e5","#43a047","#f4511e","#8e24aa","#00897b","#3949ab","#fdd835","#f97316","#00acc1","#c0ca33"];
-            const kinds = Object.keys(CarProfiles);
+            const modeVehicleType = modeConfig && modeConfig.ai && modeConfig.ai.vehicleType;
+            const kinds = modeVehicleType ? [modeVehicleType] : Object.keys(CarProfiles);
             for (let i = 0; i < n; i++) {
               const row = Math.floor(i/2) + 1;
               const side = (i%2===0 ? -1 : 1);
@@ -3713,7 +3726,8 @@ const { useEffect, useRef, useState } = React;
             const arr = [];
             if (!Array.isArray(slots) || !slots.length) return arr;
             const colors = ["#1e88e5","#43a047","#f4511e","#8e24aa","#00897b","#3949ab","#fdd835","#f97316","#00acc1","#c0ca33"];
-            const kinds = Object.keys(CarProfiles);
+            const modeVehicleType = modeConfig && modeConfig.ai && modeConfig.ai.vehicleType;
+            const kinds = modeVehicleType ? [modeVehicleType] : Object.keys(CarProfiles);
             slots.forEach((slot, idx) => {
               if (!slot) return;
               const kind = kinds[idx % kinds.length];
