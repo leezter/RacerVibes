@@ -236,9 +236,11 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
   function injectVehicleTweaker(bridge = {}, getCars){
     const existing = document.getElementById('rv-vehicle-tweaker');
     if (existing) {
-      // Check if the accel slider exists (added in v1.1)
-      if (document.getElementById('rv-veh-accel')) return;
+      // Check version - v1.1+ has the accel slider
+      const version = existing.dataset.version;
+      if (version === '1.1') return; // Current version, no upgrade needed
       // Old version detected, remove and re-inject
+      console.log('[Vehicle Tweaker] Upgrading from version', version || 'unknown', 'to 1.1');
       existing.remove();
     }
     ensureDevPanelStyles();
@@ -294,6 +296,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     const wrap = document.createElement('div');
     wrap.id = 'rv-vehicle-tweaker';
     wrap.className = 'rv-devtools rv-veh';
+    wrap.dataset.version = '1.1'; // Version with accel slider
     wrap.innerHTML = `
       <button class="toggle">Vehicle Tweaker ▾</button>
       <div class="rv-panel" role="dialog" aria-label="Vehicle Tweaker">
@@ -2845,7 +2848,16 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     planckStep,
     usesPlanckWorld,
     forcePlanckRefresh,
-    defaults: VEHICLE_DEFAULTS
+    defaults: VEHICLE_DEFAULTS,
+    forceVehicleTweakerRefresh: () => {
+      const existing = document.getElementById('rv-vehicle-tweaker');
+      if (existing) {
+        console.log('[Vehicle Tweaker] Force removing existing panel');
+        existing.remove();
+      }
+      console.log('[Vehicle Tweaker] Panel will be re-injected on next call to injectVehicleTweaker');
+      return 'Panel removed. Reload the page to see the updated version.';
+    }
   };
   window.RacerPhysics = API;
 })();
