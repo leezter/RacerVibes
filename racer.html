@@ -384,7 +384,7 @@ const { useEffect, useRef, useState } = React;
         "GT":    { width: 24, length: 45, colliderWidth: 20, colliderLength: 39, maxK: 1.00, accelK: 1.00, brakeK: 1.00, turnK: 1.00, color: "#3949ab" },
         "Rally": { width: 18, length: 34, colliderWidth: 18, colliderLength: 34, maxK: 0.95, accelK: 1.05, brakeK: 1.05, turnK: 1.15, color: "#2e7d32" },
         "Truck": { width: 29, length: 60, colliderWidth: 22, colliderLength: 58, maxK: 0.82, accelK: 0.85, brakeK: 0.90, turnK: 0.70, color: "#f97316" },
-        "Bubble": { width: 26, length: 32, colliderWidth: 24, colliderLength: 30, maxK: 1.00, accelK: 1.00, brakeK: 1.00, turnK: 1.05, color: "#06b6d4" }
+        "Bubble": { width: 28, length: 30, colliderWidth: 25, colliderLength: 27, maxK: 1.00, accelK: 1.00, brakeK: 1.00, turnK: 1.05, color: "#06b6d4" }
       };
 
       const spriteAssets = {};
@@ -402,7 +402,7 @@ const { useEffect, useRef, useState } = React;
       const truckSprite = loadSpriteAsset("truck", "assets/vehicles/truck_orange.png");
       const truckSpriteMeta = { sx: 408, sy: 73, sw: 357, sh: 744 };
       const bubbleSprite = loadSpriteAsset("bubble", "assets/vehicles/Bubble.png");
-      const bubbleSpriteMeta = { sx: 402, sy: 42, sw: 700, sh: 620 };
+      const bubbleSpriteMeta = { sx: 492, sy: 102, sw: 520, sh: 500 };
       const COLLIDER_VIS_STORAGE_KEY = "vehicleColliderOverlay";
       function readColliderOverlaySetting() {
         try {
