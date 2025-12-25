@@ -199,6 +199,47 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
         returnGain: 0,
         filterTau: 0.12
       }
+    },
+    Bubble: {
+      ...PLANCK_DEFAULTS,
+      restitution: 0.60,
+  mass: 2.20,
+      wheelbase: 38,
+      cgToFront: 18,
+      cgToRear: 20,
+  enginePowerMult: 1.65,
+  accelDurationMult: 1.0,
+  brakeForce: 600,
+      maxSteer: 0.52,
+      steerSpeed: 5.5,
+  muLatRoad: 1.40,
+  muLongRoad: 1.80,
+      muLatGrass: 0.48,
+      muLongGrass: 0.40,
+  dragK: 0.0010,
+  rollK: 0.10,
+  downforceK: 0.00025,
+  longSlipPeak: 0.18,
+  longSlipFalloff: 0.80,
+  frontCircle: 0.50,
+  brakeFrontShare: 0.60,
+  loadSenseK: 0.08,
+  muLongLoadSenseK: 0.04,
+      rearCircle: 0.50,
+  vKineBlend: 1.8,
+      cgHeight: 2,
+        yawDampK: 0.00,
+    reverseEntrySpeed: 40,
+    reverseTorqueScale: 0.50,
+      touchSteer: {
+        maxSteerLowSpeed: 0.75,
+        maxSteerHighSpeed: 0.10,
+        falloffSpeed: 260,
+        baseSteerRate: 5.8,
+        steerRateFalloff: 0.0035,
+        returnGain: 0,
+        filterTau: 0.15
+      }
     }
   };
 

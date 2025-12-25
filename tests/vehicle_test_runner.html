@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vehicle Collider & Size Tests</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 { color: #00d9ff; margin-bottom: 20px; }
+    .controls {
+      margin-bottom: 20px;
+    }
+    button {
+      background: #00d9ff;
+      color: #1a1a2e;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 6px;
+      margin-right: 10px;
+    }
+    button:hover { background: #00b8d9; }
+    button:disabled { background: #666; cursor: not-allowed; }
+    
+    .summary {
+      background: #2a2a4e;
+      padding: 15px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 18px;
+    }
+    .summary.all-pass { border-left: 4px solid #00ff88; }
+    .summary.has-fail { border-left: 4px solid #ff4444; }
+    
+    .test-list { list-style: none; padding: 0; margin: 0; }
+    .test-item {
+      background: #2a2a4e;
+      margin-bottom: 10px;
+      padding: 15px 20px;
+      border-radius: 8px;
+      border-left: 4px solid #666;
+    }
+    .test-item.pass { border-left-color: #00ff88; }
+    .test-item.fail { border-left-color: #ff4444; }
+    .test-item.pending { border-left-color: #ffaa00; }
+    
+    .test-name {
+      font-weight: bold;
+      font-size: 16px;
+      margin-bottom: 5px;
+    }
+    .test-status {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: bold;
+      margin-left: 10px;
+    }
+    .test-status.pass { background: #00ff88; color: #000; }
+    .test-status.fail { background: #ff4444; color: #fff; }
+    .test-status.pending { background: #ffaa00; color: #000; }
+    
+    .test-message {
+      color: #aaa;
+      font-size: 14px;
+      margin-top: 5px;
+    }
+    
+    .info-section {
+      margin-top: 30px;
+      background: #2a2a4e;
+      border-radius: 8px;
+      padding: 20px;
+    }
+    .info-section h2 { margin-top: 0; color: #00d9ff; }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px;
+      border-bottom: 1px solid #444;
+    }
+    th {
+      background: #1a1a2e;
+      font-weight: bold;
+      color: #00d9ff;
+    }
+    tr:hover {
+      background: #333355;
+    }
+    .highlight {
+      background: #3a3a5e;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>🏎️ Vehicle Collider & Size Tests</h1>
+  
+  <div class="controls">
+    <button id="runAllBtn">Run All Tests</button>
+    <button id="runSelectedBtn">Run Selected</button>
+  </div>
+  
+  <div id="summary" class="summary" style="display:none;"></div>
+  
+  <ul id="testList" class="test-list"></ul>
+  
+  <div class="info-section">
+    <h2>Vehicle Dimensions</h2>
+    <table id="dimensionsTable">
+      <thead>
+        <tr>
+          <th>Vehicle</th>
+          <th>Visual Width</th>
+          <th>Visual Length</th>
+          <th>Collider Width</th>
+          <th>Collider Length</th>
+          <th>Aspect Ratio</th>
+          <th>Wheelbase</th>
+        </tr>
+      </thead>
+      <tbody id="dimensionsBody"></tbody>
+    </table>
+  </div>
+
+  <div class="info-section">
+    <h2>Size Comparisons</h2>
+    <table id="comparisonsTable">
+      <thead>
+        <tr>
+          <th>Vehicle</th>
+          <th>Area (px²)</th>
+          <th>vs Bubble</th>
+          <th>Collider Area (px²)</th>
+          <th>Collider Fit (%)</th>
+        </tr>
+      </thead>
+      <tbody id="comparisonsBody"></tbody>
+    </table>
+  </div>
+
+  <!-- Load test suite -->
+  <script src="vehicle_tests.js"></script>
+  
+  <script>
+    const testListEl = document.getElementById('testList');
+    const summaryEl = document.getElementById('summary');
+    const runAllBtn = document.getElementById('runAllBtn');
+    const runSelectedBtn = document.getElementById('runSelectedBtn');
+    const dimensionsBody = document.getElementById('dimensionsBody');
+    const comparisonsBody = document.getElementById('comparisonsBody');
+
+    // Populate test list
+    function populateTests() {
+      testListEl.innerHTML = '';
+      VehicleTests.tests.forEach((test, idx) => {
+        const li = document.createElement('li');
+        li.className = 'test-item pending';
+        li.innerHTML = `
+          <input type="checkbox" checked data-idx="${idx}">
+          <span class="test-name">${test.name}</span>
+          <span class="test-status pending">PENDING</span>
+          <div class="test-message">Click "Run" to execute</div>
+        `;
+        testListEl.appendChild(li);
+      });
+    }
+
+    // Update test result in UI
+    function updateTestResult(idx, result) {
+      const item = testListEl.children[idx];
+      const status = item.querySelector('.test-status');
+      const message = item.querySelector('.test-message');
+      
+      item.className = `test-item ${result.pass ? 'pass' : 'fail'}`;
+      status.className = `test-status ${result.pass ? 'pass' : 'fail'}`;
+      status.textContent = result.pass ? 'PASS' : 'FAIL';
+      message.textContent = result.message;
+    }
+
+    // Populate dimensions table
+    function populateDimensionsTable() {
+      const profiles = VehicleTests.profiles;
+      const physics = VehicleTests.physics;
+      
+      dimensionsBody.innerHTML = '';
+      
+      for (const [vehicle, profile] of Object.entries(profiles)) {
+        const phys = physics[vehicle] || {};
+        const aspectRatio = (profile.length / profile.width).toFixed(2);
+        const isBubble = vehicle === 'Bubble';
+        
+        const row = document.createElement('tr');
+        if (isBubble) row.className = 'highlight';
+        row.innerHTML = `
+          <td>${vehicle}${isBubble ? ' 🫧' : ''}</td>
+          <td>${profile.width}</td>
+          <td>${profile.length}</td>
+          <td>${profile.colliderWidth}</td>
+          <td>${profile.colliderLength}</td>
+          <td>${aspectRatio}</td>
+          <td>${phys.wheelbase || 'N/A'}</td>
+        `;
+        dimensionsBody.appendChild(row);
+      }
+    }
+
+    // Populate comparisons table
+    function populateComparisonsTable() {
+      const profiles = VehicleTests.profiles;
+      const bubbleProfile = profiles['Bubble'];
+      const bubbleArea = bubbleProfile.width * bubbleProfile.length;
+      
+      comparisonsBody.innerHTML = '';
+      
+      for (const [vehicle, profile] of Object.entries(profiles)) {
+        const area = profile.width * profile.length;
+        const colliderArea = profile.colliderWidth * profile.colliderLength;
+        const colliderFit = ((colliderArea / area) * 100).toFixed(1);
+        const vsBubble = vehicle === 'Bubble' ? '1.00x' : (area / bubbleArea).toFixed(2) + 'x';
+        const isBubble = vehicle === 'Bubble';
+        
+        const row = document.createElement('tr');
+        if (isBubble) row.className = 'highlight';
+        row.innerHTML = `
+          <td>${vehicle}${isBubble ? ' 🫧' : ''}</td>
+          <td>${area}</td>
+          <td>${vsBubble}</td>
+          <td>${colliderArea}</td>
+          <td>${colliderFit}%</td>
+        `;
+        comparisonsBody.appendChild(row);
+      }
+    }
+
+    // Run all tests
+    runAllBtn.onclick = function() {
+      runAllBtn.disabled = true;
+      const result = VehicleTests.runAll();
+      
+      result.results.forEach((r, idx) => {
+        updateTestResult(idx, r);
+      });
+      
+      summaryEl.style.display = 'block';
+      summaryEl.className = `summary ${result.failed === 0 ? 'all-pass' : 'has-fail'}`;
+      summaryEl.textContent = `Results: ${result.passed}/${result.passed + result.failed} tests passed`;
+      
+      runAllBtn.disabled = false;
+    };
+
+    // Run selected tests
+    runSelectedBtn.onclick = function() {
+      const checkboxes = testListEl.querySelectorAll('input[type="checkbox"]:checked');
+      let passed = 0, failed = 0;
+      
+      checkboxes.forEach(cb => {
+        const idx = parseInt(cb.dataset.idx);
+        const result = VehicleTests.runTest(idx);
+        updateTestResult(idx, result);
+        if (result.pass) passed++; else failed++;
+      });
+      
+      summaryEl.style.display = 'block';
+      summaryEl.className = `summary ${failed === 0 ? 'all-pass' : 'has-fail'}`;
+      summaryEl.textContent = `Results: ${passed}/${passed + failed} tests passed`;
+    };
+
+    // Initialize
+    populateTests();
+    populateDimensionsTable();
+    populateComparisonsTable();
+  </script>
+</body>
+</html>

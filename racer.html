@@ -111,6 +111,7 @@
     <script src="modes/openwheel.js"></script>
     <script src="modes/rally.js"></script>
     <script src="modes/truck.js"></script>
+    <script src="modes/bubble.js"></script>
     <script type="text/babel" data-presets="env,react">
 // Utility: request fullscreen politely
 function requestFullscreen(el){
@@ -382,7 +383,8 @@ const { useEffect, useRef, useState } = React;
         "F1":    { width: 18, length: 44, colliderWidth: 18, colliderLength: 44, maxK: 1.18, accelK: 1.10, brakeK: 1.05, turnK: 1.20, color: "#d32f2f" },
         "GT":    { width: 24, length: 45, colliderWidth: 20, colliderLength: 39, maxK: 1.00, accelK: 1.00, brakeK: 1.00, turnK: 1.00, color: "#3949ab" },
         "Rally": { width: 18, length: 34, colliderWidth: 18, colliderLength: 34, maxK: 0.95, accelK: 1.05, brakeK: 1.05, turnK: 1.15, color: "#2e7d32" },
-        "Truck": { width: 29, length: 60, colliderWidth: 22, colliderLength: 58, maxK: 0.82, accelK: 0.85, brakeK: 0.90, turnK: 0.70, color: "#f97316" }
+        "Truck": { width: 29, length: 60, colliderWidth: 22, colliderLength: 58, maxK: 0.82, accelK: 0.85, brakeK: 0.90, turnK: 0.70, color: "#f97316" },
+        "Bubble": { width: 22, length: 38, colliderWidth: 22, colliderLength: 38, maxK: 1.00, accelK: 1.00, brakeK: 1.00, turnK: 1.05, color: "#06b6d4" }
       };
 
       const spriteAssets = {};
@@ -399,6 +401,7 @@ const { useEffect, useRef, useState } = React;
 
       const truckSprite = loadSpriteAsset("truck", "assets/vehicles/truck_orange.png");
       const truckSpriteMeta = { sx: 408, sy: 73, sw: 357, sh: 744 };
+      const bubbleSprite = loadSpriteAsset("bubble", "assets/vehicles/Bubble.png");
       const COLLIDER_VIS_STORAGE_KEY = "vehicleColliderOverlay";
       function readColliderOverlaySetting() {
         try {
