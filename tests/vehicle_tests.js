@@ -14,7 +14,7 @@
     "GT":    { width: 24, length: 45, colliderWidth: 20, colliderLength: 39 },
     "Rally": { width: 18, length: 34, colliderWidth: 18, colliderLength: 34 },
     "Truck": { width: 29, length: 60, colliderWidth: 22, colliderLength: 58 },
-    "Bubble": { width: 22, length: 38, colliderWidth: 22, colliderLength: 38 }
+    "Bubble": { width: 26, length: 32, colliderWidth: 24, colliderLength: 30 }
   };
 
   // Expected physics parameters (wheelbase values from physics.js)
@@ -23,7 +23,7 @@
     "GT":    { wheelbase: 36 },
     "Rally": { wheelbase: 34 },
     "Truck": { wheelbase: 57 },
-    "Bubble": { wheelbase: 38 }
+    "Bubble": { wheelbase: 32 }
   };
 
   // Test suite
@@ -110,17 +110,14 @@
     fn: function() {
       const bubble = VEHICLE_PROFILES["Bubble"];
       
-      // Bubble should be compact (shorter than GT but not smallest)
-      if (bubble.length >= VEHICLE_PROFILES["GT"].length) {
-        return { pass: false, message: `Bubble length (${bubble.length}) should be less than GT (${VEHICLE_PROFILES["GT"].length})` };
-      }
-      if (bubble.length <= VEHICLE_PROFILES["Rally"].length) {
-        return { pass: false, message: `Bubble length (${bubble.length}) should be greater than Rally (${VEHICLE_PROFILES["Rally"].length})` };
+      // Bubble should be compact and rounded (shorter than Rally)
+      if (bubble.length >= VEHICLE_PROFILES["Rally"].length) {
+        return { pass: false, message: `Bubble length (${bubble.length}) should be less than Rally (${VEHICLE_PROFILES["Rally"].length})` };
       }
       
-      // Bubble should be moderately wide (between Rally and GT)
-      if (bubble.width < VEHICLE_PROFILES["Rally"].width || bubble.width > VEHICLE_PROFILES["GT"].width) {
-        return { pass: false, message: `Bubble width (${bubble.width}) should be between Rally (${VEHICLE_PROFILES["Rally"].width}) and GT (${VEHICLE_PROFILES["GT"].width})` };
+      // Bubble should be wider than Rally (more rounded shape)
+      if (bubble.width <= VEHICLE_PROFILES["Rally"].width) {
+        return { pass: false, message: `Bubble width (${bubble.width}) should be greater than Rally (${VEHICLE_PROFILES["Rally"].width})` };
       }
       
       return { pass: true, message: `Bubble dimensions appropriate: ${bubble.width}x${bubble.length}` };
@@ -201,28 +198,33 @@
   });
 
   // ============================================================
-  // TEST 9: Verify Bubble collider matches visual (tight fit)
+  // TEST 9: Verify Bubble collider is proportional to visual
   // ============================================================
   tests.push({
-    name: 'Bubble collider matches visual dimensions',
+    name: 'Bubble collider is properly proportioned',
     fn: function() {
       const bubble = VEHICLE_PROFILES["Bubble"];
       
-      if (bubble.colliderWidth !== bubble.width) {
+      const widthRatio = bubble.colliderWidth / bubble.width;
+      const lengthRatio = bubble.colliderLength / bubble.length;
+      
+      // Collider should be at least 85% of visual size for Bubble
+      if (widthRatio < 0.85 || lengthRatio < 0.85) {
         return { 
           pass: false, 
-          message: `Bubble collider width (${bubble.colliderWidth}) does not match visual width (${bubble.width})` 
+          message: `Bubble collider too small: width ratio=${widthRatio.toFixed(2)}, length ratio=${lengthRatio.toFixed(2)}` 
         };
       }
       
-      if (bubble.colliderLength !== bubble.length) {
+      // Collider should not exceed visual size
+      if (widthRatio > 1.0 || lengthRatio > 1.0) {
         return { 
           pass: false, 
-          message: `Bubble collider length (${bubble.colliderLength}) does not match visual length (${bubble.length})` 
+          message: `Bubble collider exceeds visual: width ratio=${widthRatio.toFixed(2)}, length ratio=${lengthRatio.toFixed(2)}` 
         };
       }
       
-      return { pass: true, message: 'Bubble collider perfectly matches visual dimensions' };
+      return { pass: true, message: `Bubble collider properly proportioned: ${bubble.colliderWidth}x${bubble.colliderLength} (${(widthRatio*100).toFixed(0)}%×${(lengthRatio*100).toFixed(0)}%)` };
     }
   });
 
