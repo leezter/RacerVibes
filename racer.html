@@ -402,6 +402,7 @@ const { useEffect, useRef, useState } = React;
       const truckSprite = loadSpriteAsset("truck", "assets/vehicles/truck_orange.png");
       const truckSpriteMeta = { sx: 408, sy: 73, sw: 357, sh: 744 };
       const bubbleSprite = loadSpriteAsset("bubble", "assets/vehicles/Bubble.png");
+      const bubbleSpriteMeta = { sx: 0, sy: 0, sw: 1504, sh: 704 };
       const COLLIDER_VIS_STORAGE_KEY = "vehicleColliderOverlay";
       function readColliderOverlaySetting() {
         try {
@@ -4013,11 +4014,69 @@ function drawCarDetailed(ctx, car){
     wheel( t-3, axR2, 0, wwR, llR); wheel( t+3, axR2, 0, wwR, llR);
   }
 
+  function drawBubble(){
+    if (drawBubbleSprite()) return;
+    drawBubbleFallback();
+  }
+
+  function drawBubbleSprite(){
+    const img = bubbleSprite;
+    if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return false;
+    const meta = bubbleSpriteMeta;
+    const aspect = meta.sw / meta.sh;
+    const drawLength = L;
+    const drawWidth = drawLength * aspect;
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(img, meta.sx, meta.sy, meta.sw, meta.sh, -drawWidth/2, -drawLength/2, drawWidth, drawLength);
+    ctx.restore();
+    return true;
+  }
+
+  function drawBubbleFallback(){
+    // Rounded bubble-like car with glossy appearance
+    // Main body - larger rounded bubble
+    ctx.fillStyle = gradBody(car.color || '#06b6d4');
+    ctx.beginPath();
+    ctx.ellipse(0, 0, W*0.48, L*0.45, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Glossy highlight
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.beginPath();
+    ctx.ellipse(-W*0.12, -L*0.15, W*0.25, L*0.20, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Windshield bubble
+    ctx.fillStyle = 'rgba(100,200,255,0.6)';
+    ctx.beginPath();
+    ctx.ellipse(0, -L*0.25, W*0.35, L*0.18, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Front lights (bubbly circles)
+    ctx.fillStyle = '#ffe69b';
+    ctx.beginPath();
+    ctx.arc(-W*0.28, -L*0.42, Math.max(2, W*0.12), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(W*0.28, -L*0.42, Math.max(2, W*0.12), 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Wheels - smaller rounded
+    const axF = -L*0.30, axR = L*0.30, t = W*0.42;
+    const ww = Math.max(4, W*0.24), ll = Math.max(6, L*0.18);
+    wheel(-t, axF, steerAngle, ww, ll);
+    wheel(t, axF, steerAngle, ww, ll);
+    wheel(-t, axR, 0, ww, ll);
+    wheel(t, axR, 0, ww, ll);
+  }
+
   switch (car.kind){
-    case 'F1':    drawF1();    break;
-    case 'Truck': drawTruck(); break;
-    case 'Rally': drawRally(); break;
-    default:      drawGT();    break;
+    case 'F1':     drawF1();     break;
+    case 'Truck':  drawTruck();  break;
+    case 'Rally':  drawRally();  break;
+    case 'Bubble': drawBubble(); break;
+    default:       drawGT();     break;
   }
 
   drawColliderOverlay();
