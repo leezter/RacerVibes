@@ -47,7 +47,7 @@
     <div class="container">
         <div class="test-section">
             <h2>1x Scale (Game Size)</h2>
-            <div class="info">CarProfile: 28×28px<br>Sprite: 299×630px (aspect 0.47)</div>
+            <div class="info">CarProfile: 40×40px<br>Sprite: 299×630px (aspect 0.47)</div>
             <canvas id="canvas1x"></canvas>
             <div class="scale-label">Actual game rendering size</div>
         </div>
@@ -75,7 +75,7 @@
     <script>
         // Updated sprite metadata (after fix)
         const bubbleSpriteMeta = { sx: 586, sy: 46, sw: 299, sh: 630 };
-        const carProfile = { width: 28, length: 28 };
+        const carProfile = { width: 40, length: 40 };
         
         const img = new Image();
         img.onload = function() {

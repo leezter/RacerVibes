@@ -208,7 +208,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgToFront: 14,
       cgToRear: 14,
   enginePowerMult: 1.65,
-  accelDurationMult: 1.0,
+  accelDurationMult: 5.0,
   brakeForce: 600,
       maxSteer: 0.52,
       steerSpeed: 5.5,

@@ -14,7 +14,7 @@
     "GT":    { width: 24, length: 45, colliderWidth: 20, colliderLength: 39 },
     "Rally": { width: 18, length: 34, colliderWidth: 18, colliderLength: 34 },
     "Truck": { width: 29, length: 60, colliderWidth: 22, colliderLength: 58 },
-    "Bubble": { width: 28, length: 28, colliderWidth: 25, colliderLength: 25 }
+    "Bubble": { width: 40, length: 40, colliderWidth: 16, colliderLength: 38 }
   };
 
   // Expected physics parameters (wheelbase values from physics.js)
