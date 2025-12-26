@@ -2892,10 +2892,6 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     // Apply the initial slider values to the cars so physics match dev tools on race start
     try {
       apply();
-      // If clone physics is enabled by default, apply it after initial settings
-      if (els.clonePhysics && els.clonePhysics.checked) {
-        applyClonePhysicsToAI();
-      }
     } catch (e) {
       console.warn('[RacerPhysics] Failed to apply initial dev tools settings:', e);
     }
