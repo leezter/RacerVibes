@@ -3796,8 +3796,8 @@ function drawCarDetailed(ctx, car){
     ctx.restore();
   }
 
-  // Shadow (skip for sprite-based trucks that include baked shading)
-  if (!(car.kind === 'Truck' || clipperReady)) {
+  // Shadow (skip for sprite-based trucks/bubble that include baked shading or have clean sprites)
+  if (!(car.kind === 'Truck' || car.kind === 'Bubble' || clipperReady)) {
     ctx.save();
     ctx.globalAlpha = 0.28;
     ctx.fillStyle = '#000';
