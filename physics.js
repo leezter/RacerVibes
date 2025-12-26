@@ -2319,7 +2319,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
         return defaults.usePlanck !== false;
       }}],
       ['rv-apply-ai', { kind: 'global', type: 'checkbox', getDefault: () => false, apply: false }],
-      ['rv-clone-physics', { kind: 'global', type: 'checkbox', getDefault: () => false, apply: false, afterSet: () => applyClonePhysicsToAI() }],
+      ['rv-clone-physics', { kind: 'global', type: 'checkbox', getDefault: () => true, apply: false, afterSet: () => applyClonePhysicsToAI() }],
       ['rv-ppm', { kind: 'vehicle', type: 'number', format: fmtInt, getDefault: (kind) => {
         const defaults = defaultSnapshot[kind] || {};
         return defaults.pixelsPerMeter != null ? defaults.pixelsPerMeter : PLANCK_DEFAULTS.pixelsPerMeter;
@@ -2892,6 +2892,10 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     // Apply the initial slider values to the cars so physics match dev tools on race start
     try {
       apply();
+      // If clone physics is enabled by default, apply it after initial settings
+      if (els.clonePhysics && els.clonePhysics.checked) {
+        applyClonePhysicsToAI();
+      }
     } catch (e) {
       console.warn('[RacerPhysics] Failed to apply initial dev tools settings:', e);
     }
