@@ -46,7 +46,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgToFront: 20,
       cgToRear: 22,
   enginePowerMult: 1.65,
-  accelDurationMult: 1.0,
+  accelDurationMult: 5.0,
   brakeForce: 600,
       maxSteer: 0.55,
       steerSpeed: 6.0,
@@ -87,7 +87,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgToFront: 17,
       cgToRear: 19,
   enginePowerMult: 1.65,
-  accelDurationMult: 1.0,
+  accelDurationMult: 5.0,
   brakeForce: 600,
       maxSteer: 0.50,
       steerSpeed: 5.0,
@@ -127,7 +127,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgToFront: 16,
       cgToRear: 18,
   enginePowerMult: 1.65,
-  accelDurationMult: 1.0,
+  accelDurationMult: 5.0,
   brakeForce: 600,
       maxSteer: 0.58,
       steerSpeed: 6.5,
@@ -167,7 +167,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgToFront: 27,
       cgToRear: 30,
   enginePowerMult: 1.65,
-  accelDurationMult: 1.0,
+  accelDurationMult: 5.0,
   brakeForce: 600,
       maxSteer: 0.40,
       steerSpeed: 3.5,
@@ -208,7 +208,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgToFront: 14,
       cgToRear: 14,
   enginePowerMult: 1.65,
-  accelDurationMult: 1.0,
+  accelDurationMult: 5.0,
   brakeForce: 600,
       maxSteer: 0.52,
       steerSpeed: 5.5,
@@ -302,13 +302,13 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       : (() => null);
     for (const kind of kinds) {
       const dims = fetchArt(kind) || {};
-      const width = Number.isFinite(dims.width) ? dims.width : 30;
-      const length = Number.isFinite(dims.length) ? dims.length : 50;
+      const width = Number.isFinite(dims.width) ? dims.width : 40;
+      const length = Number.isFinite(dims.length) ? dims.length : 40;
       artState[kind] = { width, length };
       artDefaults[kind] = { width, length };
       const colliderDims = fetchCollider(kind) || {};
-      const colliderWidth = Number.isFinite(colliderDims.width) ? colliderDims.width : width;
-      const colliderLength = Number.isFinite(colliderDims.length) ? colliderDims.length : length;
+      const colliderWidth = Number.isFinite(colliderDims.width) ? colliderDims.width : 16;
+      const colliderLength = Number.isFinite(colliderDims.length) ? colliderDims.length : 38;
       colliderState[kind] = { width: colliderWidth, length: colliderLength };
       colliderDefaults[kind] = { width: colliderWidth, length: colliderLength };
     }
