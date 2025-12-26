@@ -884,10 +884,10 @@ const { useEffect, useRef, useState } = React;
         function loadStoredCloneGearbox(){
           try {
             const stored = localStorage.getItem(AI_CLONE_GEARBOX_KEY);
-            if (stored === null) return false;
+            if (stored === null) return true;
             return stored === "1" || stored === "true";
           } catch(_){
-            return false;
+            return true;
           }
         }
         function getAISkillDefaults(level){
