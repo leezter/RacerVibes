@@ -199,6 +199,46 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
         returnGain: 0,
         filterTau: 0.12
       }
+    },
+    Bubble: {
+      ...PLANCK_DEFAULTS,
+  mass: 2.20,
+      wheelbase: 38,
+      cgToFront: 18,
+      cgToRear: 20,
+  enginePowerMult: 1.65,
+  accelDurationMult: 1.0,
+  brakeForce: 600,
+      maxSteer: 0.48,
+      steerSpeed: 4.8,
+  muLatRoad: 1.40,
+  muLongRoad: 1.80,
+      muLatGrass: 0.48,
+      muLongGrass: 0.38,
+  dragK: 0.0010,
+  rollK: 0.10,
+  downforceK: 0.00025,
+  longSlipPeak: 0.18,
+  longSlipFalloff: 0.80,
+  frontCircle: 0.50,
+  brakeFrontShare: 0.60,
+  loadSenseK: 0.08,
+  muLongLoadSenseK: 0.04,
+      rearCircle: 0.50,
+      vKineBlend: 1.8,
+      cgHeight: 2,
+        yawDampK: 0.00,
+    reverseEntrySpeed: 40,
+    reverseTorqueScale: 0.50,
+      touchSteer: {
+        maxSteerLowSpeed: 0.75,
+        maxSteerHighSpeed: 0.10,
+        falloffSpeed: 280,
+        baseSteerRate: 5.0,
+        steerRateFalloff: 0.0033,
+        returnGain: 0,
+        filterTau: 0.25
+      }
     }
   };
 
@@ -1952,7 +1992,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
         </div>
         <div class="rv-row"><label for="rv-kind"><span class="rv-name"${tipAttr('vehicle')}>Vehicle</span></label>
           <select id="rv-kind">
-            <option>F1</option><option selected>GT</option><option>Rally</option><option>Truck</option>
+            <option>F1</option><option selected>GT</option><option>Rally</option><option>Truck</option><option>Bubble</option>
           </select>
           <label class="small" for="rv-apply-ai"><input type="checkbox" id="rv-apply-ai"> <span class="rv-name"${tipAttr('applyToAI')}>Apply to AI</span></label>
         </div>

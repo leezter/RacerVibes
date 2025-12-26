@@ -111,6 +111,7 @@
     <script src="modes/openwheel.js"></script>
     <script src="modes/rally.js"></script>
     <script src="modes/truck.js"></script>
+    <script src="modes/bubble.js"></script>
     <script type="text/babel" data-presets="env,react">
 // Utility: request fullscreen politely
 function requestFullscreen(el){
@@ -379,10 +380,11 @@ const { useEffect, useRef, useState } = React;
         } catch (e) { return "Le Mans"; }
       }
       const CarProfiles = {
-        "F1":    { width: 18, length: 44, colliderWidth: 18, colliderLength: 44, maxK: 1.18, accelK: 1.10, brakeK: 1.05, turnK: 1.20, color: "#d32f2f" },
-        "GT":    { width: 24, length: 45, colliderWidth: 20, colliderLength: 39, maxK: 1.00, accelK: 1.00, brakeK: 1.00, turnK: 1.00, color: "#3949ab" },
-        "Rally": { width: 18, length: 34, colliderWidth: 18, colliderLength: 34, maxK: 0.95, accelK: 1.05, brakeK: 1.05, turnK: 1.15, color: "#2e7d32" },
-        "Truck": { width: 29, length: 60, colliderWidth: 22, colliderLength: 58, maxK: 0.82, accelK: 0.85, brakeK: 0.90, turnK: 0.70, color: "#f97316" }
+        "F1":     { width: 18, length: 44, colliderWidth: 18, colliderLength: 44, maxK: 1.18, accelK: 1.10, brakeK: 1.05, turnK: 1.20, color: "#d32f2f" },
+        "GT":     { width: 24, length: 45, colliderWidth: 20, colliderLength: 39, maxK: 1.00, accelK: 1.00, brakeK: 1.00, turnK: 1.00, color: "#3949ab" },
+        "Rally":  { width: 18, length: 34, colliderWidth: 18, colliderLength: 34, maxK: 0.95, accelK: 1.05, brakeK: 1.05, turnK: 1.15, color: "#2e7d32" },
+        "Truck":  { width: 29, length: 60, colliderWidth: 22, colliderLength: 58, maxK: 0.82, accelK: 0.85, brakeK: 0.90, turnK: 0.70, color: "#f97316" },
+        "Bubble": { width: 22, length: 40, colliderWidth: 20, colliderLength: 38, maxK: 0.92, accelK: 0.95, brakeK: 0.98, turnK: 1.05, color: "#dc2626" }
       };
 
       const spriteAssets = {};
@@ -418,6 +420,7 @@ const { useEffect, useRef, useState } = React;
         persistColliderOverlaySetting(enabled);
       }
       const clipperSprite = loadSpriteAsset("clipper", "assets/vehicles/ClipperGT.png");
+      const bubbleSprite = loadSpriteAsset("bubble", "assets/vehicles/Bubble.png");
       function getInitialCar() {
         if (START_PAYLOAD && typeof START_PAYLOAD.car === 'string' && CarProfiles[START_PAYLOAD.car]) {
           return START_PAYLOAD.car;
@@ -3764,6 +3767,7 @@ function drawCarDetailed(ctx, car){
   const L = car.length, W = car.width;
   const steerAngle = (car.steerVis || 0) * 0.45;
   const clipperReady = car.kind === 'GT' && canRenderClipperSprite();
+  const bubbleReady = car.kind === 'Bubble' && canRenderBubbleSprite();
 
   // Helpers
   function roundRectLocal(x,y,w,h,r){
@@ -3792,8 +3796,8 @@ function drawCarDetailed(ctx, car){
     ctx.restore();
   }
 
-  // Shadow (skip for sprite-based trucks that include baked shading)
-  if (!(car.kind === 'Truck' || clipperReady)) {
+  // Shadow (skip for sprite-based vehicles that include baked shading)
+  if (!(car.kind === 'Truck' || clipperReady || bubbleReady)) {
     ctx.save();
     ctx.globalAlpha = 0.28;
     ctx.fillStyle = '#000';
@@ -3947,6 +3951,37 @@ function drawCarDetailed(ctx, car){
     return true;
   }
 
+  function canRenderBubbleSprite(){
+    const img = bubbleSprite;
+    return !!(img && img.complete && img.naturalWidth && img.naturalHeight);
+  }
+
+  function drawBubbleSprite(){
+    const img = bubbleSprite;
+    if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return false;
+    const drawLength = L;
+    const aspect = img.naturalWidth / img.naturalHeight;
+    const drawWidth = drawLength * aspect;
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(img, -drawWidth/2, -drawLength/2, drawWidth, drawLength);
+    ctx.restore();
+    return true;
+  }
+
+  function drawBubble(){
+    if (drawBubbleSprite()) return;
+    // Fallback: draw simple rounded car if sprite fails to load
+    ctx.fillStyle = gradBody(car.color || '#dc2626');
+    roundRectLocal(-W/2, -L/2, W, L, Math.min(W,L)*0.28);
+    ctx.fill();
+    // Simple wheels
+    const axY=L*0.28, t=W*0.38, ww=Math.max(4,W*0.26), ll=Math.max(7,L*0.20);
+    wheel(-t, axY, 0, ww, ll); wheel(t, axY, 0, ww, ll);
+    wheel(-t,-axY, steerAngle, ww, ll); wheel(t,-axY, steerAngle, ww, ll);
+    drawLights();
+  }
+
   function drawTruck(){
     if (drawTruckSprite()) return;
     drawTruckFallback();
@@ -4011,10 +4046,11 @@ function drawCarDetailed(ctx, car){
   }
 
   switch (car.kind){
-    case 'F1':    drawF1();    break;
-    case 'Truck': drawTruck(); break;
-    case 'Rally': drawRally(); break;
-    default:      drawGT();    break;
+    case 'F1':     drawF1();     break;
+    case 'Truck':  drawTruck();  break;
+    case 'Rally':  drawRally();  break;
+    case 'Bubble': drawBubble(); break;
+    default:       drawGT();     break;
   }
 
   drawColliderOverlay();
