@@ -7,3 +7,6 @@ node_modules/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Test files
+test_gears_slider.html
