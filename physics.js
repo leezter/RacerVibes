@@ -38,6 +38,10 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     planckDoSleep: true
   };
 
+  // Gearbox configuration constants for Vehicle Tweaker
+  const GEARBOX_TARGET_TOP_SPEED_MPS = 54; // Target top speed in m/s for gear ratio calculations
+  const GEARBOX_DEFAULT_SPACING = 1.28; // Default spacing ratio between consecutive gears
+
   const VEHICLE_DEFAULTS = {
     F1: {
       ...PLANCK_DEFAULTS,
@@ -532,16 +536,13 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
             // Recalculate gear ratios if gear count is specified
             const gearCount = base.gearCount != null ? base.gearCount : 6;
             if (gearCount >= 3 && gearCount <= 10) {
-              // Calculate target top speed in m/s to maintain consistent performance
-              // Default: ~54 m/s (pixels to meters conversion: divide by ~30)
-              const targetTopSpeedMps = 54; // This is a reasonable default
               const newRatios = suggestGearRatios({
                 redlineRpm: car.gearbox.c.redlineRPM || GEARBOX_CONFIG.redlineRpm,
                 finalDrive: car.gearbox.c.finalDrive || GEARBOX_CONFIG.finalDrive,
                 tireRadiusM: car.gearbox.c.tireRadiusM || GEARBOX_CONFIG.tireRadiusM,
-                targetTopSpeedMps: targetTopSpeedMps,
+                targetTopSpeedMps: GEARBOX_TARGET_TOP_SPEED_MPS,
                 gears: gearCount,
-                spacing: 1.28 // Default spacing between gears
+                spacing: GEARBOX_DEFAULT_SPACING
               });
               car.gearbox.c.ratios = newRatios;
               car.gearbox.refreshFromConfig();
