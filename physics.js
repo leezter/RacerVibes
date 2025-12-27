@@ -1,6 +1,6 @@
 import { createWorld, stepWorld, meters, pixels, PPM_DEFAULT } from './physics/planckWorld.js';
 import { buildTrackBodies } from './trackCollision.js';
-import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG } from './gearbox.js';
+import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG, suggestGearRatios } from './gearbox.js';
 
 (function(){
   "use strict";
@@ -48,6 +48,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
   enginePowerMult: 1.65,
   accelDurationMult: 5.0,
   maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
+  gearCount: 6, // number of forward gears
   brakeForce: 600,
       maxSteer: 0.55,
       steerSpeed: 6.0,
@@ -90,6 +91,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
   enginePowerMult: 1.65,
   accelDurationMult: 5.0,
   maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
+  gearCount: 6, // number of forward gears
   brakeForce: 600,
       maxSteer: 0.50,
       steerSpeed: 5.0,
@@ -131,6 +133,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
   enginePowerMult: 1.65,
   accelDurationMult: 5.0,
   maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
+  gearCount: 6, // number of forward gears
   brakeForce: 600,
       maxSteer: 0.58,
       steerSpeed: 6.5,
@@ -172,6 +175,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
   enginePowerMult: 1.65,
   accelDurationMult: 5.0,
   maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
+  gearCount: 6, // number of forward gears
   brakeForce: 600,
       maxSteer: 0.40,
       steerSpeed: 3.5,
@@ -214,6 +218,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
   enginePowerMult: 1.65,
   accelDurationMult: 5.0,
   maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
+  gearCount: 6, // number of forward gears
   brakeForce: 600,
       maxSteer: 0.52,
       steerSpeed: 5.5,
@@ -282,11 +287,11 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
   function injectVehicleTweaker(bridge = {}, getCars){
     const existing = document.getElementById('rv-vehicle-tweaker');
     if (existing) {
-      // Check version - v1.2+ has the accel slider and top speed
+      // Check version - v1.3+ has the gear count slider
       const version = existing.dataset.version;
-      if (version === '1.2') return; // Current version, no upgrade needed
+      if (version === '1.3') return; // Current version, no upgrade needed
       // Old version detected, remove and re-inject
-      console.log('[Vehicle Tweaker] Upgrading from version', version || 'unknown', 'to 1.2');
+      console.log('[Vehicle Tweaker] Upgrading from version', version || 'unknown', 'to 1.3');
       existing.remove();
     }
     ensureDevPanelStyles();
@@ -334,6 +339,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgRear: 'Distance from the CG to the rear axle. Adjust for traction on throttle.',
       accelDuration: '0-to-top-speed duration multiplier. Higher = slower acceleration (maintains top speed by adjusting drag).',
       topSpeed: 'Maximum speed cap in px/s. Vehicle cannot exceed this speed regardless of engine power.',
+      gearCount: 'Number of forward gears. Gear ratios auto-adjust to maintain top speed.',
       syncActive: 'Force currently spawned cars to rebuild physics bodies with the latest settings.',
       resetSelection: 'Restore the selected vehicle(s) to their original geometry defaults.'
     };
@@ -343,7 +349,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     const wrap = document.createElement('div');
     wrap.id = 'rv-vehicle-tweaker';
     wrap.className = 'rv-devtools rv-veh';
-    wrap.dataset.version = '1.2'; // Version with accel slider and top speed
+    wrap.dataset.version = '1.3'; // Version with accel slider, top speed, and gear count
     wrap.innerHTML = `
       <button class="toggle">Vehicle Tweaker ▾</button>
       <div class="rv-panel" role="dialog" aria-label="Vehicle Tweaker">
@@ -372,6 +378,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
           <div class="rv-row"><label for="rv-veh-cgr"><span${tipAttr('cgRear')}>CG → rear</span></label><input id="rv-veh-cgr" type="range" min="5" max="120" step="1"><div class="val" id="rv-veh-cgr-v"></div></div>
           <div class="rv-row"><label for="rv-veh-accel"><span${tipAttr('accelDuration')}>0-to-top mult</span></label><input id="rv-veh-accel" type="range" min="1.0" max="10.0" step="0.1"><div class="val" id="rv-veh-accel-v"></div></div>
           <div class="rv-row"><label for="rv-veh-maxspeed"><span${tipAttr('topSpeed')}>Top speed</span></label><input id="rv-veh-maxspeed" type="range" min="100" max="2000" step="10"><div class="val" id="rv-veh-maxspeed-v"></div></div>
+          <div class="rv-row"><label for="rv-veh-gears"><span${tipAttr('gearCount')}>Gears amount</span></label><input id="rv-veh-gears" type="range" min="3" max="10" step="1"><div class="val" id="rv-veh-gears-v"></div></div>
         </div>
         <div class="rv-row rv-btns">
           <button id="rv-veh-sync" class="rv-mini"${tipAttr('syncActive')}>Sync active cars</button>
@@ -404,6 +411,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       accelVal: document.getElementById('rv-veh-accel-v'),
       maxSpeed: document.getElementById('rv-veh-maxspeed'),
       maxSpeedVal: document.getElementById('rv-veh-maxspeed-v'),
+      gears: document.getElementById('rv-veh-gears'),
+      gearsVal: document.getElementById('rv-veh-gears-v'),
       sync: document.getElementById('rv-veh-sync'),
       reset: document.getElementById('rv-veh-reset')
     };
@@ -470,6 +479,11 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
           els.maxSpeed.value = maxSpd;
           if (els.maxSpeedVal) els.maxSpeedVal.textContent = `${Math.round(maxSpd)}`;
         }
+        if (els.gears) {
+          const gearCount = phys.gearCount != null ? phys.gearCount : 6;
+          els.gears.value = gearCount;
+          if (els.gearsVal) els.gearsVal.textContent = `${gearCount}`;
+        }
       }
     }
 
@@ -508,12 +522,30 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
             car.gearbox = new Gearbox(gearboxDefaults);
           }
           
-          // Update gearbox power with accelDurationMult applied
+          // Update gearbox with new gear count and recalculated ratios
           if (car.gearbox && car.gearbox.c) {
             const basePowerMult = base.enginePowerMult != null ? base.enginePowerMult : 1;
             const accelDurMult = base.accelDurationMult != null ? base.accelDurationMult : 1.0;
             const accelDurMultSq = accelDurMult * accelDurMult;
             car.gearbox.c.powerMult = basePowerMult / accelDurMultSq;
+            
+            // Recalculate gear ratios if gear count is specified
+            const gearCount = base.gearCount != null ? base.gearCount : 6;
+            if (gearCount >= 3 && gearCount <= 10) {
+              // Calculate target top speed in m/s to maintain consistent performance
+              // Default: ~54 m/s (pixels to meters conversion: divide by ~30)
+              const targetTopSpeedMps = 54; // This is a reasonable default
+              const newRatios = suggestGearRatios({
+                redlineRpm: car.gearbox.c.redlineRPM || GEARBOX_CONFIG.redlineRpm,
+                finalDrive: car.gearbox.c.finalDrive || GEARBOX_CONFIG.finalDrive,
+                tireRadiusM: car.gearbox.c.tireRadiusM || GEARBOX_CONFIG.tireRadiusM,
+                targetTopSpeedMps: targetTopSpeedMps,
+                gears: gearCount,
+                spacing: 1.28 // Default spacing between gears
+              });
+              car.gearbox.c.ratios = newRatios;
+              car.gearbox.refreshFromConfig();
+            }
           }
           const art = artState[car.kind];
           const collider = colliderState[car.kind];
@@ -610,6 +642,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
           base.accelDurationMult = value;
         } else if (prop === 'maxSpeed') {
           base.maxSpeed = value;
+        } else if (prop === 'gearCount') {
+          base.gearCount = value;
         }
       }
       refreshActiveCarPhysics(targets);
@@ -637,6 +671,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
           VEHICLE_DEFAULTS[kind].cgToRear = physDefaults[kind].cgToRear;
           VEHICLE_DEFAULTS[kind].accelDurationMult = physDefaults[kind].accelDurationMult != null ? physDefaults[kind].accelDurationMult : 1.0;
           VEHICLE_DEFAULTS[kind].maxSpeed = physDefaults[kind].maxSpeed != null ? physDefaults[kind].maxSpeed : 10000;
+          VEHICLE_DEFAULTS[kind].gearCount = physDefaults[kind].gearCount != null ? physDefaults[kind].gearCount : 6;
         }
       }
       refreshActiveCarPhysics(targets);
@@ -709,6 +744,12 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       els.maxSpeed.addEventListener('input', ()=>{
         const v = clamp(+els.maxSpeed.value || 100, 100, 2000);
         applyPhysChange('maxSpeed', v);
+      });
+    }
+    if (els.gears) {
+      els.gears.addEventListener('input', ()=>{
+        const v = Math.round(clamp(+els.gears.value || 6, 3, 10));
+        applyPhysChange('gearCount', v);
       });
     }
     if (els.reset) els.reset.addEventListener('click', resetSelection);
