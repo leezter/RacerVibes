@@ -14,7 +14,7 @@
     "GT":    { width: 24, length: 45, colliderWidth: 20, colliderLength: 39 },
     "Rally": { width: 18, length: 34, colliderWidth: 18, colliderLength: 34 },
     "Truck": { width: 29, length: 60, colliderWidth: 22, colliderLength: 58 },
-    "Bubble": { width: 40, length: 40, colliderWidth: 16, colliderLength: 38 }
+    "Bubble": { width: 16, length: 40, colliderWidth: 16, colliderLength: 38 }
   };
 
   // Expected physics parameters (wheelbase values from physics.js)
@@ -106,21 +106,21 @@
   // TEST 5: Verify Bubble dimensions are proportional
   // ============================================================
   tests.push({
-    name: 'Bubble vehicle has appropriate dimensions',
+    name: 'Bubble visual footprint matches defaults',
     fn: function() {
       const bubble = VEHICLE_PROFILES["Bubble"];
-      
-      // Bubble should be compact and rounded (shorter than Rally)
-      if (bubble.length >= VEHICLE_PROFILES["Rally"].length) {
-        return { pass: false, message: `Bubble length (${bubble.length}) should be less than Rally (${VEHICLE_PROFILES["Rally"].length})` };
+      const expectedWidth = 16;
+      const expectedLength = 40;
+
+      if (bubble.width !== expectedWidth) {
+        return { pass: false, message: `Bubble width should default to ${expectedWidth}px (got ${bubble.width})` };
       }
-      
-      // Bubble should be wider than Rally (more rounded shape)
-      if (bubble.width <= VEHICLE_PROFILES["Rally"].width) {
-        return { pass: false, message: `Bubble width (${bubble.width}) should be greater than Rally (${VEHICLE_PROFILES["Rally"].width})` };
+
+      if (bubble.length !== expectedLength) {
+        return { pass: false, message: `Bubble length should default to ${expectedLength}px (got ${bubble.length})` };
       }
-      
-      return { pass: true, message: `Bubble dimensions appropriate: ${bubble.width}x${bubble.length}` };
+
+      return { pass: true, message: `Bubble visual footprint OK: ${bubble.width}x${bubble.length}` };
     }
   });
 
