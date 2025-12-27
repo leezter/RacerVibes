@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Top Speed Slider Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #2a2a2a;
+            padding: 30px;
+            border-radius: 8px;
+        }
+        h1 {
+            color: #4CAF50;
+        }
+        .status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            border-left: 4px solid;
+        }
+        .status.success {
+            background: #1b4d1b;
+            border-color: #4CAF50;
+        }
+        .status.info {
+            background: #1b3d4d;
+            border-color: #2196F3;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: #333;
+            border-radius: 4px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        code {
+            background: #555;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+        .result {
+            background: #1a1a1a;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        /* Dev panel styles from physics.js */
+        .rv-devtools {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 10000;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+        }
+        .rv-devtools .toggle {
+            background: #333;
+            color: #fff;
+            border: 1px solid #666;
+            padding: 6px 12px;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+        .rv-devtools .rv-panel {
+            display: none;
+            background: #222;
+            color: #fff;
+            border: 1px solid #666;
+            border-radius: 4px;
+            padding: 12px;
+            margin-top: 5px;
+            max-height: 80vh;
+            overflow-y: auto;
+            min-width: 280px;
+        }
+        .rv-devtools .rv-panel.open {
+            display: block;
+        }
+        .rv-row {
+            margin: 8px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .rv-row label {
+            flex: 0 0 110px;
+            font-weight: bold;
+        }
+        .rv-row input[type="range"] {
+            flex: 1;
+        }
+        .rv-row .val {
+            flex: 0 0 40px;
+            text-align: right;
+            font-family: monospace;
+        }
+        .rv-section {
+            margin: 12px 0;
+            padding: 10px;
+            background: #333;
+            border-radius: 3px;
+        }
+        .rv-section h4 {
+            margin: 0 0 8px 0;
+            color: #4CAF50;
+        }
+        .rv-btns {
+            justify-content: space-between;
+            margin-top: 12px;
+        }
+        .rv-mini {
+            padding: 4px 8px;
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏎️ Top Speed Slider Test</h1>
+        
+        <div class="status success">
+            <strong>✓ Test Page Loaded</strong><br>
+            This page will test the Top Speed slider functionality
+        </div>
+
+        <div class="test-section">
+            <h2>Step 1: Load Physics Module</h2>
+            <button onclick="loadPhysics()">Load physics.js</button>
+            <div id="load-result" class="result">Click button to load physics.js...</div>
+        </div>
+
+        <div class="test-section">
+            <h2>Step 2: Check Vehicle Defaults</h2>
+            <button onclick="checkDefaults()">Check VEHICLE_DEFAULTS</button>
+            <div id="defaults-result" class="result">Click button to check vehicle defaults...</div>
+        </div>
+
+        <div class="test-section">
+            <h2>Step 3: Inject Vehicle Tweaker Panel</h2>
+            <button onclick="injectPanel()">Inject Panel</button>
+            <div id="panel-result" class="result">Click button to inject the Vehicle Tweaker panel...</div>
+        </div>
+
+        <div class="status info">
+            <strong>ℹ️ What to look for:</strong><br>
+            1. A Vehicle Tweaker panel should appear in the top-right corner<br>
+            2. Click "Vehicle Tweaker ▾" to expand it<br>
+            3. Scroll to "Physics Footprint" section<br>
+            4. You should see a "Top speed" slider after "0-to-top mult"<br>
+            5. The slider should range from 100 to 2000 px/s
+        </div>
+    </div>
+
+    <script src="utils/utils.js"></script>
+    <script src="physics.js"></script>
+    <script>
+        function loadPhysics() {
+            const result = document.getElementById('load-result');
+            if (typeof window.RacerPhysics !== 'undefined') {
+                result.textContent = '✓ RacerPhysics module loaded successfully!\n\nAvailable methods:\n' + 
+                    Object.keys(window.RacerPhysics).join('\n');
+                result.style.color = '#4CAF50';
+            } else {
+                result.textContent = '✗ Failed to load RacerPhysics module';
+                result.style.color = '#FF5252';
+            }
+        }
+
+        function checkDefaults() {
+            const result = document.getElementById('defaults-result');
+            if (typeof window.RacerPhysics === 'undefined' || !window.RacerPhysics.defaults) {
+                result.textContent = '✗ RacerPhysics.defaults not available. Load physics first.';
+                result.style.color = '#FF5252';
+                return;
+            }
+            
+            const defaults = window.RacerPhysics.defaults;
+            let output = '✓ Vehicle defaults loaded:\n\n';
+            
+            for (const [vehicle, config] of Object.entries(defaults)) {
+                const maxSpeed = config.maxSpeed != null ? config.maxSpeed : 'NOT SET';
+                output += `${vehicle}:\n`;
+                output += `  maxSpeed: ${maxSpeed}\n`;
+                output += `  enginePowerMult: ${config.enginePowerMult}\n`;
+                output += `  accelDurationMult: ${config.accelDurationMult}\n\n`;
+            }
+            
+            result.textContent = output;
+            result.style.color = '#4CAF50';
+        }
+
+        function injectPanel() {
+            const result = document.getElementById('panel-result');
+            if (typeof window.RacerPhysics === 'undefined' || !window.RacerPhysics.injectVehicleTweaker) {
+                result.textContent = '✗ RacerPhysics.injectVehicleTweaker not available';
+                result.style.color = '#FF5252';
+                return;
+            }
+            
+            try {
+                // Create a mock bridge and getCars function
+                const bridge = {
+                    listKinds: () => ['F1', 'GT', 'Rally', 'Truck', 'Bubble'],
+                    getArtDimensions: (kind) => {
+                        const dims = {
+                            'F1': { width: 18, length: 44 },
+                            'GT': { width: 24, length: 45 },
+                            'Rally': { width: 18, length: 34 },
+                            'Truck': { width: 29, length: 60 },
+                            'Bubble': { width: 20, length: 28 }
+                        };
+                        return dims[kind] || { width: 20, length: 40 };
+                    },
+                    setArtDimensions: (kind, dims) => {
+                        console.log('setArtDimensions', kind, dims);
+                    },
+                    getColliderDimensions: (kind) => {
+                        return null; // Use art dimensions
+                    },
+                    setColliderDimensions: (kind, dims) => {
+                        console.log('setColliderDimensions', kind, dims);
+                    },
+                    getColliderVisibility: () => false,
+                    setColliderVisibility: (visible) => {
+                        console.log('setColliderVisibility', visible);
+                    }
+                };
+                
+                const getCars = () => {
+                    return { player: null, ai: [] };
+                };
+                
+                window.RacerPhysics.injectVehicleTweaker(bridge, getCars);
+                
+                result.textContent = '✓ Vehicle Tweaker panel injected!\n\nLook at the top-right corner of the page.\nClick "Vehicle Tweaker ▾" to expand it.\n\nCheck the "Physics Footprint" section for the "Top speed" slider.';
+                result.style.color = '#4CAF50';
+                
+                // Check if the panel was actually created
+                const panel = document.getElementById('rv-vehicle-tweaker');
+                if (panel) {
+                    const version = panel.dataset.version;
+                    result.textContent += '\n\nPanel version: ' + version;
+                    
+                    // Check for the maxSpeed slider
+                    const maxSpeedSlider = document.getElementById('rv-veh-maxspeed');
+                    if (maxSpeedSlider) {
+                        result.textContent += '\n✓ Top speed slider found!';
+                        result.textContent += '\n  Min: ' + maxSpeedSlider.min;
+                        result.textContent += '\n  Max: ' + maxSpeedSlider.max;
+                        result.textContent += '\n  Step: ' + maxSpeedSlider.step;
+                    } else {
+                        result.textContent += '\n✗ Top speed slider NOT found!';
+                        result.style.color = '#FF5252';
+                    }
+                } else {
+                    result.textContent += '\n✗ Panel element not found in DOM';
+                    result.style.color = '#FF5252';
+                }
+            } catch (error) {
+                result.textContent = '✗ Error injecting panel:\n' + error.message + '\n\n' + error.stack;
+                result.style.color = '#FF5252';
+            }
+        }
+
+        // Auto-load on page load
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                loadPhysics();
+                setTimeout(() => {
+                    checkDefaults();
+                }, 100);
+            }, 100);
+        });
+    </script>
+</body>
+</html>
