@@ -47,6 +47,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgToRear: 22,
   enginePowerMult: 1.65,
   accelDurationMult: 5.0,
+  maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
   brakeForce: 600,
       maxSteer: 0.55,
       steerSpeed: 6.0,
@@ -88,6 +89,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgToRear: 19,
   enginePowerMult: 1.65,
   accelDurationMult: 5.0,
+  maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
   brakeForce: 600,
       maxSteer: 0.50,
       steerSpeed: 5.0,
@@ -128,6 +130,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgToRear: 18,
   enginePowerMult: 1.65,
   accelDurationMult: 5.0,
+  maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
   brakeForce: 600,
       maxSteer: 0.58,
       steerSpeed: 6.5,
@@ -168,6 +171,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgToRear: 30,
   enginePowerMult: 1.65,
   accelDurationMult: 5.0,
+  maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
   brakeForce: 600,
       maxSteer: 0.40,
       steerSpeed: 3.5,
@@ -209,6 +213,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgToRear: 14,
   enginePowerMult: 1.65,
   accelDurationMult: 5.0,
+  maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
   brakeForce: 600,
       maxSteer: 0.52,
       steerSpeed: 5.5,
@@ -277,11 +282,11 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
   function injectVehicleTweaker(bridge = {}, getCars){
     const existing = document.getElementById('rv-vehicle-tweaker');
     if (existing) {
-      // Check version - v1.1+ has the accel slider
+      // Check version - v1.2+ has the accel slider and top speed
       const version = existing.dataset.version;
-      if (version === '1.1') return; // Current version, no upgrade needed
+      if (version === '1.2') return; // Current version, no upgrade needed
       // Old version detected, remove and re-inject
-      console.log('[Vehicle Tweaker] Upgrading from version', version || 'unknown', 'to 1.1');
+      console.log('[Vehicle Tweaker] Upgrading from version', version || 'unknown', 'to 1.2');
       existing.remove();
     }
     ensureDevPanelStyles();
@@ -328,6 +333,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgFront: 'Distance from the CG to the front axle. Adjust for balance on braking.',
       cgRear: 'Distance from the CG to the rear axle. Adjust for traction on throttle.',
       accelDuration: '0-to-top-speed duration multiplier. Higher = slower acceleration (maintains top speed by adjusting drag).',
+      topSpeed: 'Maximum speed cap in px/s. Vehicle cannot exceed this speed regardless of engine power.',
       syncActive: 'Force currently spawned cars to rebuild physics bodies with the latest settings.',
       resetSelection: 'Restore the selected vehicle(s) to their original geometry defaults.'
     };
@@ -337,7 +343,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
     const wrap = document.createElement('div');
     wrap.id = 'rv-vehicle-tweaker';
     wrap.className = 'rv-devtools rv-veh';
-    wrap.dataset.version = '1.1'; // Version with accel slider
+    wrap.dataset.version = '1.2'; // Version with accel slider and top speed
     wrap.innerHTML = `
       <button class="toggle">Vehicle Tweaker ▾</button>
       <div class="rv-panel" role="dialog" aria-label="Vehicle Tweaker">
@@ -365,6 +371,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
           <div class="rv-row"><label for="rv-veh-cgf"><span${tipAttr('cgFront')}>CG → front</span></label><input id="rv-veh-cgf" type="range" min="5" max="120" step="1"><div class="val" id="rv-veh-cgf-v"></div></div>
           <div class="rv-row"><label for="rv-veh-cgr"><span${tipAttr('cgRear')}>CG → rear</span></label><input id="rv-veh-cgr" type="range" min="5" max="120" step="1"><div class="val" id="rv-veh-cgr-v"></div></div>
           <div class="rv-row"><label for="rv-veh-accel"><span${tipAttr('accelDuration')}>0-to-top mult</span></label><input id="rv-veh-accel" type="range" min="1.0" max="10.0" step="0.1"><div class="val" id="rv-veh-accel-v"></div></div>
+          <div class="rv-row"><label for="rv-veh-maxspeed"><span${tipAttr('topSpeed')}>Top speed</span></label><input id="rv-veh-maxspeed" type="range" min="100" max="2000" step="10"><div class="val" id="rv-veh-maxspeed-v"></div></div>
         </div>
         <div class="rv-row rv-btns">
           <button id="rv-veh-sync" class="rv-mini"${tipAttr('syncActive')}>Sync active cars</button>
@@ -395,6 +402,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       cgrVal: document.getElementById('rv-veh-cgr-v'),
       accel: document.getElementById('rv-veh-accel'),
       accelVal: document.getElementById('rv-veh-accel-v'),
+      maxSpeed: document.getElementById('rv-veh-maxspeed'),
+      maxSpeedVal: document.getElementById('rv-veh-maxspeed-v'),
       sync: document.getElementById('rv-veh-sync'),
       reset: document.getElementById('rv-veh-reset')
     };
@@ -456,6 +465,11 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
           els.accel.value = accelMult;
           if (els.accelVal) els.accelVal.textContent = accelMult.toFixed(2);
         }
+        if (els.maxSpeed) {
+          const maxSpd = phys.maxSpeed != null ? phys.maxSpeed : 10000;
+          els.maxSpeed.value = maxSpd;
+          if (els.maxSpeedVal) els.maxSpeedVal.textContent = `${Math.round(maxSpd)}`;
+        }
       }
     }
 
@@ -485,6 +499,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
           car.physics.params.cgToFront = base.cgToFront;
           car.physics.params.cgToRear = base.cgToRear;
           car.physics.params.accelDurationMult = base.accelDurationMult != null ? base.accelDurationMult : 1.0;
+          car.physics.params.maxSpeed = base.maxSpeed != null ? base.maxSpeed : 10000;
           car.physics.a = base.cgToFront;
           car.physics.b = base.cgToRear;
           
@@ -593,6 +608,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
           base.wheelbase = clamp(base.cgToFront + base.cgToRear, 5, 180);
         } else if (prop === 'accelDurationMult') {
           base.accelDurationMult = value;
+        } else if (prop === 'maxSpeed') {
+          base.maxSpeed = value;
         }
       }
       refreshActiveCarPhysics(targets);
@@ -619,6 +636,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
           VEHICLE_DEFAULTS[kind].cgToFront = physDefaults[kind].cgToFront;
           VEHICLE_DEFAULTS[kind].cgToRear = physDefaults[kind].cgToRear;
           VEHICLE_DEFAULTS[kind].accelDurationMult = physDefaults[kind].accelDurationMult != null ? physDefaults[kind].accelDurationMult : 1.0;
+          VEHICLE_DEFAULTS[kind].maxSpeed = physDefaults[kind].maxSpeed != null ? physDefaults[kind].maxSpeed : 10000;
         }
       }
       refreshActiveCarPhysics(targets);
@@ -685,6 +703,12 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
       els.accel.addEventListener('input', ()=>{
         const v = clamp(+els.accel.value || 1.0, 1.0, 10.0);
         applyPhysChange('accelDurationMult', v);
+      });
+    }
+    if (els.maxSpeed) {
+      els.maxSpeed.addEventListener('input', ()=>{
+        const v = clamp(+els.maxSpeed.value || 100, 100, 2000);
+        applyPhysChange('maxSpeed', v);
       });
     }
     if (els.reset) els.reset.addEventListener('click', resetSelection);
@@ -1727,6 +1751,25 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG 
   car.physics.lastDeltaEff = deltaEff;
   car.physics.lastLambda = car.physics._dbgLambda || 0;
   car.physics.lastReversing = reversing;
+
+    // Apply top speed cap
+    const maxSpeed = P.maxSpeed != null ? P.maxSpeed : 10000;
+    const currentSpeed = Math.hypot(car.physics.vx, car.physics.vy);
+    if (currentSpeed > maxSpeed) {
+      const scale = maxSpeed / currentSpeed;
+      car.physics.vx *= scale;
+      car.physics.vy *= scale;
+      car.vx = car.physics.vx;
+      car.vy = car.physics.vy;
+      // Also clamp Planck body velocity if using Planck
+      if (usePlanck && car.physics.planckBody && typeof car.physics.planckBody.setLinearVelocity === 'function') {
+        const pl = (typeof window !== 'undefined' && window.planck) ? window.planck : null;
+        if (pl && typeof pl.Vec2 === 'function') {
+          const ppm = planckState.pixelsPerMeter || 30;
+          car.physics.planckBody.setLinearVelocity(pl.Vec2(car.physics.vx / ppm, car.physics.vy / ppm));
+        }
+      }
+    }
 
     // Additional damping at very low speeds to prevent runaway spin/creep
     const speedMag = Math.hypot(car.physics.vx, car.physics.vy);
