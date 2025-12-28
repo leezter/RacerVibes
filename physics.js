@@ -40,6 +40,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
 
   // Gearbox configuration constants for Vehicle Tweaker
   const GEARBOX_DEFAULT_SPACING = 1.28; // Default spacing ratio between consecutive gears
+  const GEARBOX_DEFAULT_TOP_SPEED_MPS = 64; // Default target top speed in m/s for gear ratio calculations (~1920 px/s)
 
   const VEHICLE_DEFAULTS = {
     F1: {
@@ -342,7 +343,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       cgRear: 'Distance from the CG to the rear axle. Adjust for traction on throttle.',
       accelDuration: '0-to-top-speed duration multiplier. Higher = slower acceleration (maintains top speed by adjusting drag).',
       topSpeed: 'Maximum speed cap in px/s. Vehicle cannot exceed this speed regardless of engine power.',
-      gearCount: 'Number of forward gears (3-10). Ratios recalculate based on Top speed slider value.',
+      gearCount: 'Number of forward gears (3-10). Ratios auto-calculate for optimal performance.',
       syncActive: 'Force currently spawned cars to rebuild physics bodies with the latest settings.',
       resetSelection: 'Restore the selected vehicle(s) to their original geometry defaults.'
     };
@@ -538,11 +539,10 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
             
             // Only recalculate if the gear count differs from current configuration
             if (gearCount >= 3 && gearCount <= 10 && gearCount !== currentGearCount) {
-              // Use the vehicle's maxSpeed setting (from Top speed slider) to calculate gear ratios
-              // The maxSpeed is in px/s, convert to m/s using the game's scale factor
-              // (approximately 30 pixels per meter based on Planck physics world configuration)
-              const maxSpeedPxPerSec = base.maxSpeed != null ? base.maxSpeed : 10000;
-              const targetTopSpeedMps = maxSpeedPxPerSec / 30; // Convert px/s to m/s
+              // Use a reasonable target top speed for gear ratio calculations
+              // The maxSpeed setting is typically a physics limiter (e.g., 10000 px/s), not actual achievable speed
+              // Use GEARBOX_DEFAULT_TOP_SPEED_MPS (~64 m/s or 1920 px/s) which matches original gear designs
+              const targetTopSpeedMps = GEARBOX_DEFAULT_TOP_SPEED_MPS;
               
               const newRatios = suggestGearRatios({
                 redlineRpm: car.gearbox.c.redlineRPM || GEARBOX_CONFIG.redlineRpm,
