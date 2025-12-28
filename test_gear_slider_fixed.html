@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gear Count Slider - Fixed</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            padding: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+        .fix-box {
+            background: #d4edda;
+            border: 2px solid #c3e6cb;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .fix-box h2 {
+            color: #155724;
+            margin-top: 0;
+        }
+        .instructions {
+            background: #fff3cd;
+            border: 2px solid #ffeaa7;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .instructions h2 {
+            color: #856404;
+            margin-top: 0;
+        }
+        .instructions ol {
+            margin: 10px 0 0 20px;
+        }
+        .instructions li {
+            margin: 8px 0;
+        }
+        .note {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .note strong {
+            color: #1565C0;
+        }
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>✅ Gear Count Slider - Fixed!</h1>
+        
+        <div class="fix-box">
+            <h2>Problem Solved</h2>
+            <p><strong>Issue:</strong> Adjusting the gear count slider was causing vehicles to stay in 1st gear and affecting speed/acceleration.</p>
+            <p><strong>Solution:</strong> Gear count changes are no longer automatically applied to active (driving) cars. Instead, you must explicitly click the <code>Sync active cars</code> button to apply changes.</p>
+        </div>
+
+        <div class="instructions">
+            <h2>How to Test</h2>
+            <ol>
+                <li>Go to <code>racer_start_menu.html</code> and start a race</li>
+                <li>Once in the race, click the <code>Dev</code> button (top-left corner)</li>
+                <li>Click <code>Vehicle Tweaker</code> from the dev menu</li>
+                <li>Expand the panel by clicking <code>Vehicle Tweaker ▾</code></li>
+                <li>Scroll down to the <strong>Physics Footprint</strong> section</li>
+                <li>Find the <strong>"Gears amount"</strong> slider at the bottom</li>
+                <li><strong>Important:</strong> Move the slider to change gear count (e.g., from 6 to 4)</li>
+                <li>Notice that your car continues driving normally - gears still shift!</li>
+                <li>When you want to apply the change, click <code>Sync active cars</code> button</li>
+                <li>After clicking sync, the new gear count will be applied</li>
+            </ol>
+        </div>
+
+        <div class="note">
+            <strong>Key Behavior Change:</strong><br>
+            • Moving the slider updates the default settings (affects new races)<br>
+            • Active/driving cars are NOT affected until you click "Sync active cars"<br>
+            • This prevents disruption during active gameplay<br>
+            • The tooltip on the slider explains this workflow
+        </div>
+
+        <div class="note">
+            <strong>Why This Fix Works:</strong><br>
+            The previous fix (commit 3a37f44) tried to prevent unnecessary recalculations by checking if gear count changed.
+            However, when it DID change, it would still disrupt active cars by resetting their gearbox state.
+            <br><br>
+            The new fix (commit 4b49440) takes a different approach: gear count slider changes update the VEHICLE_DEFAULTS
+            (which affects future car spawns) but explicitly skips calling <code>refreshActiveCarPhysics()</code>. This means
+            active cars continue driving normally, and the user has full control over when to apply changes via the
+            "Sync active cars" button.
+        </div>
+    </div>
+</body>
+</html>
