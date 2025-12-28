@@ -533,9 +533,12 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
             const accelDurMultSq = accelDurMult * accelDurMult;
             car.gearbox.c.powerMult = basePowerMult / accelDurMultSq;
             
-            // Recalculate gear ratios if gear count is specified
+            // Recalculate gear ratios ONLY if gear count has changed
             const gearCount = base.gearCount != null ? base.gearCount : 6;
-            if (gearCount >= 3 && gearCount <= 10) {
+            const currentGearCount = car.gearbox.c.ratios ? car.gearbox.c.ratios.length : 0;
+            
+            // Only recalculate if the gear count differs from current configuration
+            if (gearCount >= 3 && gearCount <= 10 && gearCount !== currentGearCount) {
               const newRatios = suggestGearRatios({
                 redlineRpm: car.gearbox.c.redlineRPM || GEARBOX_CONFIG.redlineRpm,
                 finalDrive: car.gearbox.c.finalDrive || GEARBOX_CONFIG.finalDrive,
