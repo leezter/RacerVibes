@@ -539,7 +539,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
             // Only recalculate if the gear count differs from current configuration
             if (gearCount >= 3 && gearCount <= 10 && gearCount !== currentGearCount) {
               // Use the vehicle's maxSpeed setting (from Top speed slider) to calculate gear ratios
-              // Convert from px/s to m/s (approximate conversion, pixels per meter ~= 30)
+              // The maxSpeed is in px/s, convert to m/s using the game's scale factor
+              // (approximately 30 pixels per meter based on Planck physics world configuration)
               const maxSpeedPxPerSec = base.maxSpeed != null ? base.maxSpeed : 10000;
               const targetTopSpeedMps = maxSpeedPxPerSec / 30; // Convert px/s to m/s
               

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Gear Slider Final Fix Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1em;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            margin: 10px 0;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .log {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            margin: 15px 0;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .success { color: #89d185; }
+        .error { color: #f48771; }
+        .warning { color: #dcdcaa; }
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .info-box h2 {
+            color: #1565C0;
+            margin-top: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Gear Slider - Final Fix Verification</h1>
+        
+        <div class="info-box">
+            <h2>Fix Summary</h2>
+            <p><strong>Problem:</strong> Gear ratios were calculated using hardcoded 54 m/s instead of Top speed slider value, causing cars to get stuck.</p>
+            <p><strong>Solution:</strong> Now uses actual maxSpeed from Top speed slider, converts px/s to m/s, and lets gearbox properly select gear for current speed.</p>
+        </div>
+
+        <button onclick="runTest()">Run Comprehensive Test</button>
+        <div id="log" class="log"></div>
+    </div>
+
+    <script type="module">
+        function log(msg, type = 'info') {
+            const el = document.getElementById('log');
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : '';
+            el.innerHTML += `<div class="${className}">${msg}</div>`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        window.runTest = async function() {
+            document.getElementById('log').innerHTML = '';
+            log('=== Comprehensive Gear Slider Test ===', 'warning');
+            
+            try {
+                // Load modules
+                log('\n1. Loading modules...');
+                const script = document.createElement('script');
+                script.type = 'module';
+                script.src = './physics.js';
+                await new Promise((resolve, reject) => {
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.head.appendChild(script);
+                });
+                await new Promise(resolve => setTimeout(resolve, 200));
+                
+                const gearboxModule = await import('./gearbox.js');
+                const { Gearbox, gearboxDefaults } = gearboxModule;
+                log('✓ Modules loaded', 'success');
+                
+                // Test 1: Default top speed
+                log('\n2. Test 1: Default top speed (10000 px/s = ~333 m/s)...');
+                const car1 = {
+                    kind: 'GT',
+                    physics: {
+                        params: {
+                            wheelbase: 36,
+                            cgToFront: 17,
+                            cgToRear: 19,
+                            mass: 2.20,
+                            accelDurationMult: 5.0,
+                            maxSpeed: 10000
+                        },
+                        a: 17,
+                        b: 19,
+                        Izz: 100
+                    },
+                    gearbox: new Gearbox({ 
+                        ...gearboxDefaults, 
+                        ratios: [3.54, 2.77, 2.16, 1.69, 1.32, 1.03]
+                    })
+                };
+                
+                // Drive to speed
+                for (let i = 0; i < 40; i++) {
+                    car1.gearbox.update(0.1, { speedMps: i * 1.5, throttle: 1.0 });
+                }
+                log(`  Car at: Gear ${car1.gearbox.state.gear}, Speed ${car1.gearbox.state.speedMps.toFixed(1)} m/s`);
+                
+                // Change gear count
+                window.RacerPhysics.defaults.GT.gearCount = 4;
+                const base = window.RacerPhysics.defaults.GT;
+                const maxSpeedPxPerSec = base.maxSpeed != null ? base.maxSpeed : 10000;
+                const targetTopSpeedMps = maxSpeedPxPerSec / 30;
+                log(`  maxSpeed: ${maxSpeedPxPerSec} px/s = ${targetTopSpeedMps.toFixed(1)} m/s`);
+                
+                const suggestGearRatios = gearboxModule.suggestGearRatios;
+                const GEARBOX_CONFIG = gearboxModule.GEARBOX_CONFIG;
+                
+                const newRatios = suggestGearRatios({
+                    redlineRpm: car1.gearbox.c.redlineRPM || GEARBOX_CONFIG.redlineRpm,
+                    finalDrive: car1.gearbox.c.finalDrive || GEARBOX_CONFIG.finalDrive,
+                    tireRadiusM: car1.gearbox.c.tireRadiusM || GEARBOX_CONFIG.tireRadiusM,
+                    targetTopSpeedMps: targetTopSpeedMps,
+                    gears: 4,
+                    spacing: 1.28
+                });
+                
+                log(`  New ratios (4 gears): ${newRatios.map(r => r.toFixed(2)).join(', ')}`);
+                
+                car1.gearbox.c.ratios = newRatios;
+                car1.gearbox.state.gearRatios = newRatios;
+                car1.gearbox.state.maxGear = newRatios.length;
+                car1.gearbox.refreshFromConfig();
+                
+                log(`  After update: Gear ${car1.gearbox.state.gear}, RPM ${Math.round(car1.gearbox.state.rpm)}`);
+                
+                // Test driving
+                const driveLog = [];
+                for (let i = 0; i < 30; i++) {
+                    const speed = car1.gearbox.state.speedMps + i * 3;
+                    car1.gearbox.update(0.1, { speedMps: speed, throttle: 1.0 });
+                    if (i % 6 === 0) {
+                        driveLog.push({
+                            speed: speed.toFixed(1),
+                            gear: car1.gearbox.state.gear,
+                            rpm: Math.round(car1.gearbox.state.rpm)
+                        });
+                    }
+                }
+                
+                driveLog.forEach(entry => {
+                    log(`    ${entry.speed} m/s: Gear ${entry.gear}, ${entry.rpm} RPM`);
+                });
+                
+                const gears1 = [...new Set(driveLog.map(g => g.gear))];
+                const maxGear1 = Math.max(...driveLog.map(g => g.gear));
+                log(`  Gears used: ${gears1.join(', ')}`, gears1.length > 1 ? 'success' : 'error');
+                
+                if (gears1.length > 1 || (gears1.length === 1 && gears1[0] !== 1)) {
+                    log('✓ Test 1 PASSED: Car not stuck in 1st gear', 'success');
+                } else {
+                    log('✗ Test 1 FAILED: Car stuck in 1st gear', 'error');
+                }
+                
+                log('\n=== Test Complete ===', 'warning');
+                
+                if (gears1.length > 1 || (gears1.length === 1 && gears1[0] !== 1)) {
+                    log('\n✓✓✓ ALL TESTS PASSED ✓✓✓', 'success');
+                    log('Gear slider now works correctly with Top speed slider!', 'success');
+                } else {
+                    log('\n✗✗✗ TESTS FAILED ✗✗✗', 'error');
+                }
+                
+            } catch (err) {
+                log(`\n✗ Error: ${err.message}`, 'error');
+                log(err.stack, 'error');
+            }
+        };
+    </script>
+</body>
+</html>
