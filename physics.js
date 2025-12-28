@@ -343,7 +343,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       cgRear: 'Distance from the CG to the rear axle. Adjust for traction on throttle.',
       accelDuration: '0-to-top-speed duration multiplier. Higher = slower acceleration (maintains top speed by adjusting drag).',
       topSpeed: 'Maximum speed cap in px/s. Vehicle cannot exceed this speed regardless of engine power.',
-      gearCount: 'Number of forward gears. Gear ratios auto-adjust to maintain top speed.',
+      gearCount: 'Number of forward gears (3-10). Click "Sync active cars" to apply changes to running vehicles.',
       syncActive: 'Force currently spawned cars to rebuild physics bodies with the latest settings.',
       resetSelection: 'Restore the selected vehicle(s) to their original geometry defaults.'
     };
@@ -648,6 +648,10 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
           base.maxSpeed = value;
         } else if (prop === 'gearCount') {
           base.gearCount = value;
+          // Note: Gear count changes are NOT automatically applied to active cars
+          // to avoid disrupting driving. User must click "Sync active cars" to apply.
+          refreshFields();
+          return; // Skip refreshActiveCarPhysics for gear count changes
         }
       }
       refreshActiveCarPhysics(targets);
