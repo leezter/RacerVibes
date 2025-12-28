@@ -38,9 +38,6 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     planckDoSleep: true
   };
 
-  // Gearbox configuration constants for Vehicle Tweaker
-  const GEARBOX_DEFAULT_SPACING = 1.28; // Default spacing ratio between consecutive gears (not used anymore - calculated dynamically)
-
   const VEHICLE_DEFAULTS = {
     F1: {
       ...PLANCK_DEFAULTS,
