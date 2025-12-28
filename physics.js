@@ -39,8 +39,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
   };
 
   // Gearbox configuration constants for Vehicle Tweaker
-  const GEARBOX_DEFAULT_SPACING = 1.28; // Default spacing ratio between consecutive gears
-  const GEARBOX_DEFAULT_TOP_SPEED_MPS = 64; // Default target top speed in m/s for gear ratio calculations (~1920 px/s)
+  const GEARBOX_DEFAULT_SPACING = 1.28; // Default spacing ratio between consecutive gears (not used anymore - calculated dynamically)
 
   const VEHICLE_DEFAULTS = {
     F1: {
@@ -343,7 +342,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       cgRear: 'Distance from the CG to the rear axle. Adjust for traction on throttle.',
       accelDuration: '0-to-top-speed duration multiplier. Higher = slower acceleration (maintains top speed by adjusting drag).',
       topSpeed: 'Maximum speed cap in px/s. Vehicle cannot exceed this speed regardless of engine power.',
-      gearCount: 'Number of forward gears (3-10). Ratios auto-calculate for optimal performance.',
+      gearCount: 'Number of forward gears (3-10). Maintains consistent acceleration and top speed.',
       syncActive: 'Force currently spawned cars to rebuild physics bodies with the latest settings.',
       resetSelection: 'Restore the selected vehicle(s) to their original geometry defaults.'
     };
@@ -539,19 +538,33 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
             
             // Only recalculate if the gear count differs from current configuration
             if (gearCount >= 3 && gearCount <= 10 && gearCount !== currentGearCount) {
-              // Use a reasonable target top speed for gear ratio calculations
-              // The maxSpeed setting is typically a physics limiter (e.g., 10000 px/s), not actual achievable speed
-              // Use GEARBOX_DEFAULT_TOP_SPEED_MPS (~64 m/s or 1920 px/s) which matches original gear designs
-              const targetTopSpeedMps = GEARBOX_DEFAULT_TOP_SPEED_MPS;
+              // Manually calculate gear ratios to maintain consistent performance
+              // across all gear counts.
+              //
+              // Gear ratios array format: [topGear, ..., 1stGear] (smallest to largest)
+              // - Top gear (smallest ratio, ~1.03): reaches ~64 m/s at redline
+              // - 1st gear (largest ratio, ~3.5): provides good acceleration from 0 m/s
+              // - Calculate geometric spacing to evenly distribute gears between them
+              //
+              // This ensures that regardless of gear count (3-10):
+              // - Low speed acceleration remains consistent (same 1st gear)
+              // - Top speed remains consistent (same top gear)
+              // - More gears = smoother shifts, fewer gears = larger RPM drops
               
-              const newRatios = suggestGearRatios({
-                redlineRpm: car.gearbox.c.redlineRPM || GEARBOX_CONFIG.redlineRpm,
-                finalDrive: car.gearbox.c.finalDrive || GEARBOX_CONFIG.finalDrive,
-                tireRadiusM: car.gearbox.c.tireRadiusM || GEARBOX_CONFIG.tireRadiusM,
-                targetTopSpeedMps: targetTopSpeedMps,
-                gears: gearCount,
-                spacing: GEARBOX_DEFAULT_SPACING
-              });
+              const targetTopGearRatio = 1.03;    // Smallest ratio (highest speed)
+              const target1stGearRatio = 3.5;      // Largest ratio (best acceleration)
+              
+              // Calculate spacing between gears
+              // 1stGear = topGear * spacing^(gearCount-1)
+              // spacing = (1stGear / topGear)^(1/(gearCount-1))
+              const spacing = Math.pow(target1stGearRatio / targetTopGearRatio, 1 / (gearCount - 1));
+              
+              // Build ratios array manually: [topGear, gear2, ..., 1stGear]
+              const newRatios = [];
+              for (let i = 0; i < gearCount; i++) {
+                const ratio = targetTopGearRatio * Math.pow(spacing, i);
+                newRatios.push(ratio);
+              }
               
               // Update ratios in config and state
               car.gearbox.c.ratios = newRatios;
