@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Gear Slider Debug Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        .log {
+            background: #2d2d2d;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .success { color: #89d185; }
+        .error { color: #f48771; }
+        .warning { color: #dcdcaa; }
+    </style>
+</head>
+<body>
+    <h1>Gear Slider Issue Debug</h1>
+    <button onclick="runTest()">Run Test</button>
+    <div id="log" class="log"></div>
+
+    <script type="module">
+        function log(msg, type = 'info') {
+            const el = document.getElementById('log');
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : '';
+            el.innerHTML += `<div class="${className}">${msg}</div>`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        window.runTest = async function() {
+            document.getElementById('log').innerHTML = '';
+            log('=== Gear Slider Debug Test ===', 'warning');
+            
+            try {
+                // Load modules
+                log('\n1. Loading modules...');
+                const script = document.createElement('script');
+                script.type = 'module';
+                script.src = './physics.js';
+                await new Promise((resolve, reject) => {
+                    script.onload = resolve;
+                    script.onerror = reject;
+                    document.head.appendChild(script);
+                });
+                await new Promise(resolve => setTimeout(resolve, 200));
+                
+                const gearboxModule = await import('./gearbox.js');
+                const { Gearbox, gearboxDefaults, updateGearbox } = gearboxModule;
+                log('✓ Modules loaded', 'success');
+                
+                // Create car
+                log('\n2. Creating test car...');
+                const car = {
+                    kind: 'GT',
+                    physics: {
+                        params: {
+                            wheelbase: 36,
+                            cgToFront: 17,
+                            cgToRear: 19,
+                            mass: 2.20,
+                            accelDurationMult: 5.0,
+                            maxSpeed: 10000
+                        },
+                        a: 17,
+                        b: 19,
+                        Izz: 100
+                    },
+                    gearbox: new Gearbox({ 
+                        ...gearboxDefaults, 
+                        ratios: [3.54, 2.77, 2.16, 1.69, 1.32, 1.03]
+                    })
+                };
+                log(`✓ Car created with ${car.gearbox.c.ratios.length} gears`);
+                log(`  Ratios: ${car.gearbox.c.ratios.map(r => r.toFixed(2)).join(', ')}`);
+                
+                // Drive to 4th gear
+                log('\n3. Driving to reach 4th gear...');
+                for (let i = 0; i < 40; i++) {
+                    car.gearbox.update(0.1, { speedMps: i * 1.5, throttle: 1.0 });
+                }
+                log(`✓ Now in gear ${car.gearbox.state.gear}, RPM: ${Math.round(car.gearbox.state.rpm)}, Speed: ${car.gearbox.state.speedMps.toFixed(1)} m/s`);
+                
+                // Apply gear count change exactly as physics.js does
+                log('\n4. Applying gear count change (6 → 4)...');
+                window.RacerPhysics.defaults.GT.gearCount = 4;
+                
+                const base = window.RacerPhysics.defaults.GT;
+                const gearCount = base.gearCount;
+                const currentGearCount = car.gearbox.c.ratios.length;
+                
+                log(`  Will recalculate: ${gearCount !== currentGearCount}`);
+                
+                if (gearCount !== currentGearCount) {
+                    const suggestGearRatios = gearboxModule.suggestGearRatios;
+                    const GEARBOX_CONFIG = gearboxModule.GEARBOX_CONFIG;
+                    
+                    const newRatios = suggestGearRatios({
+                        redlineRpm: car.gearbox.c.redlineRPM || GEARBOX_CONFIG.redlineRpm,
+                        finalDrive: car.gearbox.c.finalDrive || GEARBOX_CONFIG.finalDrive,
+                        tireRadiusM: car.gearbox.c.tireRadiusM || GEARBOX_CONFIG.tireRadiusM,
+                        targetTopSpeedMps: 54,
+                        gears: gearCount,
+                        spacing: 1.28
+                    });
+                    
+                    log(`  New ratios: ${newRatios.map(r => r.toFixed(2)).join(', ')}`);
+                    
+                    // Save current state
+                    const currentGear = car.gearbox.state.gear;
+                    const currentRpm = car.gearbox.state.rpm;
+                    const currentSpeed = car.gearbox.state.speedMps;
+                    
+                    log(`  Before: Gear ${currentGear}, RPM ${Math.round(currentRpm)}, Speed ${currentSpeed.toFixed(1)} m/s`);
+                    
+                    // Update ratios
+                    car.gearbox.c.ratios = newRatios;
+                    car.gearbox.state.gearRatios = newRatios;
+                    car.gearbox.state.maxGear = newRatios.length;
+                    
+                    // Clamp gear
+                    const minGear = car.gearbox.state.enableReverse !== false ? -1 : 0;
+                    const maxGear = newRatios.length;
+                    car.gearbox.state.gear = Math.max(minGear, Math.min(maxGear, currentGear));
+                    
+                    // Preserve state
+                    car.gearbox.state.rpm = currentRpm;
+                    car.gearbox.state.smoothedRpm = currentRpm;
+                    car.gearbox.state.speedMps = currentSpeed;
+                    
+                    car.gearbox._syncOutputs();
+                    
+                    log(`  After: Gear ${car.gearbox.state.gear}, RPM ${Math.round(car.gearbox.state.rpm)}, Speed ${car.gearbox.state.speedMps.toFixed(1)} m/s`);
+                }
+                
+                // Test continued driving
+                log('\n5. Testing continued driving...');
+                const driveLog = [];
+                for (let i = 0; i < 30; i++) {
+                    const speed = car.gearbox.state.speedMps + i * 2;
+                    car.gearbox.update(0.1, { speedMps: speed, throttle: 1.0 });
+                    
+                    if (i % 5 === 0) {
+                        driveLog.push({
+                            frame: i,
+                            speed: speed.toFixed(1),
+                            gear: car.gearbox.state.gear,
+                            rpm: Math.round(car.gearbox.state.rpm),
+                            auto: car.gearbox.state.auto
+                        });
+                    }
+                }
+                
+                driveLog.forEach(entry => {
+                    log(`  Frame ${entry.frame}: Speed ${entry.speed} m/s, Gear ${entry.gear}, RPM ${entry.rpm}, Auto: ${entry.auto}`);
+                });
+                
+                const uniqueGears = [...new Set(driveLog.map(g => g.gear))];
+                log(`\nGears used: ${uniqueGears.join(', ')}`, uniqueGears.length > 1 ? 'success' : 'error');
+                
+                if (uniqueGears.length === 1 && uniqueGears[0] === driveLog[0].gear) {
+                    log('✗ CAR STUCK IN SAME GEAR!', 'error');
+                    log('\nDiagnostic info:');
+                    log(`  state.auto = ${car.gearbox.state.auto}`);
+                    log(`  state.gearRatios.length = ${car.gearbox.state.gearRatios.length}`);
+                    log(`  state.maxGear = ${car.gearbox.state.maxGear}`);
+                    log(`  state.upshiftFrac = ${car.gearbox.state.upshiftFrac}`);
+                    log(`  state.downshiftFrac = ${car.gearbox.state.downshiftFrac}`);
+                } else {
+                    log('✓ Gears shifting normally', 'success');
+                }
+                
+            } catch (err) {
+                log(`\n✗ Error: ${err.message}`, 'error');
+                log(err.stack, 'error');
+            }
+        };
+    </script>
+</body>
+</html>

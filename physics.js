@@ -39,7 +39,6 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
   };
 
   // Gearbox configuration constants for Vehicle Tweaker
-  const GEARBOX_TARGET_TOP_SPEED_MPS = 54; // Target top speed in m/s for gear ratio calculations
   const GEARBOX_DEFAULT_SPACING = 1.28; // Default spacing ratio between consecutive gears
 
   const VEHICLE_DEFAULTS = {
@@ -343,7 +342,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       cgRear: 'Distance from the CG to the rear axle. Adjust for traction on throttle.',
       accelDuration: '0-to-top-speed duration multiplier. Higher = slower acceleration (maintains top speed by adjusting drag).',
       topSpeed: 'Maximum speed cap in px/s. Vehicle cannot exceed this speed regardless of engine power.',
-      gearCount: 'Number of forward gears (3-10). Gear ratios automatically recalculate to maintain top speed.',
+      gearCount: 'Number of forward gears (3-10). Ratios recalculate based on Top speed slider value.',
       syncActive: 'Force currently spawned cars to rebuild physics bodies with the latest settings.',
       resetSelection: 'Restore the selected vehicle(s) to their original geometry defaults.'
     };
@@ -539,37 +538,28 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
             
             // Only recalculate if the gear count differs from current configuration
             if (gearCount >= 3 && gearCount <= 10 && gearCount !== currentGearCount) {
+              // Use the vehicle's maxSpeed setting (from Top speed slider) to calculate gear ratios
+              // Convert from px/s to m/s (approximate conversion, pixels per meter ~= 30)
+              const maxSpeedPxPerSec = base.maxSpeed != null ? base.maxSpeed : 10000;
+              const targetTopSpeedMps = maxSpeedPxPerSec / 30; // Convert px/s to m/s
+              
               const newRatios = suggestGearRatios({
                 redlineRpm: car.gearbox.c.redlineRPM || GEARBOX_CONFIG.redlineRpm,
                 finalDrive: car.gearbox.c.finalDrive || GEARBOX_CONFIG.finalDrive,
                 tireRadiusM: car.gearbox.c.tireRadiusM || GEARBOX_CONFIG.tireRadiusM,
-                targetTopSpeedMps: GEARBOX_TARGET_TOP_SPEED_MPS,
+                targetTopSpeedMps: targetTopSpeedMps,
                 gears: gearCount,
                 spacing: GEARBOX_DEFAULT_SPACING
               });
-              
-              // Save current state to preserve during ratio update
-              const currentGear = car.gearbox.state.gear;
-              const currentRpm = car.gearbox.state.rpm;
-              const currentSpeed = car.gearbox.state.speedMps;
               
               // Update ratios in config and state
               car.gearbox.c.ratios = newRatios;
               car.gearbox.state.gearRatios = newRatios;
               car.gearbox.state.maxGear = newRatios.length;
               
-              // Clamp current gear to new range without resetting other state
-              const minGear = car.gearbox.state.enableReverse !== false ? -1 : 0;
-              const maxGear = newRatios.length;
-              car.gearbox.state.gear = Math.max(minGear, Math.min(maxGear, currentGear));
-              
-              // Preserve RPM and speed - don't reset to idle
-              car.gearbox.state.rpm = currentRpm;
-              car.gearbox.state.smoothedRpm = currentRpm;
-              car.gearbox.state.speedMps = currentSpeed;
-              
-              // Update the gear display
-              car.gearbox._syncOutputs();
+              // Let the gearbox recalculate gear and RPM based on current speed and new ratios
+              // This will select the appropriate gear for the current speed
+              car.gearbox.refreshFromConfig();
             }
           }
           const art = artState[car.kind];
