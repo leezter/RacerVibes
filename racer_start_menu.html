@@ -1999,13 +1999,7 @@
         
         // ===== Track Data =====
         const tracks = [
-          { id: 'Le Mans', name: 'Le Mans', desc: 'Bugatti layout - Classic circuit' },
-          { id: 'Silverstone', name: 'Silverstone', desc: 'High-speed British GP track' },
-          { id: 'Kart Park', name: 'Kart Park', desc: 'Tight karting circuit' },
-          { id: 'Windey', name: 'Windey', desc: 'Technical aerial clone' },
-          { id: 'Windey Clone', name: 'Windey Clone', desc: 'Exact aerial recreation' },
-          { id: 'Windey Circuit', name: 'Windey Circuit', desc: 'Photo-realistic layout' },
-          { id: 'Night Loop', name: 'Night Loop', desc: 'Night racing experience' }
+          // Default tracks removed - use custom tracks only
         ];
         
         // ===== Panel Titles =====
@@ -2107,6 +2101,7 @@
                 <div class="card-actions">
                   <button class="card-action-btn card-edit-btn" data-edit-id="${t.id}" title="Rename track">✏️</button>
                   <button class="card-action-btn card-export-btn" data-export-id="${t.id}" title="Export track as JSON">💾</button>
+                  <button class="card-action-btn card-delete-btn" data-delete-id="${t.id}" title="Delete track">🗑️</button>
                 </div>
                 <div class="card-preview">⭐</div>
                 <div class="card-name">${t.name}</div>
@@ -2170,6 +2165,31 @@
                 } catch (err) {
                   console.error('Failed to export track:', err);
                 }
+              }
+            });
+          });
+          
+          // Delete button handlers for custom tracks
+          trackGrid.querySelectorAll('.card-delete-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              const trackId = btn.dataset.deleteId;
+              if (!trackId || !window.TrackStore) return;
+              try {
+                const track = await TrackStore.getTrack(trackId);
+                if (!track) return;
+                const confirmed = confirm(`Delete track "${track.name}"?\n\nThis cannot be undone.`);
+                if (confirmed) {
+                  await TrackStore.deleteTrack(trackId);
+                  // Clear selection if deleted track was selected
+                  if (state.track === 'custom:' + trackId) {
+                    state.track = '';
+                    summaryTrack.textContent = 'None';
+                  }
+                  await refreshCustomTracks();
+                }
+              } catch (err) {
+                console.error('Failed to delete track:', err);
               }
             });
           });
