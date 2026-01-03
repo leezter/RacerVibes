@@ -89,7 +89,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       cgToFront: 17,
       cgToRear: 19,
   enginePowerMult: 1.65,
-  accelDurationMult: 5.0,
+  accelDurationMult: 3.5,
   maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
   gearCount: 6, // number of forward gears
   brakeForce: 600,
@@ -173,7 +173,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       cgToFront: 27,
       cgToRear: 30,
   enginePowerMult: 1.65,
-  accelDurationMult: 5.0,
+  accelDurationMult: 3.5,
   maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
   gearCount: 6, // number of forward gears
   brakeForce: 600,
@@ -647,8 +647,12 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       }
     }
 
-    function applyPhysChange(prop, value){
-      const targets = targetKinds();
+    function applyPhysChange(prop, value, opts = {}){
+      const targets = Array.isArray(opts.targets)
+        ? opts.targets
+        : opts.singleKind
+          ? [opts.singleKind]
+          : targetKinds();
       for (const kind of targets) {
         const base = VEHICLE_DEFAULTS[kind];
         if (!base) continue;
@@ -763,7 +767,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     if (els.accel) {
       els.accel.addEventListener('input', ()=>{
         const v = clamp(+els.accel.value || 1.0, 1.0, 10.0);
-        applyPhysChange('accelDurationMult', v);
+        applyPhysChange('accelDurationMult', v, { singleKind: anchorKind() });
       });
     }
     if (els.maxSpeed) {
@@ -1278,7 +1282,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     const accelDurMult = (base && base.accelDurationMult != null) ? base.accelDurationMult : 1.0;
     const accelDurMultSq = accelDurMult * accelDurMult;
     const effectivePowerMult = basePowerMult / accelDurMultSq;
-    if (car.gearbox && (car.gearbox.c.powerMult == null)) {
+    // Always set powerMult to match this vehicle's defaults (not just when null)
+    if (car.gearbox && car.gearbox.c) {
       car.gearbox.c.powerMult = effectivePowerMult;
     }
     return car.physics;
@@ -2850,10 +2855,16 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
 
         if (!car.physics) initCar(car, carKind);
 
+        // Always use VEHICLE_DEFAULTS for accelDurationMult (per-vehicle slider setting)
+        const vehicleDefaults = VEHICLE_DEFAULTS[carKind] || {};
+        const accelDurMultForKind = vehicleDefaults.accelDurationMult != null 
+          ? vehicleDefaults.accelDurationMult 
+          : (sourceParams.accelDurationMult != null ? sourceParams.accelDurationMult : 5.0);
+
         // Clone safe physics parameters (not steering mode stuff)
         const safeParams = {
           enginePowerMult: sourceParams.enginePowerMult,
-          accelDurationMult: sourceParams.accelDurationMult,
+          accelDurationMult: accelDurMultForKind,
           brakeForce: sourceParams.brakeForce,
           mass: sourceParams.mass,
           dragK: sourceParams.dragK,
@@ -2886,10 +2897,11 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
         car.physics.params = { ...car.physics.params, ...safeParams };
 
         // Also sync gearbox power multiplier with accelDurationMult applied
-        if (car.gearbox instanceof Gearbox && sourceParams.enginePowerMult != null) {
-          const accelDurMult = (sourceParams.accelDurationMult != null) ? sourceParams.accelDurationMult : 1.0;
+        // Use the vehicle-specific accelDurationMult from VEHICLE_DEFAULTS
+        if (car.gearbox instanceof Gearbox && safeParams.enginePowerMult != null) {
+          const accelDurMult = accelDurMultForKind;
           const accelDurMultSq = accelDurMult * accelDurMult;
-          car.gearbox.c.powerMult = sourceParams.enginePowerMult / accelDurMultSq;
+          car.gearbox.c.powerMult = safeParams.enginePowerMult / accelDurMultSq;
         }
 
         // Update Planck body properties if present
@@ -3026,6 +3038,10 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     usesPlanckWorld,
     forcePlanckRefresh,
     defaults: VEHICLE_DEFAULTS,
+    getVehicleDefaults: (kind) => {
+      const k = kind || 'GT';
+      return VEHICLE_DEFAULTS[k] ? { ...VEHICLE_DEFAULTS[k] } : null;
+    },
     forceVehicleTweakerRefresh: () => {
       const existing = document.getElementById('rv-vehicle-tweaker');
       if (existing) {

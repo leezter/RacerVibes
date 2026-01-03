@@ -2351,7 +2351,20 @@ const { useEffect, useRef, useState } = React;
             for (const car of aiCars){
               if (!car) continue;
               // Create a new gearbox with the player's config for this AI car
+              // BUT preserve per-vehicle accelDurationMult by recalculating powerMult
               car.gearbox = new GearboxClass({ ...playerGbxConfig });
+              
+              // Recalculate powerMult based on this car's vehicle type defaults
+              // This ensures each vehicle type keeps its own acceleration characteristics
+              if (window.RacerPhysics && window.RacerPhysics.getVehicleDefaults) {
+                const carDefaults = window.RacerPhysics.getVehicleDefaults(car.kind);
+                if (carDefaults) {
+                  const basePowerMult = carDefaults.enginePowerMult != null ? carDefaults.enginePowerMult : 1;
+                  const accelDurMult = carDefaults.accelDurationMult != null ? carDefaults.accelDurationMult : 5.0;
+                  const accelDurMultSq = accelDurMult * accelDurMult;
+                  car.gearbox.c.powerMult = basePowerMult / accelDurMultSq;
+                }
+              }
             }
           }
           function setAIDifficulty(level, persist = true, options = {}){
