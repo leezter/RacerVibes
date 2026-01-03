@@ -198,6 +198,106 @@
     return true;
   }
 
+  /**
+   * Export a track as a complete JavaScript object definition for adding to racer.html as a built-in track.
+   * This exports ALL necessary data including world dimensions, roadWidth, spawn points, etc.
+   * The output can be directly pasted into the Tracks object in racer.html.
+   * @param {string} id - Track ID to export
+   */
+  async function exportAsBuiltin(id) {
+    const track = await getTrack(id);
+    if (!track) {
+      console.warn('Track not found:', id);
+      return null;
+    }
+    
+    const data = track.data || {};
+    const name = track.name || data.name || 'Custom Track';
+    const points = data.points || [];
+    const world = data.world || { width: 960, height: 640, scale: 1 };
+    const roadWidth = data.roadWidth || 80;
+    const spawn = data.spawn || {};
+    const startLine = data.startLine || {};
+    const speedZones = data.speedZones || [];
+    const labels = data.labels || [];
+    const textureId = data.textureId || 'default';
+    
+    // Sample points to reduce file size (every 5th point for smooth curves)
+    const sampledPoints = [];
+    const step = Math.max(1, Math.floor(points.length / 400)); // Aim for ~400 points max
+    for (let i = 0; i < points.length; i += step) {
+      const p = points[i];
+      sampledPoints.push({ x: Math.round(p.x), y: Math.round(p.y) });
+    }
+    // Ensure last point is included for closed loop
+    if (points.length > 0) {
+      const last = points[points.length - 1];
+      const lastSampled = sampledPoints[sampledPoints.length - 1];
+      if (lastSampled.x !== Math.round(last.x) || lastSampled.y !== Math.round(last.y)) {
+        sampledPoints.push({ x: Math.round(last.x), y: Math.round(last.y) });
+      }
+    }
+    
+    // Format spawn and startLine
+    const spawnPlayer = spawn.player || sampledPoints[0] || { x: 0, y: 0 };
+    const spawnAi = spawn.ai || { x: (spawnPlayer.x || 0) - 20, y: spawnPlayer.y || 0 };
+    const startA = startLine.a || spawnPlayer;
+    const startB = startLine.b || { x: spawnPlayer.x, y: (spawnPlayer.y || 0) + 40 };
+    
+    // Create the JavaScript code for the built-in track
+    const trackKey = name.replace(/[^a-zA-Z0-9]/g, '_');
+    
+    // Format points as compact array
+    const pointsStr = sampledPoints.map(p => `{x:${p.x},y:${p.y}}`).join(',');
+    
+    const jsCode = `
+// =============================================================================
+// BUILT-IN TRACK: "${name}"
+// Generated: ${new Date().toISOString()}
+// =============================================================================
+// 
+// STEP 1: Add this track definition to the Tracks object in racer.html
+//         (around line 1860, inside the "const Tracks = {" block)
+//
+// STEP 2: Add the track to the tracks array in racer_start_menu.html
+//         (around line 2000, in "const tracks = [...]")
+//         Add: { id: '${trackKey}', name: '${name}', desc: 'Your track description' }
+//
+// =============================================================================
+
+            "${trackKey}": {
+              name: "${name}",
+              isCustom: true,
+              world: { width: ${world.width}, height: ${world.height}, scale: ${world.scale || 1} },
+              spawn: { 
+                player: { x: ${Math.round(spawnPlayer.x)}, y: ${Math.round(spawnPlayer.y)}, angle: ${typeof spawnPlayer.angle === 'number' ? spawnPlayer.angle.toFixed(4) : 'Math.PI'} }, 
+                ai: { x: ${Math.round(spawnAi.x)}, y: ${Math.round(spawnAi.y)}, angle: ${typeof spawnAi.angle === 'number' ? spawnAi.angle.toFixed(4) : 'Math.PI'} } 
+              },
+              startLine: { 
+                a: { x: ${Math.round(startA.x)}, y: ${Math.round(startA.y)} }, 
+                b: { x: ${Math.round(startB.x)}, y: ${Math.round(startB.y)} } 
+              },
+              textureId: "${textureId}",
+              points: [
+                ${pointsStr}
+              ],
+              speedZones: ${JSON.stringify(speedZones)},
+              labels: ${JSON.stringify(labels)},
+              roadWidth: ${roadWidth}
+            },
+`;
+
+    const utils = window.RacerUtils;
+    const safeName = utils && typeof utils.sanitizeFilename === 'function'
+      ? utils.sanitizeFilename(name)
+      : name.replace(/[^a-z0-9_\-]+/gi, '_');
+    
+    const blob = new Blob([jsCode], { type: 'text/javascript' });
+    triggerDownload(blob, `${safeName}_builtin.js`);
+    
+    return true;
+  }
+
   global.TrackStore = {
     openDB,
     listTracks,
@@ -206,6 +306,7 @@
     deleteTrack,
     uuid,
     downloadBundle,
-    exportTrack
+    exportTrack,
+    exportAsBuiltin
   };
 })(typeof window !== "undefined" ? window : this);

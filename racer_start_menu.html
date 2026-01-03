@@ -1998,8 +1998,9 @@
         ];
         
         // ===== Track Data =====
+        // Built-in tracks can be added here. Use "Make Built-in" button to export custom tracks.
         const tracks = [
-          // Default tracks removed - use custom tracks only
+          { id: 'Test', name: 'Test', desc: 'Flowing circuit with sweeping corners' }
         ];
         
         // ===== Panel Titles =====
@@ -2101,6 +2102,7 @@
                 <div class="card-actions">
                   <button class="card-action-btn card-edit-btn" data-edit-id="${t.id}" title="Rename track">✏️</button>
                   <button class="card-action-btn card-export-btn" data-export-id="${t.id}" title="Export track as JSON">💾</button>
+                  <button class="card-action-btn card-builtin-btn" data-builtin-id="${t.id}" title="Export as built-in track code">📦</button>
                   <button class="card-action-btn card-delete-btn" data-delete-id="${t.id}" title="Delete track">🗑️</button>
                 </div>
                 <div class="card-preview">⭐</div>
@@ -2164,6 +2166,21 @@
                   await TrackStore.exportTrack(trackId);
                 } catch (err) {
                   console.error('Failed to export track:', err);
+                }
+              }
+            });
+          });
+          
+          // Make Built-in button handlers for custom tracks
+          trackGrid.querySelectorAll('.card-builtin-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              const trackId = btn.dataset.builtinId;
+              if (trackId && window.TrackStore && TrackStore.exportAsBuiltin) {
+                try {
+                  await TrackStore.exportAsBuiltin(trackId);
+                } catch (err) {
+                  console.error('Failed to export track as built-in:', err);
                 }
               }
             });
