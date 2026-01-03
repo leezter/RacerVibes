@@ -397,6 +397,41 @@
       background: rgba(245, 158, 11, 0.15);
       color: var(--accent-gold);
     }
+    
+    .card-actions {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      display: flex;
+      gap: 4px;
+      opacity: 0;
+      transition: opacity var(--transition-fast);
+      z-index: 10;
+    }
+    
+    .selection-card:hover .card-actions {
+      opacity: 1;
+    }
+    
+    .card-action-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-card);
+      color: var(--text-secondary);
+      font-size: 14px;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: all var(--transition-fast);
+    }
+    
+    .card-action-btn:hover {
+      background: var(--accent-primary);
+      border-color: var(--accent-primary);
+      color: white;
+    }
 
     /* ===== Mode Cards ===== */
     .mode-cards {
@@ -2069,6 +2104,10 @@
             const trackId = 'custom:' + t.id;
             html += `
               <div class="selection-card ${trackId === state.track ? 'selected' : ''}" data-track="${trackId}">
+                <div class="card-actions">
+                  <button class="card-action-btn card-edit-btn" data-edit-id="${t.id}" title="Rename track">✏️</button>
+                  <button class="card-action-btn card-export-btn" data-export-id="${t.id}" title="Export track as JSON">💾</button>
+                </div>
                 <div class="card-preview">⭐</div>
                 <div class="card-name">${t.name}</div>
                 <div class="card-desc">Custom track</div>
@@ -2088,12 +2127,50 @@
           trackGrid.innerHTML = html;
           
           trackGrid.querySelectorAll('.selection-card:not(.add-card)').forEach(card => {
-            card.addEventListener('click', () => {
+            card.addEventListener('click', (e) => {
+              // Ignore clicks on action buttons
+              if (e.target.closest('.card-action-btn')) return;
               trackGrid.querySelectorAll('.selection-card').forEach(c => c.classList.remove('selected'));
               card.classList.add('selected');
               state.track = card.dataset.track;
               const trackName = card.querySelector('.card-name').textContent;
               summaryTrack.textContent = trackName;
+            });
+          });
+          
+          // Edit/rename button handlers for custom tracks
+          trackGrid.querySelectorAll('.card-edit-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              const trackId = btn.dataset.editId;
+              if (!trackId || !window.TrackStore) return;
+              try {
+                const track = await TrackStore.getTrack(trackId);
+                if (!track) return;
+                const newName = prompt('Enter new track name:', track.name);
+                if (newName && newName.trim() && newName.trim() !== track.name) {
+                  track.name = newName.trim();
+                  await TrackStore.saveTrack(track);
+                  await refreshCustomTracks();
+                }
+              } catch (err) {
+                console.error('Failed to rename track:', err);
+              }
+            });
+          });
+          
+          // Export button handlers for custom tracks
+          trackGrid.querySelectorAll('.card-export-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              const trackId = btn.dataset.exportId;
+              if (trackId && window.TrackStore && TrackStore.exportTrack) {
+                try {
+                  await TrackStore.exportTrack(trackId);
+                } catch (err) {
+                  console.error('Failed to export track:', err);
+                }
+              }
             });
           });
           

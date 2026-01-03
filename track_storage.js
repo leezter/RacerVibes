@@ -172,6 +172,32 @@
     return new Blob([buffer], { type: mime });
   }
 
+  /**
+   * Export a track as a JSON file for adding to built-in tracks.
+   * The exported format includes only the essential data needed to recreate the track.
+   * @param {string} id - Track ID to export
+   */
+  async function exportTrack(id) {
+    const track = await getTrack(id);
+    if (!track) {
+      console.warn('Track not found:', id);
+      return null;
+    }
+    const exportData = {
+      _comment: 'RacingVibes Track Export - Copy the "points" array to add as a built-in track in racer.html',
+      name: track.name,
+      points: track.data?.points || track.points || [],
+      exportedAt: new Date().toISOString(),
+    };
+    const utils = window.RacerUtils;
+    const safeName = utils && typeof utils.sanitizeFilename === 'function'
+      ? utils.sanitizeFilename(track.name || 'track')
+      : (track.name || 'track').replace(/[^a-z0-9_\-]+/gi, '_');
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    triggerDownload(blob, `${safeName}.racingvibes.json`);
+    return true;
+  }
+
   global.TrackStore = {
     openDB,
     listTracks,
@@ -179,6 +205,7 @@
     saveTrack,
     deleteTrack,
     uuid,
-    downloadBundle
+    downloadBundle,
+    exportTrack
   };
 })(typeof window !== "undefined" ? window : this);
