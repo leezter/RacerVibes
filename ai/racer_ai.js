@@ -63,6 +63,18 @@
       corneringGrip: 1.02, // Slightly above physics limits for aggressive cornering (was 0.99)
       slipThreshold: 1.0, // 100% Limit (No sliding allowance)
     },
+    realistic: {
+      maxThrottle: 5.0, // Unlocked potential
+      brakeAggro: 2.0, // Maximum braking aggression
+      steerP: 5.5, // Extremely fast steering response
+      steerD: 0.35, // High damping to prevent oscillation at speed
+      lookaheadBase: 80, // Look further ahead
+      lookaheadSpeed: 0.25, // Scale lookahead significantly with speed
+      brakingLookaheadFactor: 2.2, // Early detection for high-speed braking events
+      searchWindow: 120, // Wide window to never lose the line
+      corneringGrip: 1.3, // "Cheating" grip level for superhuman cornering
+      slipThreshold: 1.2, // Uses more than 100% of available physics grip
+    },
   };
 
   function mapThrottleToSpeedScale(value) {
@@ -657,7 +669,7 @@
       const FRICTION_LIMIT = BASE_FRICTION * difficultyGrip;
 
       const GRAVITY = 750;
-      const MAX_SPEED_CAP = 3000; // Unlocked speed for maximum performance
+      const MAX_SPEED_CAP = 5000; // Unlocked speed for maximum performance
 
       for (let i = 0; i < n; i++) {
         const k = Math.abs(sm[i]);

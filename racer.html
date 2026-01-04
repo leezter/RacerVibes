@@ -913,18 +913,18 @@
         minRadius: { min: 8, max: 20 },
         straightSpeed: { min: 1500, max: 5000 },
         cornerSpeedFloor: { min: 80, max: 300 },
-        lookaheadBase: { min: 20, max: 80 },
-        lookaheadSpeed: { min: 0.08, max: 0.25 },
-        steerP: { min: 0.8, max: 5.0 },
-        steerD: { min: 0, max: 0.5 },
-        maxThrottle: { min: 0.6, max: 1.5 },
-        brakeAggro: { min: 0.4, max: 1.8 },
-        brakingLookaheadFactor: { min: 0.8, max: 2.0 },
-        searchWindow: { min: 30, max: 100 },
-        corneringGrip: { min: 0.7, max: 1.05 },
-        slipThreshold: { min: 0.7, max: 1.0 }
+        lookaheadBase: { min: 20, max: 100 },
+        lookaheadSpeed: { min: 0.08, max: 0.35 },
+        steerP: { min: 0.8, max: 6.0 },
+        steerD: { min: 0, max: 0.6 },
+        maxThrottle: { min: 0.6, max: 5.0 },
+        brakeAggro: { min: 0.4, max: 2.5 },
+        brakingLookaheadFactor: { min: 0.8, max: 3.0 },
+        searchWindow: { min: 30, max: 150 },
+        corneringGrip: { min: 0.7, max: 1.5 },
+        slipThreshold: { min: 0.7, max: 1.4 }
       };
-      const MAX_AI_TARGET_SPEED = 2600;
+      const MAX_AI_TARGET_SPEED = 5000;
       function mapMaxThrottleToSpeedScale(value) {
         const raw = Number.isFinite(value) ? value : 1;
         const normalized = Math.max(0, Math.min(1, (raw - 0.6) / 0.6));
@@ -5600,7 +5600,7 @@
                 <input
                   type="number"
                   min={20}
-                  max={80}
+                  max={100}
                   step={1}
                   value={Math.round(aiControls.lookaheadBase)}
                   onChange={(e) => handleAiControlChange("lookaheadBase", parseFloat(e.target.value))}
@@ -5613,7 +5613,7 @@
                 <input
                   type="range"
                   min={0.08}
-                  max={0.25}
+                  max={0.35}
                   step={0.01}
                   value={aiControls.lookaheadSpeed}
                   onChange={(e) => handleAiControlChange("lookaheadSpeed", parseFloat(e.target.value))}
@@ -5621,7 +5621,7 @@
                 <input
                   type="number"
                   min={0.08}
-                  max={0.25}
+                  max={0.35}
                   step={0.01}
                   value={aiControls.lookaheadSpeed.toFixed(2)}
                   onChange={(e) => handleAiControlChange("lookaheadSpeed", parseFloat(e.target.value))}
@@ -5634,7 +5634,7 @@
                 <input
                   type="range"
                   min={0.8}
-                  max={5.0}
+                  max={6.0}
                   step={0.05}
                   value={aiControls.steerP}
                   onChange={(e) => handleAiControlChange("steerP", parseFloat(e.target.value))}
@@ -5642,7 +5642,7 @@
                 <input
                   type="number"
                   min={0.8}
-                  max={5.0}
+                  max={6.0}
                   step={0.05}
                   value={aiControls.steerP.toFixed(2)}
                   onChange={(e) => handleAiControlChange("steerP", parseFloat(e.target.value))}
@@ -5655,7 +5655,7 @@
                 <input
                   type="range"
                   min={0}
-                  max={0.5}
+                  max={0.6}
                   step={0.01}
                   value={aiControls.steerD}
                   onChange={(e) => handleAiControlChange("steerD", parseFloat(e.target.value))}
@@ -5663,7 +5663,7 @@
                 <input
                   type="number"
                   min={0}
-                  max={0.5}
+                  max={0.6}
                   step={0.01}
                   value={aiControls.steerD.toFixed(2)}
                   onChange={(e) => handleAiControlChange("steerD", parseFloat(e.target.value))}
@@ -5676,7 +5676,7 @@
                 <input
                   type="range"
                   min={0.6}
-                  max={1.5}
+                  max={5.0}
                   step={0.01}
                   value={aiControls.maxThrottle}
                   onChange={(e) => handleAiControlChange("maxThrottle", parseFloat(e.target.value))}
@@ -5684,7 +5684,7 @@
                 <input
                   type="number"
                   min={0.6}
-                  max={1.5}
+                  max={5.0}
                   step={0.01}
                   value={aiControls.maxThrottle.toFixed(2)}
                   onChange={(e) => handleAiControlChange("maxThrottle", parseFloat(e.target.value))}
@@ -5697,7 +5697,7 @@
                 <input
                   type="range"
                   min={0.4}
-                  max={1.8}
+                  max={2.5}
                   step={0.02}
                   value={aiControls.brakeAggro}
                   onChange={(e) => handleAiControlChange("brakeAggro", parseFloat(e.target.value))}
@@ -5705,7 +5705,7 @@
                 <input
                   type="number"
                   min={0.4}
-                  max={1.8}
+                  max={2.5}
                   step={0.02}
                   value={aiControls.brakeAggro.toFixed(2)}
                   onChange={(e) => handleAiControlChange("brakeAggro", parseFloat(e.target.value))}
@@ -5718,7 +5718,7 @@
                 <input
                   type="range"
                   min={0.8}
-                  max={2.0}
+                  max={3.0}
                   step={0.05}
                   value={aiControls.brakingLookaheadFactor}
                   onChange={(e) => handleAiControlChange("brakingLookaheadFactor", parseFloat(e.target.value))}
@@ -5726,7 +5726,7 @@
                 <input
                   type="number"
                   min={0.8}
-                  max={2.0}
+                  max={3.0}
                   step={0.05}
                   value={aiControls.brakingLookaheadFactor.toFixed(2)}
                   onChange={(e) => handleAiControlChange("brakingLookaheadFactor", parseFloat(e.target.value))}
@@ -5739,7 +5739,7 @@
                 <input
                   type="range"
                   min={30}
-                  max={100}
+                  max={150}
                   step={1}
                   value={aiControls.searchWindow}
                   onChange={(e) => handleAiControlChange("searchWindow", parseFloat(e.target.value))}
@@ -5747,7 +5747,7 @@
                 <input
                   type="number"
                   min={30}
-                  max={100}
+                  max={150}
                   step={1}
                   value={Math.round(aiControls.searchWindow)}
                   onChange={(e) => handleAiControlChange("searchWindow", parseFloat(e.target.value))}
@@ -5768,7 +5768,7 @@
                 <input
                   type="number"
                   min={0.7}
-                  max={1.05}
+                  max={1.5}
                   step={0.01}
                   value={aiControls.corneringGrip.toFixed(2)}
                   onChange={(e) => handleAiControlChange("corneringGrip", parseFloat(e.target.value))}
@@ -5789,7 +5789,7 @@
                 <input
                   type="number"
                   min={0.7}
-                  max={1.0}
+                  max={1.4}
                   step={0.01}
                   value={aiControls.slipThreshold.toFixed(2)}
                   onChange={(e) => handleAiControlChange("slipThreshold", parseFloat(e.target.value))}
