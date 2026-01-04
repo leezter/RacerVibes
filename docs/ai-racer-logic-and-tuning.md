@@ -54,7 +54,6 @@ To mimic human pro drivers, the AI uses:
 | Parameter | Location | Effect |
 | :--- | :--- | :--- |
 | **`maxOffset`** | `DEFAULT_LINE_CFG` | **0.95**: Max fraction of track width to use. Higher = cuts corners closer to grass. |
-| **`sampleStep`** | `DEFAULT_LINE_CFG` | **24**: Resolution of the racing line. Lower = finer but more expensive. |
 | **`ITERATIONS`** | `buildRacingLine()` | **200**: Number of optimization passes. |
 | **`corneringGrip`** | `SKILL_PRESETS` | **Pro (1.02)**: Optimal. **Easy (0.75)**: Safe. |
 | **`maxThrottle`** | `SKILL_PRESETS` | Global throttle multiplier. **1.5 (Hard)** is max attack. |

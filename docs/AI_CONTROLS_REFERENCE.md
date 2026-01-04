@@ -11,12 +11,6 @@ The AI Controls panel provides comprehensive control over AI racing behavior, in
 ### Racing Line Generation
 These parameters control how the AI's racing line is calculated:
 
-- **apexAggression** (0-1)
-  - Controls how aggressively the AI cuts to the apex
-  - 0 = Conservative (60% track width)
-  - 1 = Aggressive (95% track width)
-  - Default: varies by difficulty
-
 - **maxOffset** (0.2-0.65)
   - Maximum distance the racing line can deviate from track centerline
   - Lower = stays closer to center
@@ -123,7 +117,6 @@ These parameters control the traction circle - how the AI balances steering vs a
 
 ### AI Too Slow in Corners
 - Increase `corneringGrip` (more aggressive cornering)
-- Increase `apexAggression` (tighter lines)
 - Reduce `brakingLookaheadFactor` (brake later)
 
 ### AI Too Fast / Crashes in Corners
@@ -141,13 +134,7 @@ These parameters control the traction circle - how the AI balances steering vs a
 - Adjust `lookaheadSpeed` (speed-based anticipation)
 
 ### Fine-Tuning Racing Line
-- `apexAggression`: Controls inside-outside-inside pattern strength
-- `maxOffset`: Limits how wide the line goes
-- Both affect straightening through lumpy sections
+- **maxOffset**: Limits how wide the line goes
+- Affects straightening through lumpy sections
 
-## Removed Parameters (Dead Code)
-The following parameters were removed as they were not used in the AI controller:
-- `cornerMargin` - Not implemented in controller logic
-- `speedHysteresis` - Not referenced anywhere
-- `cornerEntryFactor` - Not referenced anywhere
-- `minTargetSpeed` - Not referenced anywhere
+

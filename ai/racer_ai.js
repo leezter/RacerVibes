@@ -4,9 +4,6 @@
   const lerp = utils.lerp || ((a, b, t) => a + (b - a) * t);
 
   const DEFAULT_LINE_CFG = {
-    sampleStep: 6,
-    smoothingPasses: 5,
-    apexAggression: 0.7, // 0 = conservative (60% track width), 1 = aggressive (95% track width)
     maxOffset: 0.9, // Maximum fraction of half-width to use
     minRadius: 12,
     roadFriction: 1.1,
@@ -40,11 +37,7 @@
       lookaheadBase: 35,
       lookaheadSpeed: 0.12,
       brakingLookaheadFactor: 1.2,
-      cornerMargin: 32,
       searchWindow: 48,
-      speedHysteresis: 14,
-      cornerEntryFactor: 0.45,
-      minTargetSpeed: 90,
       corneringGrip: 0.75,
       slipThreshold: 0.8, // Stay well within limits
     },
@@ -56,11 +49,7 @@
       lookaheadBase: 40,
       lookaheadSpeed: 0.14,
       brakingLookaheadFactor: 1.35, // Slightly later braking (was 1.4)
-      cornerMargin: 22,
       searchWindow: 56,
-      speedHysteresis: 10,
-      cornerEntryFactor: 0.6,
-      minTargetSpeed: 110,
       corneringGrip: 0.98, // More confident cornering (was 0.95)
       slipThreshold: 0.98, // More combined input allowed (was 0.95)
     },
@@ -69,14 +58,8 @@
       brakeAggro: 1.5, // Reduced from 1.8 (Stop slamming brakes causing lockups)
       steerP: 3.8, // Reduced from 4.5 (Less twitchy)
       steerD: 0.22,
-      lookaheadBase: 42, // Increased from 30 (More stable lines)
-      lookaheadSpeed: 0.17,
       brakingLookaheadFactor: 1.2, // Brake later for faster cornering (was 1.3)
-      cornerMargin: 0,
       searchWindow: 80, // Track line better
-      speedHysteresis: 5,
-      cornerEntryFactor: 0.85,
-      minTargetSpeed: 130,
       corneringGrip: 1.02, // Slightly above physics limits for aggressive cornering (was 0.99)
       slipThreshold: 1.0, // 100% Limit (No sliding allowance)
     },
