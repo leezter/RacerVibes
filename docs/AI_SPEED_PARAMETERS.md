@@ -77,7 +77,6 @@ These parameters work together with existing AI Controls:
 | **maxThrottle** | Scales all target speeds (0.6 = 1x, 1.0 = 4.3x, 1.2+ = 6x) |
 | **roadFriction** | Affects cornering speed calculations (higher = faster corners) |
 | **corneringGrip** | AI confidence level (0.7 = conservative, 1.0 = aggressive) |
-| **apexAggression** | Racing line positioning (affects optimal corner speed) |
 
 **Best Practice**: Tune parameters together for balanced performance:
 1. Start with speed parameters (straight speed, corner floor)
