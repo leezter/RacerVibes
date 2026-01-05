@@ -30,7 +30,8 @@ When the AI initializes, it scans the racing line and calculates the maximum pot
 
 ### Difficulty Tuning (`SKILL_PRESETS`)
 *   **Easier AI**: Lower `corneringGrip` (e.g., 0.75). They slow down more for corners.
-*   **Hard AI**: **Pro Physics (0.98)**. They drive at 98% of the vehicle's theoretical limit.
+*   **Hard AI**: **Pro Physics (1.02)**. They drive slightly beyond the theoretical limit.
+*   **Realistic AI**: **Superhuman (1.3)**. They drive with boosted grip and speed, simulating perfect machine-like precision.
 
 ## 3. Braking Logic
 Braking is reactive and physics-based.
@@ -53,10 +54,10 @@ To mimic human pro drivers, the AI uses:
 
 | Parameter | Location | Effect |
 | :--- | :--- | :--- |
-| **`maxOffset`** | `DEFAULT_LINE_CFG` | **0.95**: Max fraction of track width to use. Higher = cuts corners closer to grass. |
+| **`maxOffset`** | `DEFAULT_LINE_CFG` | **0.9**: Max fraction of track width to use. Higher = cuts corners closer to grass. |
 | **`ITERATIONS`** | `buildRacingLine()` | **200**: Number of optimization passes. |
-| **`corneringGrip`** | `SKILL_PRESETS` | **Pro (1.02)**: Optimal. **Easy (0.75)**: Safe. |
-| **`maxThrottle`** | `SKILL_PRESETS` | Global throttle multiplier. **1.5 (Hard)** is max attack. |
+| **`corneringGrip`** | `SKILL_PRESETS` | **Realistic (1.3)**: Superhuman. **Easy (0.75)**: Safe. |
+| **`maxThrottle`** | `SKILL_PRESETS` | Global throttle multiplier. **5.0 (Realistic)** is max attack. |
 | **`straightSpeed`** | `DEFAULT_LINE_CFG` | **3000**: Caps the raw speed on straights. |
-| **`brakingLookaheadFactor`** | `SKILL_PRESETS` | **Safe (1.6+)**. **Late Braking (1.15)**. |
-| **`brakeAggro`** | `SKILL_PRESETS` | **Increase (1.8)**: Very hard braking. **Decrease**: Soft braking. |
+| **`brakingLookaheadFactor`** | `SKILL_PRESETS` | **Safe (2.2+)**. **Late Braking (1.15)**. |
+| **`brakeAggro`** | `SKILL_PRESETS` | **Increase (2.0)**: Very hard braking. **Decrease**: Soft braking. |

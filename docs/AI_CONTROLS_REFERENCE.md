@@ -11,84 +11,84 @@ The AI Controls panel provides comprehensive control over AI racing behavior, in
 ### Racing Line Generation
 These parameters control how the AI's racing line is calculated:
 
-- **maxOffset** (0.2-0.65)
+- **maxOffset** (0.2-0.95)
   - Maximum distance the racing line can deviate from track centerline
   - Lower = stays closer to center
   - Higher = uses more track width
-  - Default: 0.65
+  - Default: 0.9
 
 ### Lookahead & Tracking
 These parameters control how the AI follows the racing line:
 
-- **lookaheadBase** (20-80 pixels)
+- **lookaheadBase** (20-100 pixels)
   - Base distance ahead the AI looks when moving slowly
   - Higher = smoother but less reactive
   - Lower = more reactive but can be twitchy
-  - Default: varies by difficulty (35-42)
+  - Default: varies by difficulty (35-80)
 
-- **lookaheadSpeed** (0.08-0.25)
+- **lookaheadSpeed** (0.08-0.3)
   - Additional lookahead multiplied by current speed
   - Higher = anticipates turns earlier at speed
-  - Default: varies by difficulty (0.12-0.17)
+  - Default: varies by difficulty (0.12-0.25)
 
-- **searchWindow** (30-100)
+- **searchWindow** (30-150)
   - Size of window for finding closest racing line point
   - Larger = more stable line tracking but slower updates
   - Smaller = faster updates but may lose line
-  - Default: varies by difficulty (48-80)
+  - Default: varies by difficulty (48-120)
 
 ### Steering Control
 PD (Proportional-Derivative) controller for steering:
 
-- **steerP** (0.8-5.0)
+- **steerP** (0.8-6.0)
   - Proportional gain - primary steering responsiveness
   - Higher = faster reaction to errors
   - Too high = oscillation/weaving
-  - Default: varies by difficulty (1.6-3.8)
+  - Default: varies by difficulty (1.6-5.5)
 
 - **steerD** (0-0.5)
   - Derivative gain - dampens steering oscillation
   - Higher = smoother steering, less overshoot
   - Too high = sluggish steering
-  - Default: varies by difficulty (0.06-0.22)
+  - Default: varies by difficulty (0.06-0.35)
 
 ### Speed & Throttle Control
 
-- **maxThrottle** (0.6-1.5)
+- **maxThrottle** (0.6-5.0)
   - Controls both throttle application and top speed scaling
-  - <1.0 = reduced throttle and speed
-  - >1.0 = boosted throttle and speed
-  - Default: varies by difficulty (0.85-1.5)
+  - 1.0 = standard speed
+  - >1.0 = boosted throttle and speed (super-human speed possible)
+  - Default: varies by difficulty (0.85-5.0)
 
 ### Braking Control
 
-- **brakeAggro** (0.4-1.8)
+- **brakeAggro** (0.4-2.5)
   - Multiplier for all brake commands
   - <1.0 = gentler braking
   - >1.0 = more aggressive braking
-  - Default: varies by difficulty (0.8-1.5)
+  - Default: varies by difficulty (0.8-2.0)
 
-- **brakingLookaheadFactor** (0.8-2.0)
+- **brakingLookaheadFactor** (0.8-2.5)
   - Distance ahead to scan for upcoming slow corners
   - Higher = brakes earlier/more cautiously
   - Lower = brakes later/more aggressively
-  - Default: varies by difficulty (1.2-1.4)
+  - Default: varies by difficulty (1.2-2.2)
 
 ### Grip Management
 These parameters control the traction circle - how the AI balances steering vs acceleration/braking:
 
-- **corneringGrip** (0.7-1.0)
+- **corneringGrip** (0.7-1.5)
   - Grip confidence multiplier for calculating corner speeds
   - Lower = takes corners more conservatively
-  - Higher = pushes grip limits harder
-  - Default: varies by difficulty (0.75-0.99)
+  - Higher = pushes grip limits harder (can exceed physics limits)
+  - Default: varies by difficulty (0.75-1.3)
 
-- **slipThreshold** (0.7-1.0)
+- **slipThreshold** (0.7-1.3)
   - Traction circle limit for combined inputs
   - Controls how much steering+braking can be used simultaneously
   - Lower = more conservative, less combined input
-  - Higher = pushes traction limits
-  - Default: varies by difficulty (0.8-1.0)
+  - Higher = pushes traction limits (can exceed 100%)
+  - Default: varies by difficulty (0.8-1.2)
 
 ## Difficulty Presets
 
@@ -107,11 +107,18 @@ These parameters control the traction circle - how the AI balances steering vs a
 - Standard traction (slipThreshold: 0.95)
 
 ### Hard
-- Aggressive cornering (corneringGrip: 0.99)
+- Aggressive cornering (corneringGrip: 1.02)
 - Boosted inputs (maxThrottle: 1.5, brakeAggro: 1.5)
 - Responsive steering (steerP: 3.8, steerD: 0.22)
-- Calibrated braking (brakingLookaheadFactor: 1.3)
+- Calibrated braking (brakingLookaheadFactor: 1.2)
 - Maximum traction (slipThreshold: 1.0)
+
+### Realistic
+- Superhuman cornering (corneringGrip: 1.3)
+- Unlocked inputs (maxThrottle: 5.0, brakeAggro: 2.0)
+- Extremely fast steering (steerP: 5.5, steerD: 0.35)
+- Early detection (brakingLookaheadFactor: 2.2)
+- Beyond physics traction (slipThreshold: 1.2)
 
 ## Tuning Tips
 
