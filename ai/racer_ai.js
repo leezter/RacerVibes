@@ -532,15 +532,6 @@
       const rawSpeed = Math.sqrt(Math.max(0, cfg.roadFriction * g * radiusPx));
       const targetSpeed = clamp(rawSpeed, cfg.cornerSpeedFloor, cfg.straightSpeed);
 
-      // Calculate actual lateral offset from original centerline
-      // This allows the AI to know how much room is left on either side
-      const center = points[idx];
-      const centerNorm = normals[idx];
-      const dxReal = pt.x - center.x;
-      const dyReal = pt.y - center.y;
-      // Dot product with original normal to find lateral distance form center
-      const centerOffset = dxReal * centerNorm.x + dyReal * centerNorm.y;
-
       return {
         index: idx,
         s: arc,
@@ -551,7 +542,6 @@
         curvature,
         radius: radiusPx,
         targetSpeed,
-        centerOffset, // Distance from track center
       };
     });
   }
@@ -717,10 +707,7 @@
       setDifficulty(level) {
         skill = resolveSkill(level);
       },
-      getCurrentNode() {
-        return line[idx] || (line.length ? line[0] : null);
-      },
-      update(car, dt, targetOffset = 0) {
+      update(car, dt) {
         if (!line.length || !car) return { throttle: 0, brake: 1, steer: 0 };
         idx = nearestIndex(line, idx, car.x, car.y, skill.searchWindow);
         const speed = Math.hypot(
@@ -739,10 +726,8 @@
         const currentNode = line[idx] || line[0];
 
         // Calculate heading toward lookahead point
-        // Apply targetOffset to the lookahead point as well, so we aim for the offset line
-        const lookaheadNormal = currentNode.normal || { x: 0, y: 0 }; // Approx normal at lookahead
-        const targetX = sample.point.x + lookaheadNormal.x * targetOffset - car.x;
-        const targetY = sample.point.y + lookaheadNormal.y * targetOffset - car.y;
+        const targetX = sample.point.x - car.x;
+        const targetY = sample.point.y - car.y;
         const lookaheadHeading = Math.atan2(targetY, targetX);
 
         // Get the racing line's tangent direction at current position
@@ -758,10 +743,7 @@
         const normal = currentNode.normal;
         let lateralOffset = 0;
         if (normal && Number.isFinite(normal.x) && Number.isFinite(normal.y)) {
-          // positive = left of line, negative = right
-          // We want the error relative to the TARGET offset, not 0
-          const currentDist = dx * normal.x + dy * normal.y;
-          lateralOffset = currentDist - targetOffset;
+          lateralOffset = dx * normal.x + dy * normal.y; // positive = left of line, negative = right
         }
 
         // Blend tangent direction (following the line) with lookahead direction (anticipating turns)
@@ -777,10 +759,9 @@
         // --- Smooth Seeking Mode ---
         // If we are very far from the racing line (e.g., displaced by collision), 
         // switch to a "Seeking" behavior that smoothly steers back to the line.
-        // BUT: Only strictly enforce this at speed. At low speed (start), rely on normal control so we don't fight offsets.
         const SEEK_THRESHOLD = 120;
 
-        if (speed > 60 && absOffset > SEEK_THRESHOLD) {
+        if (absOffset > SEEK_THRESHOLD) {
           isSeeking = true;
           // Find a merge point further ahead on the line to avoid sharp turns
           const mergeDistance = Math.max(250, lookahead * 2.5);

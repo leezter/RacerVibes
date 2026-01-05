@@ -999,7 +999,177 @@
         // New: threshold for when reverse is truly necessary
         mustReverseDot: -0.7         // Only start in reverse mode if facing almost completely backwards
       };
+      // Configuration for AI collision avoidance behavior
+      const AI_COLLISION_AVOIDANCE_CFG = {
+        // Detection ranges
+        detectRange: 120,            // Max distance to detect other cars (px)
+        dangerRange: 60,             // Distance at which aggressive avoidance is triggered (braking + throttle cut)
+        minDetectionDistance: 1,     // Minimum distance to consider (px) - prevents divide by zero
+        sideDetectAngle: 0.6,        // Radians - how wide to check for cars to the side (~35 deg)
+        forwardDetectAngle: 0.35,    // Radians - narrower cone for cars directly ahead (~20 deg)
+        forwardDotThreshold: 0.1,    // Dot product threshold - car must be this much "ahead" to be a threat
+        combinedCollisionRadius: 50, // Approximate collision radius for two cars (px)
 
+        // Response tuning
+        steerAvoidGain: 0.6,         // How strongly to steer away (0-1)
+        brakeThreshold: 0.4,         // Relative speed fraction threshold to trigger braking
+        throttleCutFactor: 0.5,      // How much to reduce throttle when avoiding
+        minAvoidSpeed: 80,           // Below this speed, don't slow down for avoidance
+        emergencyBrakeFactor: 0.3,   // Brake force multiplier for emergency avoidance
+        throttleReductionFactor: 0.3, // Throttle reduction for moderate threat
+
+        // Priority tuning - balance between racing and avoiding
+        avoidancePriority: 0.6,      // 0 = ignore other cars, 1 = always avoid
+        racingLinePriority: 0.7,     // How much to prefer staying on racing line vs avoiding
+        speedCostThreshold: 0.15,    // Only avoid if speed cost is less than this fraction
+        emergencyUrgencyThreshold: 0.8, // Above this urgency, always avoid regardless of cost
+
+        // Timing
+        predictionTime: 0.5,         // Seconds to look ahead for collision prediction
+        reactionDelay: 0.1           // Minimum time between avoidance adjustments
+      };
+
+      // Collision avoidance function for AI cars
+      function applyAiCollisionAvoidance(car, control, dt, allCars, player) {
+        if (!car || !control) return control;
+
+        const cfg = AI_COLLISION_AVOIDANCE_CFG;
+        const carSpeed = getCarSpeed(car);
+
+        // Skip avoidance at very low speeds - just race
+        if (carSpeed < cfg.minAvoidSpeed) return control;
+
+        // Car's forward direction (used for detecting cars ahead)
+        const carAngle = car.angle || 0;
+        const fwdX = Math.cos(carAngle);
+        const fwdY = Math.sin(carAngle);
+
+        // Get car velocity for prediction
+        const vx = (car.physics && car.physics.vx) || car.vx || 0;
+        const vy = (car.physics && car.physics.vy) || car.vy || 0;
+
+        // Collect all other cars (AI + player)
+        const otherCars = [];
+        if (Array.isArray(allCars)) {
+          for (const other of allCars) {
+            if (other && other !== car) otherCars.push(other);
+          }
+        }
+        if (player && player !== car && !otherCars.includes(player)) {
+          otherCars.push(player);
+        }
+
+        // Find closest car in our path that we need to avoid
+        let closestThreat = null;
+        let closestDist = Infinity;
+        let threatSide = 0; // -1 = left, 1 = right, 0 = directly ahead
+
+        for (const other of otherCars) {
+          if (!other) continue;
+
+          // Vector from car to other
+          const dx = other.x - car.x;
+          const dy = other.y - car.y;
+          const dist = Math.hypot(dx, dy);
+
+          // Skip if too far away or too close (avoid divide by zero)
+          if (dist > cfg.detectRange || dist < cfg.minDetectionDistance) continue;
+
+          // Check if other car is ahead of us
+          const dotForward = (dx * fwdX + dy * fwdY) / dist;
+          if (dotForward < cfg.forwardDotThreshold) continue; // Behind us or beside us, not a concern
+
+          // Calculate angle to other car
+          const angleToOther = Math.atan2(dy, dx);
+          const angleDiff = safeNormalizeAngle(angleToOther - carAngle);
+
+          // Check if within detection cone
+          const absAngleDiff = Math.abs(angleDiff);
+          const isDirectlyAhead = absAngleDiff < cfg.forwardDetectAngle;
+          const isInSideCone = absAngleDiff < cfg.sideDetectAngle;
+
+          if (!isInSideCone) continue;
+
+          // Predict future positions
+          const otherVx = (other.physics && other.physics.vx) || other.vx || 0;
+          const otherVy = (other.physics && other.physics.vy) || other.vy || 0;
+
+          // Predicted positions after predictionTime
+          const myFutureX = car.x + vx * cfg.predictionTime;
+          const myFutureY = car.y + vy * cfg.predictionTime;
+          const otherFutureX = other.x + otherVx * cfg.predictionTime;
+          const otherFutureY = other.y + otherVy * cfg.predictionTime;
+
+          const futureDist = Math.hypot(otherFutureX - myFutureX, otherFutureY - myFutureY);
+
+          // Check if collision is predicted:
+          // 1. Predicted positions will be within collision radius (future collision)
+          // 2. OR car is directly ahead and already within danger range (imminent collision)
+          const predictedCollision = futureDist < cfg.combinedCollisionRadius;
+          const imminentCollision = isDirectlyAhead && dist < cfg.dangerRange;
+          const willCollide = predictedCollision || imminentCollision;
+
+          if (willCollide && dist < closestDist) {
+            closestDist = dist;
+            closestThreat = other;
+            // Determine which side the other car is on (for steering away)
+            // positive angleDiff = other is to our left, so threatSide=1
+            // negative angleDiff = other is to our right, so threatSide=-1
+            // steerAdjustment uses -threatSide, so: left threat → steer right, right threat → steer left
+            threatSide = angleDiff > 0 ? 1 : -1;
+          }
+        }
+
+        // If no threat, return original control
+        if (!closestThreat) return control;
+
+        // Calculate avoidance response
+        const urgency = 1 - (closestDist / cfg.detectRange); // 0 at max range, 1 at contact
+        const avoidanceStrength = urgency * cfg.avoidancePriority;
+
+        // Calculate the cost of avoidance - if avoiding would significantly hurt our speed, don't do it
+        const originalThrottle = control.throttle || 0;
+        const speedCost = avoidanceStrength * cfg.throttleCutFactor;
+
+        // Only apply avoidance if cost is acceptable
+        // Racing takes priority - AI will not avoid if doing so would hurt lap time significantly
+        if (speedCost > cfg.speedCostThreshold && urgency < cfg.emergencyUrgencyThreshold) {
+          return control;
+        }
+
+        // Create modified control
+        const newControl = { ...control };
+
+        // Steer away from threat
+        // steerAdjustment is negative when threatSide is positive (threat on left → steer right)
+        const steerAdjustment = -threatSide * cfg.steerAvoidGain;
+        const baseSteer = control.steer || 0;
+
+        // Blend between racing line steering and avoidance steering
+        // As avoidance strength increases, blend more toward avoidance steering
+        // racingLinePriority determines baseline preference for racing line
+        const avoidWeight = avoidanceStrength * (1 - cfg.racingLinePriority);
+        const raceWeight = 1 - avoidWeight;
+        const blendedSteer = baseSteer * raceWeight + steerAdjustment * avoidWeight;
+        newControl.steer = safeClamp(blendedSteer, -1, 1);
+
+        // Reduce throttle if car ahead is slower
+        const threatSpeed = getCarSpeed(closestThreat);
+        const relativeSpeed = carSpeed - threatSpeed;
+
+        // Only apply braking if we're moving fast enough and closing faster than threshold
+        // Note: carSpeed is already guaranteed > minAvoidSpeed from early return at function start
+        if (relativeSpeed > carSpeed * cfg.brakeThreshold && closestDist < cfg.dangerRange) {
+          // We're approaching significantly faster than the car ahead - slow down
+          newControl.throttle = Math.max(0, originalThrottle * (1 - avoidanceStrength * cfg.throttleCutFactor));
+          newControl.brake = Math.min(1, (control.brake || 0) + avoidanceStrength * cfg.emergencyBrakeFactor);
+        } else if (urgency > 0.5) {
+          // Moderate threat - just ease off throttle slightly
+          newControl.throttle = originalThrottle * (1 - avoidanceStrength * cfg.throttleReductionFactor);
+        }
+
+        return newControl;
+      }
       const currentModeConfig = getCurrentModeConfig();
       const gripModeConfig = (window.RacerModes && typeof window.RacerModes.get === "function") ? window.RacerModes.get("grip") : null;
       function sanitizeDifficulty(value) {
@@ -4624,37 +4794,9 @@
               };
               fallbackDelta = { dx, dy };
             }
-            // Calculate avoidance offset - AI drives parallel to line if blocked/crowded
-            const avoidanceOffset = calculateAiAvoidanceOffset(car, aiCars, player, activeTrack ? activeTrack.roadWidth : 60);
-
-            if (controller) {
-              control = controller.update(car, dt, avoidanceOffset);
-            } else {
-              const target = waypoints[car.targetIndex];
-              if (!target) continue;
-              const dx = target.x - car.x;
-              const dy = target.y - car.y;
-              const targetAngle = Math.atan2(dy, dx);
-              const steer = clamp(normalizeAngle(targetAngle - car.angle), -1, 1);
-              const currentSpeed = Math.hypot((car.physics && car.physics.vx) || car.vx || 0, (car.physics && car.physics.vy) || car.vy || 0);
-              const desiredSpeedBase = target.speed || 0;
-              const desiredSpeed = Math.min(
-                MAX_AI_TARGET_SPEED,
-                (desiredSpeedBase * throttleScale) + (car.speedBias || 0)
-              );
-              control = {
-                throttle: currentSpeed < desiredSpeed ? 1 : 0,
-                brake: currentSpeed > desiredSpeed + 25 ? 1 : 0,
-                steer
-              };
-              fallbackDelta = { dx, dy };
-            }
-
-            // Legacy recovery only if no controller
-            if (!controller) {
-              control = applyAiRecoveryControl(car, control, dt, racingLine, performance.now() / 1000);
-            }
-
+            // Apply collision avoidance - AI cars should avoid crashing into each other
+            control = applyAiCollisionAvoidance(car, control, dt, aiCars, player);
+            control = applyAiRecoveryControl(car, control, dt, racingLine, performance.now() / 1000);
             updateCar(car, dt, control);
             if (!controller && fallbackDelta) {
               const dist = Math.hypot(fallbackDelta.dx, fallbackDelta.dy);
@@ -4663,141 +4805,6 @@
               }
             }
           }
-        }
-
-        // New Overtaking & Spatial Awareness Logic
-        function calculateAiAvoidanceOffset(car, aiCars, player, roadWidth) {
-          if (!car) return 0;
-
-          // Constants
-          const LOOKAHEAD_Scan = 280; // Increased lookahead
-          const WIDTH_Scan = 40; // Wider scan to catch blockers even if slightly offset
-          const SIDE_PersonalSpace = 32;
-          const PASSING_CLEARANCE = 45;
-
-          const mySpeed = getCarSpeed(car);
-          const candidates = [...aiCars];
-          if (player) candidates.push(player);
-
-          // --- 1. Reactive Side Avoidance (Repulsion) ---
-          let repelOffset = 0;
-          let leftSideBlocked = false;
-          let rightSideBlocked = false;
-
-          const carAngle = car.angle;
-          const c = Math.cos(carAngle), s = Math.sin(carAngle);
-
-          for (const other of candidates) {
-            if (other === car) continue;
-            const dx = other.x - car.x;
-            const dy = other.y - car.y;
-            const localX = dx * c + dy * s;
-            const localY = -dx * s + dy * c;
-
-            // Spatial Awareness (Side)
-            if (Math.abs(localX) < 70 && Math.abs(localY) < SIDE_PersonalSpace) {
-              if (localY > 0) leftSideBlocked = true;
-              else rightSideBlocked = true;
-
-              const intrusion = SIDE_PersonalSpace - Math.abs(localY);
-              repelOffset -= Math.sign(localY) * intrusion * 1.5;
-            }
-          }
-
-          // --- 2. Overtaking State Machine ---
-          if (!car._aiOvertake) {
-            car._aiOvertake = { active: false, target: null, sideDir: 0, currentOffset: 0 };
-          }
-          const state = car._aiOvertake;
-
-          // A. Scan for Blockers
-          if (!state.active) {
-            let bestBlocker = null;
-            let bestDist = Infinity;
-
-            for (const other of candidates) {
-              if (other === car) continue;
-              const dx = other.x - car.x;
-              const dy = other.y - car.y;
-              const localX = dx * c + dy * s;
-              const localY = -dx * s + dy * c;
-
-              if (localX > 0 && localX < LOOKAHEAD_Scan && Math.abs(localY) < WIDTH_Scan) {
-                const otherSpeed = getCarSpeed(other);
-                // Trigger earlier: lower speed delta threshold
-                if (otherSpeed < mySpeed - 8) {
-                  if (localX < bestDist) {
-                    bestDist = localX;
-                    bestBlocker = other;
-                  }
-                }
-              }
-            }
-
-            if (bestBlocker) {
-              state.active = true;
-              state.target = bestBlocker;
-              // Prefer unblocked side
-              if (!leftSideBlocked && !rightSideBlocked) {
-                // If both free, check track position? Default Left.
-                state.sideDir = 1;
-              } else if (!leftSideBlocked) state.sideDir = 1;
-              else if (!rightSideBlocked) state.sideDir = -1;
-              else state.sideDir = 0; // Boxed
-            }
-          }
-
-          // B. Update Overtake Logic
-          let targetOvertakeVal = 0;
-
-          if (state.active) {
-            const target = state.target;
-            if (target && candidates.includes(target)) {
-              const dx = target.x - car.x;
-              const dy = target.y - car.y;
-              const localX = dx * c + dy * s;
-
-              if (localX < -PASSING_CLEARANCE) {
-                state.active = false;
-                state.target = null;
-              } else if (localX > LOOKAHEAD_Scan + 50) {
-                state.active = false;
-                state.target = null;
-              } else {
-                // GRADUAL OFFSET LOGIC
-                // As we get closer, increase the offset.
-                // Distance factor: 1.0 when close (0), 0.0 when at max range (200)
-                const distFactor = Math.max(0, 1 - (localX / 250));
-                // Ramp up offset based on proximity
-                const MAX_OVERTAKE = 28;
-                targetOvertakeVal = state.sideDir * (10 + (MAX_OVERTAKE - 10) * distFactor);
-              }
-            } else {
-              state.active = false;
-            }
-          }
-
-          // Smoothly blend current offset towards target
-          // This prevents jerky movement
-          const blend = 0.1;
-          state.currentOffset += (targetOvertakeVal - state.currentOffset) * blend;
-
-          // --- 3. Constrain to Track ---
-          let totalOffset = repelOffset + state.currentOffset;
-
-          let raceLineOffset = 0;
-          if (car.aiController && typeof car.aiController.getCurrentNode === 'function') {
-            const node = car.aiController.getCurrentNode();
-            if (node && typeof node.centerOffset === 'number') {
-              raceLineOffset = node.centerOffset;
-            }
-          }
-
-          const safeMargin = 18;
-          const halfWidth = (roadWidth / 2) - safeMargin;
-          totalOffset = Math.max(-halfWidth - raceLineOffset, Math.min(halfWidth - raceLineOffset, totalOffset));
-
-          return totalOffset;
         }
 
         function updatePlayer(dt) {
