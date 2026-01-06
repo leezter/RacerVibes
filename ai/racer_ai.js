@@ -70,7 +70,7 @@
       steerD: 0.35, // High damping to prevent oscillation at speed
       lookaheadBase: 80, // Look further ahead
       lookaheadSpeed: 0.25, // Scale lookahead significantly with speed
-      brakingLookaheadFactor: 2.2, // Early detection for high-speed braking events
+      brakingLookaheadFactor: 0.6, // Wait until the last moment (High Decel allows this)
       searchWindow: 120, // Wide window to never lose the line
       corneringGrip: 1.3, // "Cheating" grip level for superhuman cornering
       slipThreshold: 1.2, // Uses more than 100% of available physics grip
@@ -884,9 +884,12 @@
           const timeToCorner = avgSpeed > 10 ? brakingDistance / avgSpeed : 1.0;
           const requiredDecel = speedExcess / Math.max(timeToCorner, 0.2);
 
-          // Realistic MAX_BRAKE_DECEL ~600-700
-          // Higher = AI thinks it can stop faster = Brakes Later
-          const MAX_BRAKE_DECEL = 720;
+          // Realistic MAX_BRAKE_DECEL
+          // We include aerodynamic drag in the estimate because at high speeds (3000+),
+          // drag deceleration (~4000 px/s²) dwarfs brake deceleration (~270 px/s²).
+          // Using a dynamic estimate encourages "late braking" at high speeds.
+          // Model: BaseBrake(300) + Drag(0.00045 * v^2)
+          const MAX_BRAKE_DECEL = 500 + (speed * speed * 0.0004);
           let brakingIntensity = clamp(requiredDecel / MAX_BRAKE_DECEL, 0, 1);
 
           const anticipation = brakingIntensity * skill.brakeAggro;
