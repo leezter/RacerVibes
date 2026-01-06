@@ -4,7 +4,7 @@
     label: 'Grip',
     ai: {
       defaultDifficulty: 'hard',
-      difficulties: ['easy', 'medium', 'hard']
+      difficulties: ['easy', 'medium', 'hard', 'realistic']
     }
     // Keep config optional for now to avoid any behavior drift.
     // Future modes can add physicsPreset, gearboxConfig, hooks, uiTweaks, etc.

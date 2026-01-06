@@ -71,7 +71,7 @@
       lookaheadBase: 80, // Look further ahead
       lookaheadSpeed: 0.25, // Scale lookahead significantly with speed
       brakingLookaheadFactor: 0.6, // Wait until the last moment (High Decel allows this)
-      searchWindow: 120, // Wide window to never lose the line
+      searchWindow: 80, // Reduced from 120 to prevent hopping to adjacent track legs
       corneringGrip: 1.3, // "Cheating" grip level for superhuman cornering
       slipThreshold: 1.2, // Uses more than 100% of available physics grip
     },
@@ -576,20 +576,69 @@
     };
   }
 
-  function nearestIndex(line, seed, x, y, windowSize) {
+  function nearestIndex(line, seed, x, y, windowSize, carAngle, speed) {
     if (!line.length) return 0;
+
+    // Default inputs to safety values
+    speed = Number.isFinite(speed) ? speed : 0;
+    // carAngle is optional, handled by check later
+
     const count = line.length;
-    const search = Math.max(1, windowSize | 0);
+
+    // CONSTANTS for Search Control
+    // Limit search window to prevent track hopping (e.g. adjacent hairpin legs)
+    const SPEED_SCALE_CAP = 3000;
+    const MIN_SEARCH = 6;
+    const MAX_SEARCH = 25; // Cap at 25 nodes (~600px) deviation
+
+    // Scale window with speed: tight window at slow speeds (corners), larger at high speeds
+    const speedRatio = Math.min(speed, SPEED_SCALE_CAP) / SPEED_SCALE_CAP;
+    const dynamicLimit = Math.floor(MIN_SEARCH + speedRatio * (MAX_SEARCH - MIN_SEARCH));
+
+    // Use the smaller of the requested window or our safety limit
+    const search = Math.min(windowSize | 0, dynamicLimit);
+
     let best = ((seed % count) + count) % count;
     let bestDist = Infinity;
+
+    // DIRECTION FILTERING
+    // CRITICAL FIX: Disable at low speeds (< 40) to prevent "wrong way" false positives 
+    // when starting or recovering from a spin. At 0 speed, car heading might be slightly off
+    // track heading, but we shouldn't penalize the correct node.
+    const useDirectionFilter = typeof carAngle === 'number' && speed > 40;
+
+    const fwdX = useDirectionFilter ? Math.cos(carAngle) : 0;
+    const fwdY = useDirectionFilter ? Math.sin(carAngle) : 0;
+
     for (let offset = -search; offset <= search; offset++) {
       const idx = (best + offset + count) % count;
       const node = line[idx];
       const dx = node.x - x;
       const dy = node.y - y;
       const dist = dx * dx + dy * dy;
-      if (dist < bestDist) {
-        bestDist = dist;
+
+      let penalty = 1.0;
+
+      // BIAS: Prefer forward progress slightly
+      // Helps break ties in favor of moving down the track
+      if (offset < 0) {
+        penalty *= 1.2;
+      }
+
+      // Directional Penalty (Only at speed)
+      if (useDirectionFilter && node.tangent) {
+        const dot = fwdX * node.tangent.x + fwdY * node.tangent.y;
+        if (dot < -0.5) {
+          // Wrong way (opposing traffic) -> Huge Penalty
+          penalty *= 100.0;
+        } else if (dot < 0) {
+          // Perpendicular/Slightly Backwards -> Moderate Penalty
+          penalty *= 5.0;
+        }
+      }
+
+      if (dist * penalty < bestDist) {
+        bestDist = dist * penalty;
         best = idx;
       }
     }
@@ -709,18 +758,25 @@
       },
       update(car, dt) {
         if (!line.length || !car) return { throttle: 0, brake: 1, steer: 0 };
-        idx = nearestIndex(line, idx, car.x, car.y, skill.searchWindow);
+
         const speed = Math.hypot(
           (car.physics && car.physics.vx) || car.vx || 0,
           (car.physics && car.physics.vy) || car.vy || 0,
         );
+
+        // Pass car angle and speed to nearestIndex to prevent latching onto opposite track segments (e.g. hairpins)
+        idx = nearestIndex(line, idx, car.x, car.y, skill.searchWindow, car.angle, speed);
+
         const lookahead = skill.lookaheadBase + speed * skill.lookaheadSpeed;
         const sample = sampleAlongLine(line, idx, lookahead) || {
           point: { x: line[idx].x, y: line[idx].y },
           targetSpeed: line[idx].targetSpeed,
           nextIndex: idx,
         };
-        idx = sample.nextIndex || idx;
+        // BUG FIX: Do NOT update idx to the lookahead index. 
+        // idx must track the car's current position (closest point), not the target.
+        // Updating it causes the search window to race ahead of the car, leading to tracking loss.
+        // idx = sample.nextIndex || idx;
 
         // Get current node on the racing line
         const currentNode = line[idx] || line[0];
@@ -782,10 +838,10 @@
             // Backward recovery
             const error = normalizeAngle(mergeHeading - car.angle);
             seekSteer = Math.sign(error);
-            inputState.throttle = 0.2;
+            inputState.throttle = 1.0;
             inputState.brake = 0;
             inputState.steer = seekSteer; // Direct snap for recovery
-            return { throttle: 0.2, brake: 0, steer: seekSteer };
+            return { throttle: 1.0, brake: 0, steer: seekSteer };
           }
 
           // Smooth seek steering
@@ -911,9 +967,11 @@
         if (speed < 20 && speedExcess < 10) {
           targetBrake = 0;
         }
-        // Start assist
-        if (speed < 15 && minFutureSpeed > 30 && targetThrottle < 0.1 && targetBrake < 0.1) {
-          targetThrottle = 1.0 * throttleGain;
+        // Start assist / Anti-Stall
+        // If moving very slowly but track is open, FORCE throttle to overcome friction/inertia
+        if (speed < 20 && minFutureSpeed > 30) {
+          targetThrottle = Math.max(targetThrottle, 1.0 * throttleGain);
+          targetBrake = 0;
         }
 
         // --- TRAIL BRAKING & TRACTION CIRCLE LOGIC ---
@@ -955,7 +1013,11 @@
           const stabilityBias = steerFactor * steerFactor;
 
           const throttleGrip = tractionAvailable * stabilityBias;
-          targetThrottle = Math.min(targetThrottle, throttleGrip);
+
+          // FIX: Allow full throttle at low speed for launch/recovery even if steering
+          if (speed > 50) {
+            targetThrottle = Math.min(targetThrottle, throttleGrip);
+          }
         }
 
         // 3. Input Filtering (Low Pass Filter)
