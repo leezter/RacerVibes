@@ -948,7 +948,12 @@
           // FIX: Added Understeer Prevention. Traction Circle says we HAVE grip, 
           // but applying torque shifts weight back and causes understeer.
           // We bias the throttle to be lower when steering is high.
-          const stabilityBias = Math.max(0, 1.0 - steerUsage * 0.6); // 60% penalty at full lock
+          // NEW: Exponential penalty to strictly forbid throttle at high steering angles.
+          // At 0.5 steer: (1-0.5)^2 = 0.25 throttle max.
+          // At 0.8 steer: (1-0.8)^2 = 0.04 throttle max.
+          const steerFactor = clamp(1.0 - steerUsage, 0, 1);
+          const stabilityBias = steerFactor * steerFactor;
+
           const throttleGrip = tractionAvailable * stabilityBias;
           targetThrottle = Math.min(targetThrottle, throttleGrip);
         }
