@@ -668,7 +668,7 @@
       historyIndex: -1,
       lastBakeResult: null,
       isClosed: false,
-      trackName: 'Grand Prix 1'
+      trackName: 'Test'
     };
 
     // View transform - calculated on resize to fit fixed world to screen
@@ -965,7 +965,7 @@
 
     // Track name
     this.trackNameInput.addEventListener('input', () => {
-      this.state.trackName = this.trackNameInput.value || 'Grand Prix 1';
+      this.state.trackName = this.trackNameInput.value || 'Test';
     });
 
     // Canvas events
@@ -1434,7 +1434,7 @@
     this.state.isClosed = false;
     this.state.roadWidth = DEFAULT_ROAD_WIDTH;
     this.state.surfaceType = 'tarmac-pro';
-    this.state.trackName = 'Grand Prix 1';
+    this.state.trackName = 'Test';
 
     this.roadWidthSlider.value = DEFAULT_ROAD_WIDTH;
     // Show the visual width that will appear in the race

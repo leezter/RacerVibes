@@ -686,13 +686,13 @@
       try {
         const params = new URLSearchParams(window.location.search);
         const raw = (params.get('track') || '').trim();
-        if (!raw) return "Le Mans";
+        if (!raw) return "Test";
         if (/^custom:/i.test(raw)) return raw;
         const q = raw.toLowerCase();
-        const map = { "le mans": "Le Mans", "lemans": "Le Mans", "silverstone": "Silverstone", "kart": "Kart Park", "kart park": "Kart Park", "kartpark": "Kart Park", "park": "Kart Park", "windey": "Windey", "windey clone": "Windey Clone", "windeyclone": "Windey Clone", "windey circuit": "Windey Circuit", "windeycircuit": "Windey Circuit", "night loop": "Night Loop", "nightloop": "Night Loop", "night": "Night Loop" };
+        const map = { "test": "Test", "sharp": "Sharp_Corners", "sharp corners": "Sharp_Corners", "sharpcorners": "Sharp_Corners" };
         if (map[q]) return map[q];
-        return q ? (q[0].toUpperCase() + q.slice(1)) : "Le Mans";
-      } catch (e) { return "Le Mans"; }
+        return q ? (q[0].toUpperCase() + q.slice(1)) : "Test";
+      } catch (e) { return "Test"; }
     }
     const CarProfiles = {
       "F1": { width: 18, length: 44, colliderWidth: 18, colliderLength: 44, maxK: 1.18, accelK: 1.10, brakeK: 1.05, turnK: 1.20, color: "#d32f2f" },
@@ -1671,7 +1671,7 @@
       const runningRef = useRef(running);
       const [status, setStatus] = useState("");
       const statusRef = useRef(status);
-      const [trackName, setTrackName] = useState(getInitialTrack()); // default to Le Mans
+      const [trackName, setTrackName] = useState(getInitialTrack()); // default to Test
       const [hudTip, setHudTip] = useState("");
       const [countdownOverlay, setCountdownOverlay] = useState(null);
       const countdownOverlayRef = useRef(countdownOverlay);
@@ -2171,354 +2171,7 @@
         // ====== State that depends on the active track ======
         // ===== Track Library (centerline points in pixels) =====
         const Tracks = {
-          Silverstone: {
-            spawn: { player: { x: 750, y: 145, angle: Math.PI }, ai: { x: 730, y: 145, angle: Math.PI } },
-            startLine: { a: { x: 760, y: 95 }, b: { x: 760, y: 165 } },
-            points: [
-              { x: 780, y: 130 }, { x: 700, y: 120 }, { x: 650, y: 125 }, { x: 610, y: 150 },
-              { x: 560, y: 190 }, { x: 540, y: 230 }, { x: 520, y: 280 }, { x: 500, y: 330 },
-              { x: 460, y: 360 }, { x: 380, y: 380 }, { x: 310, y: 370 }, { x: 265, y: 340 },
-              { x: 250, y: 300 }, { x: 270, y: 260 }, { x: 320, y: 240 }, { x: 380, y: 240 },
-              { x: 440, y: 230 }, { x: 500, y: 220 }, { x: 460, y: 180 }, { x: 420, y: 150 },
-              { x: 360, y: 140 }, { x: 305, y: 150 }, { x: 260, y: 180 }, { x: 240, y: 220 },
-              { x: 250, y: 260 }, { x: 300, y: 300 }, { x: 380, y: 330 }, { x: 480, y: 360 },
-              { x: 580, y: 380 }, { x: 680, y: 380 }, { x: 720, y: 360 }, { x: 740, y: 320 },
-              { x: 730, y: 280 }, { x: 700, y: 250 }, { x: 660, y: 240 }, { x: 620, y: 230 },
-              { x: 600, y: 200 }, { x: 610, y: 160 }, { x: 650, y: 130 }, { x: 700, y: 120 },
-              { x: 780, y: 130 }
-            ],
-            speedZones: [
-              [0, 32, 220], [32, 40, 170], [40, 60, 280], [60, 80, 180], [80, 100, 160]
-            ],
-            labels: [
-              ["Hamilton", 730, 85], ["Village", 520, 230], ["Wellington", 340, 400],
-              ["Luffield", 280, 250], ["Copse", 390, 135], ["Maggots/Becketts", 255, 170],
-              ["Hangar", 610, 400], ["Stowe", 720, 350], ["Club", 640, 220]
-            ],
-            roadWidth: 80
-          },
 
-          // Le Mans – Bugatti layout approximation (based on provided image)
-          "Le Mans": {
-            spawn: { player: { x: 700, y: 520, angle: Math.PI }, ai: { x: 680, y: 520, angle: Math.PI } },
-            startLine: { a: { x: 660, y: 490 }, b: { x: 660, y: 550 } },
-            points: [
-              { x: 720, y: 520 }, { x: 680, y: 520 }, { x: 640, y: 520 }, { x: 600, y: 520 },
-              { x: 560, y: 520 }, { x: 520, y: 515 }, { x: 470, y: 510 }, { x: 420, y: 500 },
-              { x: 380, y: 490 }, { x: 350, y: 480 }, { x: 320, y: 450 }, { x: 300, y: 420 }, { x: 290, y: 390 },
-              { x: 280, y: 350 }, { x: 300, y: 320 }, { x: 340, y: 300 }, { x: 360, y: 330 }, { x: 380, y: 370 }, { x: 370, y: 420 }, { x: 350, y: 460 },
-              { x: 330, y: 500 }, { x: 360, y: 520 }, { x: 400, y: 540 }, { x: 450, y: 530 }, { x: 480, y: 500 }, { x: 500, y: 470 },
-              { x: 560, y: 450 }, { x: 620, y: 430 }, { x: 680, y: 420 }, { x: 740, y: 420 },
-              { x: 720, y: 380 }, { x: 740, y: 340 }, { x: 770, y: 360 }, { x: 790, y: 390 },
-              { x: 830, y: 420 }, { x: 880, y: 450 }, { x: 920, y: 490 }, { x: 900, y: 520 }, { x: 850, y: 520 }, { x: 800, y: 520 }, { x: 760, y: 520 },
-              { x: 720, y: 520 }
-            ],
-            speedZones: [
-              [0, 10, 280], [10, 18, 160], [18, 26, 170], [26, 30, 300], [30, 36, 180], [36, 41, 240], [41, 48, 220]
-            ],
-            labels: [
-              ["Dunlop", 300, 345], ["La Chapelle", 320, 470], ["Musée", 390, 555], ["Garage Vert", 470, 520], ["Chemin aux Boeufs", 730, 350], ["S Bleus", 860, 420], ["Raccordement", 880, 510]
-            ],
-            roadWidth: 78
-          },
-
-          // New large kart-style track cloned from aerial image
-          "Kart Park": {
-            name: "Kart Park",
-            ppm: 11, // pixels per meter (approx), 10 m road ≈ 110 px
-            spawn: { player: { x: 220, y: 620, angle: 0 }, ai: { x: 200, y: 620, angle: 0 } },
-            startLine: { a: { x: 250, y: 590 }, b: { x: 250, y: 650 } },
-            points: [
-              // Bottom straight → right hairpin → flowing S → left sector → back to straight
-              { x: 150, y: 620 }, { x: 240, y: 620 }, { x: 360, y: 620 }, { x: 500, y: 620 }, { x: 640, y: 620 }, { x: 780, y: 620 },
-              { x: 860, y: 610 }, { x: 910, y: 590 }, { x: 940, y: 555 }, { x: 952, y: 510 }, { x: 955, y: 470 },
-              { x: 943, y: 430 }, { x: 915, y: 400 }, { x: 870, y: 380 }, { x: 810, y: 370 }, { x: 740, y: 368 },
-              { x: 675, y: 378 }, { x: 620, y: 402 }, { x: 585, y: 438 }, { x: 570, y: 480 }, { x: 575, y: 520 },
-              { x: 600, y: 555 }, { x: 640, y: 580 }, { x: 700, y: 592 }, { x: 760, y: 588 }, { x: 810, y: 570 },
-              { x: 840, y: 540 }, { x: 835, y: 505 }, { x: 800, y: 475 }, { x: 750, y: 455 }, { x: 690, y: 445 },
-              { x: 620, y: 438 }, { x: 560, y: 432 }, { x: 500, y: 426 }, { x: 440, y: 424 }, { x: 380, y: 428 },
-              { x: 330, y: 442 }, { x: 285, y: 470 }, { x: 250, y: 505 }, { x: 230, y: 545 }, { x: 225, y: 585 },
-              { x: 235, y: 610 }, { x: 260, y: 625 }, { x: 300, y: 632 }, { x: 350, y: 630 }, { x: 410, y: 625 },
-              { x: 470, y: 622 }, { x: 520, y: 620 }, { x: 640, y: 620 }, { x: 780, y: 620 }, { x: 860, y: 610 },
-              { x: 150, y: 620 }
-            ],
-            speedZones: [
-              [0, 8, 300],     // bottom straight
-              [8, 15, 150],    // right hairpin
-              [15, 23, 200],   // flowing S
-              [23, 30, 170],   // inner left
-              [30, 40, 210],   // mid back to straight
-              [40, 48, 260],   // accelerate to straight
-              [48, 60, 300]
-            ],
-            labels: [
-              ["Pits", 210, 570], ["Hairpin R", 940, 480], ["S-curve", 720, 380], ["Inner", 560, 510], ["Back straight", 700, 610]
-            ],
-            roadWidth: 80,
-            kerbs: true,
-            kerbColors: ["#d94848", "#ffffff"],
-            drawScenery: function (ctx) {
-              // Parking at left-bottom
-              ctx.save();
-              ctx.fillStyle = "#2a2f36"; ctx.strokeStyle = "#3b4552"; ctx.lineWidth = 1.5;
-              ctx.fillRect(110, 640, 240, 40); ctx.strokeRect(110, 640, 240, 40);
-              ctx.strokeStyle = "#9aa5b1"; ctx.lineWidth = 1; for (let i = 0; i < 8; i++) { const x = 120 + i * 28; ctx.beginPath(); ctx.moveTo(x, 642); ctx.lineTo(x, 678); ctx.stroke(); }
-              // Paddock/garage top-left
-              ctx.fillStyle = "#2a2f36"; ctx.fillRect(120, 460, 150, 80); ctx.strokeStyle = "#3b4552"; ctx.strokeRect(120, 460, 150, 80);
-              // Trees top border
-              ctx.fillStyle = "#1d4222"; for (let i = 0; i < 20; i++) { const x = 40 + i * 48; ctx.beginPath(); ctx.arc(x, 40, 10 + ((i % 3) * 2), 0, Math.PI * 2); ctx.fill(); }
-              ctx.restore();
-            }
-          },
-
-          // Precise clone of provided aerial track (Windey.png)
-          "Windey": {
-            name: "Windey",
-            ppm: 11, // ~11 px per meter; road ≈ 10m → ~110 px
-            spawn: { player: { x: 260, y: 620, angle: 0 }, ai: { x: 240, y: 620, angle: 0 } },
-            startLine: { a: { x: 250, y: 590 }, b: { x: 250, y: 650 } },
-            // Centerline traced against image proportions (fits 1000x700 canvas)
-            points: [
-              { x: 140, y: 618 }, { x: 220, y: 620 }, { x: 300, y: 622 }, { x: 380, y: 626 }, { x: 460, y: 628 }, { x: 540, y: 628 }, { x: 620, y: 626 }, { x: 700, y: 624 }, { x: 780, y: 622 }, { x: 860, y: 616 },
-              { x: 900, y: 600 }, { x: 928, y: 580 }, { x: 945, y: 555 }, { x: 954, y: 522 }, { x: 956, y: 488 }, { x: 952, y: 452 }, { x: 940, y: 420 }, { x: 918, y: 396 }, { x: 888, y: 382 }, { x: 850, y: 374 },
-              { x: 806, y: 372 }, { x: 760, y: 374 }, { x: 710, y: 384 }, { x: 668, y: 404 }, { x: 634, y: 432 }, { x: 612, y: 468 }, { x: 606, y: 506 }, { x: 614, y: 544 }, { x: 640, y: 573 }, { x: 680, y: 592 },
-              { x: 728, y: 598 }, { x: 778, y: 592 }, { x: 820, y: 575 }, { x: 846, y: 548 }, { x: 850, y: 516 }, { x: 834, y: 486 }, { x: 804, y: 464 }, { x: 764, y: 452 }, { x: 720, y: 446 }, { x: 672, y: 444 },
-              { x: 626, y: 444 }, { x: 578, y: 442 }, { x: 530, y: 438 }, { x: 482, y: 432 }, { x: 438, y: 428 }, { x: 394, y: 430 }, { x: 352, y: 438 }, { x: 314, y: 456 }, { x: 283, y: 482 }, { x: 260, y: 514 },
-              { x: 246, y: 552 }, { x: 244, y: 588 }, { x: 254, y: 612 }, { x: 280, y: 628 }, { x: 318, y: 636 }, { x: 364, y: 640 }, { x: 414, y: 638 }, { x: 468, y: 634 }, { x: 526, y: 630 }, { x: 586, y: 626 },
-              { x: 650, y: 624 }, { x: 720, y: 624 }, { x: 800, y: 622 }, { x: 880, y: 616 }, { x: 920, y: 602 }, { x: 140, y: 618 }
-            ],
-            speedZones: [
-              [0, 10, 280],    // bottom straight
-              [10, 20, 140],   // right hairpin climb
-              [20, 30, 190],   // top sweep
-              [30, 42, 170],   // mid technical
-              [42, 52, 210],   // inner back
-              [52, 66, 260]    // exit to straight
-            ],
-            labels: [["Pits", 210, 570], ["Hairpin", 930, 490], ["S sweep", 700, 420], ["Inner", 540, 520], ["Main straight", 600, 640]],
-            roadWidth: 80, // base width before WIDTH_SCALE adjustment
-            kerbs: true,
-            kerbColors: ["#d94848", "#ffffff"],
-            drawScenery: function (ctx) {
-              ctx.save();
-              // Parking lot (left)
-              ctx.fillStyle = "#2a2f36"; ctx.strokeStyle = "#3b4552"; ctx.lineWidth = 1.5;
-              ctx.fillRect(80, 560, 260, 100); ctx.strokeRect(80, 560, 260, 100);
-              ctx.strokeStyle = "#9aa5b1"; ctx.lineWidth = 1; for (let i = 0; i < 8; i++) { const x = 95 + i * 30; ctx.beginPath(); ctx.moveTo(x, 565); ctx.lineTo(x, 655); ctx.stroke(); }
-              // Parked cars (scaled to GT size: ~18x38 px)
-              function car(x, y, a) { ctx.save(); ctx.translate(x, y); ctx.rotate(a || 0); const w = 20, l = 44; ctx.fillStyle = "#1b1f27"; ctx.fillRect(-w / 2, -l / 2, w, l); ctx.fillStyle = "#eaeef5"; ctx.fillRect(-w * 0.35, -l * 0.35, w * 0.70, l * 0.22); ctx.restore(); }
-              car(120, 585, 0); car(150, 585, 0); car(180, 585, 0); car(210, 585, 0);
-              // Paddock building near left edge
-              ctx.fillStyle = "#303744"; ctx.fillRect(90, 500, 180, 50); ctx.strokeStyle = "#475166"; ctx.strokeRect(90, 500, 180, 50);
-              // Pit lane strip along bottom straight
-              ctx.fillStyle = "#3a3f47"; ctx.fillRect(180, 602, 420, 22);
-              // Trees top border
-              ctx.fillStyle = "#1d4222"; for (let i = 0; i < 22; i++) { const x = 40 + i * 44; ctx.beginPath(); ctx.arc(x, 40, 10 + ((i % 3) * 2), 0, Math.PI * 2); ctx.fill(); }
-              // Tire marks near inner and hairpin (faded)
-              ctx.strokeStyle = "rgba(0,0,0,0.18)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(760, 470); ctx.quadraticCurveTo(700, 500, 660, 560); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(930, 520); ctx.quadraticCurveTo(900, 470, 850, 440); ctx.stroke();
-              ctx.restore();
-            }
-          },
-
-          // Exact clone attempt of Windey.png (closer tracing)
-          "Windey Clone": {
-            name: "Windey Clone",
-            ppm: 11,
-            spawn: { player: { x: 210, y: 640, angle: 0 }, ai: { x: 190, y: 640, angle: 0 } },
-            startLine: { a: { x: 235, y: 612 }, b: { x: 235, y: 668 } },
-            points: [
-              // Bottom main straight (left → right)
-              { x: 140, y: 646 }, { x: 200, y: 646 }, { x: 260, y: 646 }, { x: 320, y: 646 }, { x: 380, y: 646 }, { x: 440, y: 646 }, { x: 500, y: 646 }, { x: 560, y: 646 }, { x: 620, y: 646 }, { x: 680, y: 646 }, { x: 740, y: 644 }, { x: 800, y: 642 }, { x: 860, y: 636 }, { x: 900, y: 624 },
-              // Up to top-right hairpin
-              { x: 930, y: 600 }, { x: 952, y: 568 }, { x: 962, y: 530 }, { x: 964, y: 492 }, { x: 960, y: 456 }, { x: 946, y: 420 }, { x: 920, y: 396 },
-              // Upper sweep (right → left)
-              { x: 884, y: 382 }, { x: 842, y: 372 }, { x: 796, y: 366 }, { x: 748, y: 364 }, { x: 702, y: 366 }, { x: 656, y: 374 }, { x: 616, y: 392 }, { x: 584, y: 418 }, { x: 562, y: 450 },
-              // Drop to inner straight then curve around central island clockwise
-              { x: 556, y: 486 }, { x: 564, y: 520 }, { x: 588, y: 550 }, { x: 620, y: 570 }, { x: 662, y: 582 }, { x: 702, y: 584 }, { x: 736, y: 578 }, { x: 768, y: 564 }, { x: 790, y: 544 }, { x: 800, y: 520 }, { x: 796, y: 494 }, { x: 780, y: 470 }, { x: 754, y: 454 }, { x: 720, y: 446 }, { x: 682, y: 444 }, { x: 642, y: 448 }, { x: 604, y: 458 }, { x: 568, y: 472 },
-              // Exit inner to left side and down toward main straight
-              { x: 532, y: 492 }, { x: 500, y: 516 }, { x: 476, y: 546 }, { x: 464, y: 576 }, { x: 464, y: 606 }, { x: 476, y: 628 }, { x: 504, y: 640 }, { x: 542, y: 646 }, { x: 586, y: 648 }, { x: 632, y: 648 }, { x: 680, y: 648 }, { x: 728, y: 646 }, { x: 776, y: 642 }, { x: 824, y: 638 }, { x: 872, y: 634 }, { x: 900, y: 626 },
-              // Close loop back along main straight
-              { x: 820, y: 642 }, { x: 760, y: 646 }, { x: 700, y: 648 }, { x: 640, y: 648 }, { x: 580, y: 648 }, { x: 520, y: 648 }, { x: 460, y: 648 }, { x: 400, y: 648 }, { x: 340, y: 648 }, { x: 280, y: 648 }, { x: 220, y: 648 }, { x: 160, y: 648 }, { x: 140, y: 646 }
-            ],
-            speedZones: [
-              [0, 14, 300],     // main straight
-              [14, 22, 140],    // hairpin
-              [22, 31, 200],    // upper sweep
-              [31, 46, 180],    // inner loop
-              [46, 60, 220]     // exit to straight
-            ],
-            labels: [["Pits", 210, 600], ["Hairpin", 950, 490], ["S sweep", 700, 370], ["Inner", 600, 530], ["Main straight", 520, 660]],
-            roadWidth: 80,
-            kerbs: true,
-            kerbColors: ["#d94848", "#ffffff"],
-            drawScenery: function (ctx) {
-              ctx.save();
-              // Parking + paddock (top-left)
-              ctx.fillStyle = "#b7bcc4"; ctx.fillRect(60, 510, 300, 170); // light concrete
-              ctx.strokeStyle = "#3b4552"; ctx.lineWidth = 1.5; ctx.strokeRect(60, 510, 300, 170);
-              // Pit building (long dark bar)
-              ctx.fillStyle = "#2f3540"; ctx.fillRect(120, 520, 220, 40); ctx.strokeStyle = "#475166"; ctx.strokeRect(120, 520, 220, 40);
-              // Grid boxes on main straight near left
-              ctx.strokeStyle = "#9aa5b1"; ctx.lineWidth = 1; for (let i = 0; i < 10; i++) { const gx = 190 + i * 32; ctx.beginPath(); ctx.moveTo(gx, 632); ctx.lineTo(gx, 664); ctx.stroke(); }
-              // Trees top border
-              ctx.fillStyle = "#1d4222"; for (let i = 0; i < 22; i++) { const x = 40 + i * 44; ctx.beginPath(); ctx.arc(x, 36, 10 + ((i % 3) * 2), 0, Math.PI * 2); ctx.fill(); }
-              // Parked cars
-              function car(x, y, a) { ctx.save(); ctx.translate(x, y); ctx.rotate(a || 0); const w = 20, l = 44; ctx.fillStyle = "#1b1f27"; ctx.fillRect(-w / 2, -l / 2, w, l); ctx.fillStyle = "#eaeef5"; ctx.fillRect(-w * 0.35, -l * 0.35, w * 0.7, l * 0.22); ctx.restore(); }
-              car(100, 560, 0); car(130, 560, 0); car(160, 560, 0); car(190, 560, 0); car(220, 560, 0);
-              // Mown grass diagonal lines inside infield
-              ctx.strokeStyle = "rgba(255,255,255,0.07)"; ctx.lineWidth = 1; for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.moveTo(520 + i * 24, 460); ctx.lineTo(720 + i * 24, 600); ctx.stroke(); }
-              // Tire marks (hairpin and inside loop)
-              ctx.strokeStyle = "rgba(0,0,0,0.18)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(945, 520); ctx.quadraticCurveTo(900, 460, 850, 430); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(760, 470); ctx.quadraticCurveTo(700, 510, 660, 560); ctx.stroke();
-              ctx.restore();
-            }
-          },
-
-          "Windey Circuit": {
-            name: "Windey Circuit",
-            ppm: 11,
-            spawn: { player: { x: 250, y: 640, angle: 0 }, ai: { x: 230, y: 640, angle: 0 } },
-            startLine: { a: { x: 240, y: 608 }, b: { x: 240, y: 664 } },
-            points: [
-              { x: 210, y: 642 }, { x: 260, y: 650 }, { x: 320, y: 656 }, { x: 380, y: 660 }, { x: 440, y: 662 }, { x: 500, y: 664 }, { x: 560, y: 662 }, { x: 620, y: 656 }, { x: 680, y: 646 }, { x: 740, y: 632 }, { x: 800, y: 612 }, { x: 860, y: 586 }, { x: 902, y: 556 }, { x: 932, y: 522 }, { x: 950, y: 484 }, { x: 954, y: 444 }, { x: 942, y: 404 }, { x: 916, y: 368 }, { x: 878, y: 342 }, { x: 832, y: 328 }, { x: 780, y: 322 }, { x: 724, y: 324 }, { x: 670, y: 332 }, { x: 620, y: 348 }, { x: 578, y: 370 }, { x: 542, y: 398 }, { x: 514, y: 432 }, { x: 498, y: 470 }, { x: 494, y: 510 }, { x: 504, y: 548 }, { x: 528, y: 584 }, { x: 564, y: 612 }, { x: 608, y: 628 }, { x: 656, y: 634 }, { x: 704, y: 632 }, { x: 750, y: 622 }, { x: 792, y: 604 }, { x: 820, y: 580 }, { x: 832, y: 548 }, { x: 826, y: 516 }, { x: 806, y: 488 }, { x: 774, y: 468 }, { x: 732, y: 456 }, { x: 688, y: 452 }, { x: 642, y: 456 }, { x: 598, y: 468 }, { x: 560, y: 486 }, { x: 528, y: 512 }, { x: 502, y: 544 }, { x: 488, y: 580 }, { x: 486, y: 620 }, { x: 498, y: 656 }, { x: 522, y: 686 }, { x: 556, y: 706 }, { x: 600, y: 714 }, { x: 648, y: 712 }, { x: 694, y: 700 }, { x: 736, y: 680 }, { x: 772, y: 652 }, { x: 796, y: 620 }, { x: 804, y: 584 }, { x: 796, y: 552 }, { x: 772, y: 524 }, { x: 736, y: 506 }, { x: 692, y: 498 }, { x: 646, y: 500 }, { x: 602, y: 510 }, { x: 562, y: 530 }, { x: 528, y: 558 }, { x: 502, y: 592 }, { x: 486, y: 630 }, { x: 474, y: 662 }, { x: 452, y: 680 }, { x: 416, y: 686 }, { x: 372, y: 682 }, { x: 324, y: 670 }, { x: 276, y: 654 }, { x: 232, y: 642 }
-            ],
-            speedZones: [
-              [0, 12, 300],
-              [12, 20, 150],
-              [20, 30, 190],
-              [30, 46, 200],
-              [46, 66, 230]
-            ],
-            labels: [["Pits", 220, 602], ["Hairpin", 948, 500], ["North Sweep", 720, 336], ["Inner Loop", 600, 540], ["Main Straight", 540, 676]],
-            roadWidth: 82,
-            kerbs: true,
-            kerbColors: ["#d94848", "#ffffff"],
-            drawScenery: function (ctx) {
-              ctx.save();
-              ctx.fillStyle = "#bfc5cc";
-              ctx.fillRect(60, 508, 300, 174);
-              ctx.strokeStyle = "#8f96a5"; ctx.lineWidth = 1.4; ctx.strokeRect(60, 508, 300, 174);
-
-              ctx.fillStyle = "#2f3540"; ctx.fillRect(118, 520, 232, 38);
-              ctx.strokeStyle = "#475166"; ctx.strokeRect(118, 520, 232, 38);
-              ctx.fillStyle = "#dcd6c8"; ctx.fillRect(120, 562, 74, 18);
-
-              ctx.fillStyle = "#3a3f33"; ctx.fillRect(72, 598, 86, 72);
-              ctx.fillStyle = "#d2c59a"; ctx.fillRect(86, 606, 58, 34);
-
-              ctx.fillStyle = "#3f434a"; ctx.fillRect(200, 628, 420, 20);
-              ctx.strokeStyle = "#9aa5b1"; ctx.lineWidth = 1;
-              for (let i = 0; i < 11; i++) {
-                const gx = 210 + i * 36;
-                ctx.beginPath(); ctx.moveTo(gx, 624); ctx.lineTo(gx, 666); ctx.stroke();
-              }
-
-              ctx.fillStyle = "#1c3f1f";
-              for (let i = 0; i < 24; i++) {
-                const x = 40 + i * 42;
-                ctx.beginPath(); ctx.arc(x, 34 + (i % 2) * 2, 10 + (i % 3), 0, Math.PI * 2); ctx.fill();
-              }
-
-              ctx.fillStyle = "rgba(180,190,120,0.4)";
-              ctx.beginPath(); ctx.moveTo(520, 428); ctx.lineTo(700, 612); ctx.lineTo(540, 624); ctx.lineTo(500, 500); ctx.closePath(); ctx.fill();
-              ctx.strokeStyle = "rgba(255,255,255,0.08)"; ctx.lineWidth = 1;
-              for (let i = 0; i < 5; i++) {
-                ctx.beginPath();
-                ctx.moveTo(540 + i * 26, 420);
-                ctx.lineTo(700 + i * 18, 610);
-                ctx.stroke();
-              }
-
-              function car(x, y, angle) {
-                ctx.save();
-                ctx.translate(x, y); ctx.rotate(angle || 0);
-                const w = 20, l = 44;
-                ctx.fillStyle = "#1a1f27"; ctx.fillRect(-w / 2, -l / 2, w, l);
-                ctx.fillStyle = "#e8edf4"; ctx.fillRect(-w * 0.35, -l * 0.35, w * 0.7, l * 0.22);
-                ctx.restore();
-              }
-              for (let i = 0; i < 7; i++) car(110 + i * 32, 560, 0);
-              car(98, 612, -0.05); car(138, 614, 0.02);
-
-              ctx.strokeStyle = "rgba(0,0,0,0.2)"; ctx.lineWidth = 2;
-              ctx.beginPath(); ctx.moveTo(944, 520); ctx.quadraticCurveTo(900, 460, 838, 430); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(780, 480); ctx.quadraticCurveTo(720, 520, 660, 570); ctx.stroke();
-              ctx.beginPath(); ctx.moveTo(600, 612); ctx.quadraticCurveTo(560, 592, 520, 552); ctx.stroke();
-
-              ctx.restore();
-            }
-          },
-
-          "Night Loop": {
-            name: "Night Loop",
-            ppm: 12.5, // ~12.5 px/m so 116 * 1.375 ≈ 160 px ≈ 8x car width
-            spawn: { player: { x: 260, y: 640, angle: 0 }, ai: { x: 240, y: 640, angle: 0 } },
-            startLine: { a: { x: 250, y: 604 }, b: { x: 250, y: 664 } },
-            points: [
-              { x: 150, y: 640 }, { x: 220, y: 652 }, { x: 300, y: 658 }, { x: 380, y: 660 }, { x: 460, y: 658 }, { x: 540, y: 652 }, { x: 620, y: 640 }, { x: 690, y: 618 }, { x: 740, y: 582 }, { x: 780, y: 536 }, { x: 810, y: 486 }, { x: 830, y: 430 }, { x: 840, y: 370 }, { x: 832, y: 320 }, { x: 800, y: 280 }, { x: 750, y: 258 }, { x: 690, y: 260 }, { x: 640, y: 286 }, { x: 600, y: 326 }, { x: 560, y: 366 }, { x: 510, y: 396 }, { x: 460, y: 402 }, { x: 410, y: 382 }, { x: 360, y: 350 }, { x: 312, y: 320 }, { x: 268, y: 310 }, { x: 230, y: 328 }, { x: 206, y: 364 }, { x: 190, y: 412 }, { x: 182, y: 468 }, { x: 184, y: 530 }, { x: 198, y: 586 }, { x: 224, y: 618 }, { x: 260, y: 632 }, { x: 310, y: 640 }
-            ],
-            speedZones: [
-              [0, 8, 300],
-              [8, 16, 220],
-              [16, 22, 180],
-              [22, 28, 200],
-              [28, 35, 240]
-            ],
-            labels: [["Pit Entry", 240, 608], ["North Rim", 805, 300], ["Esses", 600, 340], ["Carousel", 450, 392], ["Night Straight", 500, 648]],
-            roadWidth: 116,
-            kerbs: true,
-            kerbColors: ["#ff6b6b", "#f4f1de"],
-            drawScenery: function (ctx) {
-              ctx.save();
-              // Background night canvas
-              ctx.fillStyle = "#04070d";
-              ctx.fillRect(0, 0, 1000, 700);
-
-              // Halo glow around circuit using broad stroke
-              ctx.strokeStyle = "rgba(40,60,120,0.25)";
-              ctx.lineWidth = 220;
-              ctx.lineJoin = "round";
-              ctx.beginPath();
-              for (let i = 0; i < centerline.length; i++) {
-                const p = centerline[i];
-                if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
-              }
-              ctx.closePath();
-              ctx.stroke();
-
-              // Pit boxes on main straight
-              ctx.fillStyle = "#2a2e39";
-              ctx.fillRect(200, 622, 420, 26);
-              ctx.strokeStyle = "#9aa5b1"; ctx.lineWidth = 1;
-              for (let i = 0; i < 12; i++) {
-                const x = 210 + i * 34;
-                ctx.beginPath(); ctx.moveTo(x, 620); ctx.lineTo(x, 650); ctx.stroke();
-              }
-
-              // Barriers along outside (simple dashed arcs)
-              ctx.save();
-              ctx.strokeStyle = "rgba(255,255,255,0.18)";
-              ctx.lineWidth = 8; ctx.setLineDash([16, 12]);
-              ctx.beginPath();
-              for (let i = 0; i < centerline.length; i++) {
-                const p = centerline[i];
-                if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
-              }
-              ctx.closePath();
-              ctx.stroke();
-              ctx.restore();
-
-              // Soft lights speckled around track edges
-              ctx.fillStyle = "rgba(255,214,120,0.35)";
-              const lightPoints = [
-                [195, 630], [230, 645], [320, 658], [410, 656], [500, 650], [585, 640], [660, 622], [712, 590], [752, 548], [790, 498], [812, 440], [820, 380], [804, 330], [760, 300], [706, 296], [640, 315], [590, 356], [540, 396], [480, 410], [420, 390], [360, 350], [300, 320], [240, 330], [206, 380], [196, 440], [198, 512], [212, 570], [240, 606]
-              ];
-              for (const [x, y] of lightPoints) { ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill(); }
-
-              ctx.restore();
-            }
-          },
 
           // Custom track: Test
           "Test": {
@@ -4921,14 +4574,14 @@
             setRunning((r) => !r);
           }
           if (down && k === "t") {
-            const next = trackName === "Silverstone" ? "Le Mans" : "Silverstone";
+            const next = trackName === "Test" ? "Sharp_Corners" : "Test";
             setTrackName(next); setTimeout(() => loadTrack(next), 0);
           }
           // Unlock/resume audio on any key press
           if (down) { try { const a = ensureAudio(); if (a && a.ctx.state === 'suspended') a.ctx.resume(); } catch (_) { } }
           if (down && k === 'v') toggleSFX();
-          if (down && k === "1") { setTrackName("Silverstone"); setTimeout(() => loadTrack("Silverstone"), 0); }
-          if (down && k === "2") { setTrackName("Le Mans"); setTimeout(() => loadTrack("Le Mans"), 0); }
+          if (down && k === "1") { setTrackName("Test"); setTimeout(() => loadTrack("Test"), 0); }
+          if (down && k === "2") { setTrackName("Sharp_Corners"); setTimeout(() => loadTrack("Sharp_Corners"), 0); }
           if (down && (k === "+" || k === "=")) {
             GEO_SCALE = clampScale(GEO_SCALE + SCALE_STEP);
             writeScale('geoScale', GEO_SCALE);
