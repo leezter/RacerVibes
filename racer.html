@@ -4353,7 +4353,7 @@
             const completed = Math.max(0, player.lap | 0);
             const currentLap = Math.min(completed + 1, totalLaps);
             const finished = completed >= totalLaps;
-            const lapText = finished ? `Finished ${totalLaps} laps` : `Lap ${currentLap} / ${totalLaps}`;
+
             const formatTime = (ms) => {
               if (ms == null || !Number.isFinite(ms)) return "-:--:--";
               const totalSec = Math.floor(ms / 1000);
@@ -4362,22 +4362,52 @@
               const milli = Math.floor(ms % 1000);
               return `${m}:${s.toString().padStart(2, '0')}:${milli.toString().padStart(3, '0')}`;
             };
+
+            // 1. Lap Counter (Top Left)
+            const lapText = finished ? "Finished" : `Lap ${currentLap} / ${totalLaps}`;
+            ctx.font = "800 32px ui-sans-serif, system-ui";
+            const lapMetric = ctx.measureText(lapText);
+            const lapBoxW = lapMetric.width + 48;
+            const lapBoxH = 56;
+            const lapX = 22;
+            const lapY = 20;
+
+            ctx.fillStyle = "rgba(10,16,24,0.78)";
+            ctx.fillRect(lapX, lapY, lapBoxW, lapBoxH);
+            ctx.fillStyle = "#f8fafc";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(lapText, lapX + lapBoxW / 2, lapY + lapBoxH / 2);
+
+            // 2. Times (Top Center)
             const curMs = player.lastCross ? (performance.now() - player.lastCross) : 0;
             const bestMs = (player.bestLap != null) ? player.bestLap * 1000 : null;
-            const timeText = ` | Lap Time: ${formatTime(curMs)} | Best Lap: ${bestMs != null ? formatTime(bestMs) : "-:--:--"}`;
-            const fullText = lapText + timeText;
-            ctx.font = "600 24px system-ui";
-            ctx.textBaseline = "middle";
-            const padX = 18;
-            const textWidth = ctx.measureText(fullText).width;
-            const boxWidth = textWidth + padX * 2;
-            const boxHeight = 48;
-            const boxX = 22;
-            const boxY = 20;
+
+            const bestStr = `Best: ${bestMs != null ? formatTime(bestMs) : "-:--:--"}`;
+            const timeStr = `Time: ${formatTime(curMs)}`;
+
+            ctx.font = "600 18px ui-sans-serif, system-ui";
+            const w1 = ctx.measureText(bestStr).width;
+            const w2 = ctx.measureText(timeStr).width;
+            const timeBoxW = Math.max(w1, w2) + 60;
+            const timeBoxH = 64;
+            const timeX = (viewW / 2) - (timeBoxW / 2);
+            const timeY = 20;
+
             ctx.fillStyle = "rgba(10,16,24,0.78)";
-            ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+            ctx.fillRect(timeX, timeY, timeBoxW, timeBoxH);
+
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+
+            // Best Lap (Upper)
+            ctx.fillStyle = "#cbd5e1";
+            ctx.fillText(bestStr, timeX + timeBoxW / 2, timeY + 20);
+
+            // Current Lap (Lower)
             ctx.fillStyle = "#f8fafc";
-            ctx.fillText(fullText, boxX + padX, boxY + boxHeight / 2);
+            ctx.fillText(timeStr, timeX + timeBoxW / 2, timeY + 44);
+
             ctx.restore();
           }
           // Minimap (top-right)
