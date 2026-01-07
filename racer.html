@@ -440,6 +440,7 @@
     }
 
     // Compute viewport usable size ignoring mobile URL bar (using visualViewport if available)
+    const LAPS_TO_FINISH = 3;
     function getViewportSize() {
       const vv = window.visualViewport;
       if (vv && vv.width && vv.height) return { w: vv.width, h: vv.height };
@@ -2244,6 +2245,7 @@
           const car = {
             x, y, angle, speed: 0, width, length, colliderWidth, colliderLength, color, kind, stats,
             lap: 0, lastCross: 0, bestLap: null, lapStart: performance.now(),
+            hasPassedStartLine: false,  // Track if first crossing (doesn't count as a lap)
             vx: 0, vy: 0, targetIndex: 0, speedBias: 0,
             steerVis: 0, skidLPrev: null, skidRPrev: null, steeringMode: mode,
             aiController: null
@@ -2253,6 +2255,9 @@
         }
         const steeringModePreference = getSteeringModeSetting();
         const player = makeCar({ x: 0, y: 0, angle: 0, color: "#e53935", kind: getInitialCar(), steeringMode: steeringModePreference });
+        // --- Race finish state ---
+        let raceFinished = false;
+        let finishButtonBounds = null; // Store button positions for click detection
         // --- Speedometer init ---
         let speedoCtrl = null;
         let speedoScriptRequested = false;
@@ -3644,7 +3649,8 @@
             const b = centerline[(idx + 1) % centerline.length];
             const ang = Math.atan2(b.y - a.y, b.x - a.x);
             const nx = -Math.sin(ang), ny = Math.cos(ang);
-            const half = ROAD_WIDTH * 0.5;
+            // Make checkpoints wider than the road to catch corner cutting (1.5x road width)
+            const half = ROAD_WIDTH * 1.5;
             checkpoints.push({ a: { x: a.x + nx * half, y: a.y + ny * half }, b: { x: a.x - nx * half, y: a.y - ny * half } });
           }
 
@@ -3666,7 +3672,9 @@
 
           const fallbackPose = { x: W / 2, y: H / 2, angle: 0 };
           const pSpawn = playerSpawn || fallbackPose;
-          Object.assign(player, { ...player, ...pSpawn, speed: 0, lap: 0, bestLap: null, lapStart: performance.now(), lastCross: 0, vx: 0, vy: 0, targetIndex: 0 });
+          Object.assign(player, { ...player, ...pSpawn, speed: 0, lap: 0, bestLap: null, lapStart: performance.now(), lastCross: 0, hasPassedStartLine: false, vx: 0, vy: 0, targetIndex: 0, nextCp: 0, finished: false });
+          raceFinished = false;  // Reset race finish state
+          finishButtonBounds = null;
           player.angle = headingAtNearest(player.x, player.y);
 
           const totalGridSlots = 1 + DEFAULT_AI_CAR_COUNT;
@@ -4238,6 +4246,36 @@
           const allCars = [player, ...aiCars];
           for (const car of allCars) drawCarDetailed(ctx, car);
           if (window.RacerPhysics) { for (const car of allCars) window.RacerPhysics.drawDebug(ctx, car); }
+
+          // DEBUG: Draw Checkpoints
+          if (true) { // Always on for debugging now
+            ctx.save();
+            ctx.lineWidth = 4;
+            checkpoints.forEach((cp, idx) => {
+              if (!cp) return;
+              const isNext = player.nextCp === idx;
+              const isStart = idx === 0;
+              // Check if within lookahead
+              const diff = (idx - player.nextCp + checkpoints.length) % checkpoints.length;
+              const inLookahead = diff < 3;
+
+              ctx.strokeStyle = isNext ? "#00ff00" : (inLookahead ? "#ffff00" : (isStart ? "#ffffff" : "#ff0000"));
+              ctx.beginPath();
+              ctx.moveTo(cp.a.x, cp.a.y);
+              ctx.lineTo(cp.b.x, cp.b.y);
+              ctx.stroke();
+
+              // Draw Index Text
+              ctx.fillStyle = "#fff";
+              ctx.font = "20px monospace";
+              ctx.fillText(idx.toString(), cp.a.x, cp.a.y);
+            });
+            ctx.restore();
+          }
+
+          // Expose debug state
+          window.__debug = { player, checkpoints, raceFinished, LAPS_TO_FINISH, startLine };
+
           ctx.restore();
         }
 
@@ -4315,10 +4353,12 @@
             const currentLap = Math.min(completed + 1, totalLaps);
             const finished = completed >= totalLaps;
             const lapText = finished ? `Finished ${totalLaps} laps` : `Lap ${currentLap} / ${totalLaps}`;
+            const debugText = ` | CP: ${player.nextCp}/${checkpoints ? checkpoints.length : 0} | Last: ${(performance.now() - (player.lastCross || 0)).toFixed(0)}`;
+            const fullText = lapText + debugText;
             ctx.font = "600 24px system-ui";
             ctx.textBaseline = "middle";
             const padX = 18;
-            const textWidth = ctx.measureText(lapText).width;
+            const textWidth = ctx.measureText(fullText).width;
             const boxWidth = textWidth + padX * 2;
             const boxHeight = 48;
             const boxX = 22;
@@ -4326,7 +4366,7 @@
             ctx.fillStyle = "rgba(10,16,24,0.78)";
             ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
             ctx.fillStyle = "#f8fafc";
-            ctx.fillText(lapText, boxX + padX, boxY + boxHeight / 2);
+            ctx.fillText(fullText, boxX + padX, boxY + boxHeight / 2);
             ctx.restore();
           }
           // Minimap (top-right)
@@ -4381,6 +4421,79 @@
             const baselineOffset = boxHeight - (9 * scale);
             ctx.fillText(hudText, hudX + padX, hudY + baselineOffset);
           }
+
+          // Race Finished overlay
+          if (raceFinished) {
+            // Semi-transparent background
+            ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+            ctx.fillRect(0, 0, viewW, viewH);
+
+            // Checkered flag (drawn as checkered squares)
+            const flagW = 200, flagH = 130;
+            const flagX = viewW / 2 - flagW / 2;
+            const flagY = viewH / 2 - flagH / 2 - 60;
+            const cellSize = 26;
+            const cols = Math.ceil(flagW / cellSize);
+            const rows = Math.ceil(flagH / cellSize);
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(flagX, flagY, flagW, flagH);
+            ctx.clip();
+
+            for (let r = 0; r < rows; r++) {
+              for (let c = 0; c < cols; c++) {
+                ctx.fillStyle = (r + c) % 2 === 0 ? "#ffffff" : "#000000";
+                ctx.fillRect(flagX + c * cellSize, flagY + r * cellSize, cellSize, cellSize);
+              }
+            }
+            ctx.restore();
+
+            // Border around flag
+            ctx.strokeStyle = "#ffd700";
+            ctx.lineWidth = 4;
+            ctx.strokeRect(flagX, flagY, flagW, flagH);
+
+            // "Race Finished" text above flag
+            ctx.font = "bold 48px system-ui";
+            ctx.fillStyle = "#ffffff";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "bottom";
+            ctx.shadowColor = "rgba(0, 0, 0, 0.8)";
+            ctx.shadowBlur = 10;
+            ctx.fillText("Race Finished", viewW / 2, flagY - 20);
+            ctx.shadowBlur = 0;
+
+            // Buttons below flag
+            const btnW = 180, btnH = 50, btnGap = 20;
+            const btnY = flagY + flagH + 40;
+            const restartBtnX = viewW / 2 - btnW - btnGap / 2;
+            const menuBtnX = viewW / 2 + btnGap / 2;
+
+            // Store button positions for click detection
+            finishButtonBounds = {
+              restart: { x: restartBtnX, y: btnY, w: btnW, h: btnH },
+              menu: { x: menuBtnX, y: btnY, w: btnW, h: btnH }
+            };
+
+            // Draw Restart button
+            ctx.fillStyle = "#10b981";
+            roundRect(ctx, restartBtnX, btnY, btnW, btnH, 10);
+            ctx.fill();
+            ctx.font = "bold 20px system-ui";
+            ctx.fillStyle = "#ffffff";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText("Restart Race", restartBtnX + btnW / 2, btnY + btnH / 2);
+
+            // Draw Main Menu button
+            ctx.fillStyle = "#3b82f6";
+            roundRect(ctx, menuBtnX, btnY, btnW, btnH, 10);
+            ctx.fill();
+            ctx.fillStyle = "#ffffff";
+            ctx.fillText("Main Menu", menuBtnX + btnW / 2, btnY + btnH / 2);
+          }
+
           ctx.restore();
         }
 
@@ -4426,18 +4539,61 @@
             }
           } else { car.skidLPrev = null; car.skidRPrev = null; }
 
-          // Lap counting against start line
-          const now = performance.now();
-          const hasStartLine = startLine && startLine.a && startLine.b;
-          if (hasStartLine && (now - car.lastCross > 800)) {
-            if (segIntersect({ x: prevX, y: prevY }, { x: car.x, y: car.y }, startLine.a, startLine.b)) {
-              car.lap += 1; car.lastCross = now;
-              const lapTime = (now - car.lapStart) / 1000;
-              car.bestLap = car.bestLap ? Math.min(car.bestLap, lapTime) : lapTime; car.lapStart = now;
-            }
-          }
+
         }
         loadTrackRef.current = loadTrack;
+
+        function checkLaps(car) {
+          if (!checkpoints || !checkpoints.length) return;
+          if (typeof car.nextCp !== 'number') car.nextCp = 0;
+
+          const pX = car.prevX ?? car.x;
+          const pY = car.prevY ?? car.y;
+
+          const intersect = (p1, p2, p3, p4) => {
+            const det = (p2.x - p1.x) * (p4.y - p3.y) - (p4.x - p3.x) * (p2.y - p1.y);
+            if (det === 0) return false;
+            const lambda = ((p4.y - p3.y) * (p4.x - p1.x) + (p3.x - p4.x) * (p4.y - p1.y)) / det;
+            const gamma = ((p1.y - p2.y) * (p4.x - p1.x) + (p2.x - p1.x) * (p4.y - p1.y)) / det;
+
+
+
+            return (0 <= lambda && lambda <= 1) && (0 <= gamma && gamma <= 1);
+          };
+
+          const lookahead = 3;
+          for (let i = 0; i < lookahead; i++) {
+            const idx = (car.nextCp + i) % checkpoints.length;
+            const cp = checkpoints[idx];
+            if (cp && intersect({ x: pX, y: pY }, { x: car.x, y: car.y }, cp.a, cp.b)) {
+              const now = performance.now();
+              // Debounce
+              if (now - (car.lastCross || 0) > 500) {
+                car.nextCp = (idx + 1) % checkpoints.length;
+                car.lastCross = now;
+
+                if (idx === 0) {
+                  if (!car.hasPassedStartLine) {
+                    car.hasPassedStartLine = true;
+                    car.lapStart = now;
+                  } else {
+                    car.lap = (car.lap || 0) + 1;
+                    const lapTime = (now - car.lapStart) / 1000;
+                    car.bestLap = car.bestLap ? Math.min(car.bestLap, lapTime) : lapTime;
+                    car.lapStart = now;
+                    if (car === player && car.lap >= LAPS_TO_FINISH) {
+                      raceFinished = true;
+                      car.finished = true;
+                    }
+                  }
+                }
+              }
+              break;
+            }
+          }
+          car.prevX = car.x;
+          car.prevY = car.y;
+        }
 
         function updateAI(dt) {
           const controllersReady = racingLine.length && window.RacerAI;
@@ -4624,6 +4780,38 @@
         // Pause when tab/app is hidden
         document.addEventListener('visibilitychange', () => { if (document.hidden) setRunning(false); });
 
+        // Click handler for race finish overlay buttons
+        function handleFinishClick(e) {
+          if (!raceFinished || !finishButtonBounds) return;
+
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+
+          const rect = canvas.getBoundingClientRect();
+          const scaleX = canvas.width / rect.width;
+          const scaleY = canvas.height / rect.height;
+          const x = (e.clientX - rect.left) * scaleX;
+          const y = (e.clientY - rect.top) * scaleY;
+
+          const { restart, menu } = finishButtonBounds;
+
+          if (x >= restart.x && x <= restart.x + restart.w &&
+            y >= restart.y && y <= restart.y + restart.h) {
+            // Restart race
+            raceFinished = false;
+            finishButtonBounds = null;
+            if (loadTrackRef.current) loadTrackRef.current(trackName);
+          }
+
+          if (x >= menu.x && x <= menu.x + menu.w &&
+            y >= menu.y && y <= menu.y + menu.h) {
+            // Go to main menu
+            window.location.href = 'racer_start_menu.html';
+          }
+        }
+        const canvasEl = canvasRef.current;
+        if (canvasEl) canvasEl.addEventListener('click', handleFinishClick);
+
         function frame(t) {
           const dt = Math.min(0.05, (t - last) / 1000); last = t;
           const physicsAPI = window.RacerPhysics;
@@ -4640,6 +4828,10 @@
           }
           if (physicsAPI && typeof physicsAPI.planckStep === 'function') {
             try { physicsAPI.planckStep(); } catch (err) { console.warn('[Planck] step failed', err); }
+          }
+          if (isRunning) {
+            checkLaps(player);
+            for (const ac of aiCars) checkLaps(ac);
           }
           tryInitSpeedometer();
           // --- Speedometer update ---
@@ -4661,10 +4853,8 @@
             if (!planckActive) {
               handleCollisions();
             }
-            if (!statusRef.current && (player.lap >= LAPS_TO_FINISH)) {
-              const finishMsg = `${LAPS_TO_FINISH} laps done! Press R to restart`;
-              statusRef.current = finishMsg;
-              setStatus(finishMsg);
+            if (!raceFinished && player.lap >= LAPS_TO_FINISH) {
+              raceFinished = true;
               runningRef.current = false;
               setRunning(false);
             }
@@ -4767,6 +4957,7 @@
         return () => {
           window.removeEventListener("keydown", kd);
           window.removeEventListener("keyup", ku);
+          if (canvasEl) canvasEl.removeEventListener('click', handleFinishClick);
           if (speedoCtrl && typeof speedoCtrl.destroy === 'function') speedoCtrl.destroy();
           loadTrackRef.current = () => { };
         };
