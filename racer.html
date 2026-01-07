@@ -4354,8 +4354,18 @@
             const currentLap = Math.min(completed + 1, totalLaps);
             const finished = completed >= totalLaps;
             const lapText = finished ? `Finished ${totalLaps} laps` : `Lap ${currentLap} / ${totalLaps}`;
-            const debugText = ` | CP: ${player.nextCp}/${checkpoints ? checkpoints.length : 0} | Last: ${player.lastCross ? (performance.now() - player.lastCross).toFixed(0) : "0"}`;
-            const fullText = lapText + debugText;
+            const formatTime = (ms) => {
+              if (ms == null || !Number.isFinite(ms)) return "-:--:--";
+              const totalSec = Math.floor(ms / 1000);
+              const m = Math.floor(totalSec / 60);
+              const s = totalSec % 60;
+              const milli = Math.floor(ms % 1000);
+              return `${m}:${s.toString().padStart(2, '0')}:${milli.toString().padStart(3, '0')}`;
+            };
+            const curMs = player.lastCross ? (performance.now() - player.lastCross) : 0;
+            const bestMs = (player.bestLap != null) ? player.bestLap * 1000 : null;
+            const timeText = ` | Lap Time: ${formatTime(curMs)} | Best Lap: ${bestMs != null ? formatTime(bestMs) : "-:--:--"}`;
+            const fullText = lapText + timeText;
             ctx.font = "600 24px system-ui";
             ctx.textBaseline = "middle";
             const padX = 18;
