@@ -1635,6 +1635,9 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     const ux_bx = vx / vmag; // projection of velocity direction on body X
     const F_drag = dragK * vmag * vmag * ux_bx;
     const F_roll = rollK * vmag * ux_bx;
+    // Additional grass drag - speed-dependent deceleration to prevent corner cutting
+    const grassDragK = onRoad ? 0 : 0.0015;
+    const F_grassDrag = grassDragK * vmag * vmag * ux_bx;
 
     // Compute command-only acceleration estimate for load transfer
     const Fx_cmd = Fx_drive - Fx_brake;
@@ -1733,7 +1736,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     let Fx_trac = Fr_max * tractionRatio;
     car.physics.lastSlipReq = s_req;
     car.physics.prevDriveSlip = Math.max(0, Math.abs(s_req) - sPeak);
-    let Fx_long = Fx_trac - F_drag - F_roll;
+    let Fx_long = Fx_trac - F_drag - F_roll - F_grassDrag;
     const ax = Fx_long / mass;
     car.physics.lastAx = ax;
     car.physics._dbgFyR_avail = muLatR * Fzr;
@@ -1755,10 +1758,11 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
         const rearWorld = FxFyToVec(Fx_trac, FyR);
         const dragWorld = FxFyToVec(-F_drag, 0);
         const rollWorld = FxFyToVec(-F_roll, 0);
+        const grassDragWorld = FxFyToVec(-F_grassDrag, 0);
         const scaleForce = (vec) => pl.Vec2(vec.x / ppm, vec.y / ppm);
         planckBody.applyForce(scaleForce(frontWorld), planckBody.getWorldPoint(frontLocal));
         planckBody.applyForce(scaleForce(rearWorld), planckBody.getWorldPoint(rearLocal));
-        const resist = pl.Vec2((dragWorld.x + rollWorld.x) / ppm, (dragWorld.y + rollWorld.y) / ppm);
+        const resist = pl.Vec2((dragWorld.x + rollWorld.x + grassDragWorld.x) / ppm, (dragWorld.y + rollWorld.y + grassDragWorld.y) / ppm);
         planckBody.applyForce(resist, planckBody.getWorldCenter());
         if (yawDamp) {
           const torquePx = -yawDamp * car.physics.r * Izz;
