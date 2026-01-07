@@ -2,7 +2,7 @@ import { createWorld, stepWorld, meters, pixels, PPM_DEFAULT } from './physics/p
 import { buildTrackBodies } from './trackCollision.js';
 import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG, suggestGearRatios } from './gearbox.js';
 
-(function(){
+(function () {
   "use strict";
   /*
    Summary of physics changes (2025-10):
@@ -32,7 +32,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     pixelsPerMeter: PPM_DEFAULT,
     linearDamp: 0.00,
     angularDamp: 6.50,
-  restitution: 1.0,
+    restitution: 1.0,
     velIters: 20,
     posIters: 8,
     planckDoSleep: true
@@ -41,36 +41,36 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
   const VEHICLE_DEFAULTS = {
     F1: {
       ...PLANCK_DEFAULTS,
-  mass: 2.20,
+      mass: 2.20,
       wheelbase: 42,
       cgToFront: 20,
       cgToRear: 22,
-  enginePowerMult: 1.65,
-  accelDurationMult: 5.0,
-  maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
-  gearCount: 6, // number of forward gears
-  brakeForce: 600,
+      enginePowerMult: 1.65,
+      accelDurationMult: 5.0,
+      maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
+      gearCount: 6, // number of forward gears
+      brakeForce: 600,
       maxSteer: 0.55,
       steerSpeed: 6.0,
-  muLatRoad: 1.40,
-  muLongRoad: 1.80,
+      muLatRoad: 1.40,
+      muLongRoad: 1.80,
       muLatGrass: 0.55,
       muLongGrass: 0.45,
-  dragK: 0.0010,
-  rollK: 0.10,
-  downforceK: 0.00025,
-  longSlipPeak: 0.18,
-  longSlipFalloff: 0.80,
-  frontCircle: 0.50,
-  brakeFrontShare: 0.60,
-  loadSenseK: 0.08,
-  muLongLoadSenseK: 0.04,
+      dragK: 0.0010,
+      rollK: 0.10,
+      downforceK: 0.00025,
+      longSlipPeak: 0.18,
+      longSlipFalloff: 0.80,
+      frontCircle: 0.50,
+      brakeFrontShare: 0.60,
+      loadSenseK: 0.08,
+      muLongLoadSenseK: 0.04,
       rearCircle: 0.50,
-  vKineBlend: 1.8,
+      vKineBlend: 1.8,
       cgHeight: 2,
-        yawDampK: 0.00,
-    reverseEntrySpeed: 40, // px/s threshold below which brake engages reverse
-    reverseTorqueScale: 0.50, // fraction of engineForce when reversing
+      yawDampK: 0.00,
+      reverseEntrySpeed: 40, // px/s threshold below which brake engages reverse
+      reverseTorqueScale: 0.50, // fraction of engineForce when reversing
       touchSteer: {
         maxSteerLowSpeed: 0.75,
         maxSteerHighSpeed: 0.10,
@@ -84,36 +84,36 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     GT: {
       ...PLANCK_DEFAULTS,
       restitution: 0.40,
-  mass: 2.20,
+      mass: 2.20,
       wheelbase: 36,
       cgToFront: 17,
       cgToRear: 19,
-  enginePowerMult: 1.65,
-  accelDurationMult: 3.5,
-  maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
-  gearCount: 6, // number of forward gears
-  brakeForce: 600,
+      enginePowerMult: 1.65,
+      accelDurationMult: 3.5,
+      maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
+      gearCount: 6, // number of forward gears
+      brakeForce: 600,
       maxSteer: 0.50,
       steerSpeed: 5.0,
-  muLatRoad: 1.40,
-  muLongRoad: 1.80,
+      muLatRoad: 1.40,
+      muLongRoad: 1.80,
       muLatGrass: 0.50,
       muLongGrass: 0.40,
-  dragK: 0.0010,
-  rollK: 0.10,
-  downforceK: 0.00025,
-  longSlipPeak: 0.18,
-  longSlipFalloff: 0.80,
-  frontCircle: 0.50,
-  brakeFrontShare: 0.60,
-  loadSenseK: 0.08,
-  muLongLoadSenseK: 0.04,
+      dragK: 0.0010,
+      rollK: 0.10,
+      downforceK: 0.00025,
+      longSlipPeak: 0.18,
+      longSlipFalloff: 0.80,
+      frontCircle: 0.50,
+      brakeFrontShare: 0.60,
+      loadSenseK: 0.08,
+      muLongLoadSenseK: 0.04,
       rearCircle: 0.50,
       vKineBlend: 1.8,
       cgHeight: 3,
-        yawDampK: 0.30,
-    reverseEntrySpeed: 40,
-    reverseTorqueScale: 0.50,
+      yawDampK: 0.30,
+      reverseEntrySpeed: 40,
+      reverseTorqueScale: 0.50,
       touchSteer: {
         maxSteerLowSpeed: 0.75,
         maxSteerHighSpeed: 0.10,
@@ -126,36 +126,36 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     },
     Rally: {
       ...PLANCK_DEFAULTS,
-  mass: 2.20,
+      mass: 2.20,
       wheelbase: 34,
       cgToFront: 16,
       cgToRear: 18,
-  enginePowerMult: 1.65,
-  accelDurationMult: 5.0,
-  maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
-  gearCount: 6, // number of forward gears
-  brakeForce: 600,
+      enginePowerMult: 1.65,
+      accelDurationMult: 5.0,
+      maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
+      gearCount: 6, // number of forward gears
+      brakeForce: 600,
       maxSteer: 0.58,
       steerSpeed: 6.5,
-  muLatRoad: 1.40,
-  muLongRoad: 1.80,
+      muLatRoad: 1.40,
+      muLongRoad: 1.80,
       muLatGrass: 0.46,
       muLongGrass: 0.38,
-  dragK: 0.0010,
-  rollK: 0.10,
-  downforceK: 0.00025,
-  longSlipPeak: 0.18,
-  longSlipFalloff: 0.80,
-  frontCircle: 0.50,
-  brakeFrontShare: 0.60,
-  loadSenseK: 0.08,
-  muLongLoadSenseK: 0.04,
+      dragK: 0.0010,
+      rollK: 0.10,
+      downforceK: 0.00025,
+      longSlipPeak: 0.18,
+      longSlipFalloff: 0.80,
+      frontCircle: 0.50,
+      brakeFrontShare: 0.60,
+      loadSenseK: 0.08,
+      muLongLoadSenseK: 0.04,
       rearCircle: 0.50,
-  vKineBlend: 1.8,
+      vKineBlend: 1.8,
       cgHeight: 2,
-        yawDampK: 0.00,
-    reverseEntrySpeed: 40,
-    reverseTorqueScale: 0.50,
+      yawDampK: 0.00,
+      reverseEntrySpeed: 40,
+      reverseTorqueScale: 0.50,
       touchSteer: {
         maxSteerLowSpeed: 0.75,
         maxSteerHighSpeed: 0.10,
@@ -168,36 +168,36 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     },
     Truck: {
       ...PLANCK_DEFAULTS,
-  mass: 2.20,
+      mass: 2.20,
       wheelbase: 57,
       cgToFront: 27,
       cgToRear: 30,
-  enginePowerMult: 1.65,
-  accelDurationMult: 3.5,
-  maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
-  gearCount: 6, // number of forward gears
-  brakeForce: 600,
+      enginePowerMult: 1.65,
+      accelDurationMult: 3.5,
+      maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
+      gearCount: 6, // number of forward gears
+      brakeForce: 600,
       maxSteer: 0.40,
       steerSpeed: 3.5,
-  muLatRoad: 1.40,
-  muLongRoad: 1.80,
+      muLatRoad: 1.40,
+      muLongRoad: 1.80,
       muLatGrass: 0.42,
       muLongGrass: 0.34,
-  dragK: 0.0010,
-  rollK: 0.10,
-  downforceK: 0.00025,
-  longSlipPeak: 0.18,
-  longSlipFalloff: 0.80,
-  frontCircle: 0.50,
-  brakeFrontShare: 0.60,
-  loadSenseK: 0.08,
-  muLongLoadSenseK: 0.04,
+      dragK: 0.0010,
+      rollK: 0.10,
+      downforceK: 0.00025,
+      longSlipPeak: 0.18,
+      longSlipFalloff: 0.80,
+      frontCircle: 0.50,
+      brakeFrontShare: 0.60,
+      loadSenseK: 0.08,
+      muLongLoadSenseK: 0.04,
       rearCircle: 0.50,
-  vKineBlend: 1.8,
+      vKineBlend: 1.8,
       cgHeight: 2,
-        yawDampK: 0.00,
-    reverseEntrySpeed: 40,
-    reverseTorqueScale: 0.50,
+      yawDampK: 0.00,
+      reverseEntrySpeed: 40,
+      reverseTorqueScale: 0.50,
       touchSteer: {
         maxSteerLowSpeed: 0.75,
         maxSteerHighSpeed: 0.10,
@@ -211,36 +211,36 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     Bubble: {
       ...PLANCK_DEFAULTS,
       restitution: 0.60,
-  mass: 2.20,
+      mass: 2.20,
       wheelbase: 28,
       cgToFront: 14,
       cgToRear: 14,
-  enginePowerMult: 1.65,
-  accelDurationMult: 5.0,
-  maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
-  gearCount: 6, // number of forward gears
-  brakeForce: 600,
+      enginePowerMult: 1.65,
+      accelDurationMult: 5.0,
+      maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
+      gearCount: 6, // number of forward gears
+      brakeForce: 600,
       maxSteer: 0.52,
       steerSpeed: 5.5,
-  muLatRoad: 1.40,
-  muLongRoad: 1.80,
+      muLatRoad: 1.40,
+      muLongRoad: 1.80,
       muLatGrass: 0.48,
       muLongGrass: 0.40,
-  dragK: 0.0010,
-  rollK: 0.10,
-  downforceK: 0.00025,
-  longSlipPeak: 0.18,
-  longSlipFalloff: 0.80,
-  frontCircle: 0.50,
-  brakeFrontShare: 0.60,
-  loadSenseK: 0.08,
-  muLongLoadSenseK: 0.04,
+      dragK: 0.0010,
+      rollK: 0.10,
+      downforceK: 0.00025,
+      longSlipPeak: 0.18,
+      longSlipFalloff: 0.80,
+      frontCircle: 0.50,
+      brakeFrontShare: 0.60,
+      loadSenseK: 0.08,
+      muLongLoadSenseK: 0.04,
       rearCircle: 0.50,
-  vKineBlend: 1.8,
+      vKineBlend: 1.8,
       cgHeight: 2,
-        yawDampK: 0.00,
-    reverseEntrySpeed: 40,
-    reverseTorqueScale: 0.50,
+      yawDampK: 0.00,
+      reverseEntrySpeed: 40,
+      reverseTorqueScale: 0.50,
       touchSteer: {
         maxSteerLowSpeed: 0.75,
         maxSteerHighSpeed: 0.10,
@@ -262,12 +262,12 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     ? window.RacerUtils.sign
     : fallbackSign;
 
-  function inferIzz(mass, length, width){
+  function inferIzz(mass, length, width) {
     // Rectangular body moment around vertical (top-down)
-    return mass * (length*length + width*width) / 12;
+    return mass * (length * length + width * width) / 12;
   }
 
-  function recordColliderHull(car, widthPx, lengthPx){
+  function recordColliderHull(car, widthPx, lengthPx) {
     if (!car) return;
     const resolvedWidth = Number.isFinite(widthPx)
       ? widthPx
@@ -284,7 +284,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
 
   let sharedPlanckRefresh = null;
 
-  function injectVehicleTweaker(bridge = {}, getCars){
+  function injectVehicleTweaker(bridge = {}, getCars) {
     const existing = document.getElementById('rv-vehicle-tweaker');
     if (existing) {
       // Check version - v1.3+ has the gear count slider
@@ -396,11 +396,11 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       widthVal: document.getElementById('rv-veh-width-v'),
       length: document.getElementById('rv-veh-length'),
       lengthVal: document.getElementById('rv-veh-length-v'),
-        colWidth: document.getElementById('rv-veh-colw'),
-        colWidthVal: document.getElementById('rv-veh-colw-v'),
-        colLength: document.getElementById('rv-veh-coll'),
-        colLengthVal: document.getElementById('rv-veh-coll-v'),
-        colShow: document.getElementById('rv-veh-colshow'),
+      colWidth: document.getElementById('rv-veh-colw'),
+      colWidthVal: document.getElementById('rv-veh-colw-v'),
+      colLength: document.getElementById('rv-veh-coll'),
+      colLengthVal: document.getElementById('rv-veh-coll-v'),
+      colShow: document.getElementById('rv-veh-colshow'),
       wheel: document.getElementById('rv-veh-wheel'),
       wheelVal: document.getElementById('rv-veh-wheel-v'),
       cgf: document.getElementById('rv-veh-cgf'),
@@ -417,18 +417,18 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       reset: document.getElementById('rv-veh-reset')
     };
 
-    function targetKinds(){
+    function targetKinds() {
       if (!els.kind) return [];
       const sel = els.kind.value;
       return sel === 'Global' ? kinds.slice() : [sel];
     }
 
-    function anchorKind(){
+    function anchorKind() {
       if (!els.kind) return kinds[0];
       return els.kind.value === 'Global' ? kinds[0] : els.kind.value;
     }
 
-    function refreshFields(){
+    function refreshFields() {
       const anchor = anchorKind();
       const art = artState[anchor];
       const collider = colliderState[anchor];
@@ -487,7 +487,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       }
     }
 
-    function refreshActiveCarPhysics(kindsToRefresh){
+    function refreshActiveCarPhysics(kindsToRefresh) {
       if (typeof getCars !== 'function') return;
       const listKinds = Array.isArray(kindsToRefresh) ? kindsToRefresh : [kindsToRefresh];
       const cset = getCars() || {};
@@ -502,12 +502,12 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       for (const car of cars) {
         const base = VEHICLE_DEFAULTS[car.kind];
         if (!base) continue;
-        
+
         // Ensure physics is initialized
         if (!car.physics || !car.physics.params) {
           initCar(car, car.kind);
         }
-        
+
         if (car.physics && car.physics.params) {
           car.physics.params.wheelbase = base.wheelbase;
           car.physics.params.cgToFront = base.cgToFront;
@@ -516,23 +516,23 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
           car.physics.params.maxSpeed = base.maxSpeed != null ? base.maxSpeed : 10000;
           car.physics.a = base.cgToFront;
           car.physics.b = base.cgToRear;
-          
+
           // Ensure gearbox exists
           if (!car.gearbox) {
             car.gearbox = new Gearbox(gearboxDefaults);
           }
-          
+
           // Update gearbox with new gear count and recalculated ratios
           if (car.gearbox && car.gearbox.c) {
             const basePowerMult = base.enginePowerMult != null ? base.enginePowerMult : 1;
             const accelDurMult = base.accelDurationMult != null ? base.accelDurationMult : 1.0;
             const accelDurMultSq = accelDurMult * accelDurMult;
             car.gearbox.c.powerMult = basePowerMult / accelDurMultSq;
-            
+
             // Recalculate gear ratios ONLY if gear count has changed
             const gearCount = base.gearCount != null ? base.gearCount : 6;
             const currentGearCount = car.gearbox.c.ratios ? car.gearbox.c.ratios.length : 0;
-            
+
             // Only recalculate if the gear count differs from current configuration
             if (gearCount >= 3 && gearCount <= 10 && gearCount !== currentGearCount) {
               // Manually calculate gear ratios to maintain consistent performance
@@ -547,27 +547,27 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
               // - Low speed acceleration remains consistent (same 1st gear)
               // - Top speed remains consistent (same top gear)
               // - More gears = smoother shifts, fewer gears = larger RPM drops
-              
+
               const targetTopGearRatio = 1.03;    // Smallest ratio (highest speed)
               const target1stGearRatio = 3.5;      // Largest ratio (best acceleration)
-              
+
               // Calculate spacing between gears
               // 1stGear = topGear * spacing^(gearCount-1)
               // spacing = (1stGear / topGear)^(1/(gearCount-1))
               const spacing = Math.pow(target1stGearRatio / targetTopGearRatio, 1 / (gearCount - 1));
-              
+
               // Build ratios array manually: [topGear, gear2, ..., 1stGear]
               const newRatios = [];
               for (let i = 0; i < gearCount; i++) {
                 const ratio = targetTopGearRatio * Math.pow(spacing, i);
                 newRatios.push(ratio);
               }
-              
+
               // Update ratios in config and state
               car.gearbox.c.ratios = newRatios;
               car.gearbox.state.gearRatios = newRatios;
               car.gearbox.state.maxGear = newRatios.length;
-              
+
               // Let the gearbox recalculate gear and RPM based on current speed and new ratios
               // This will select the appropriate gear for the current speed
               car.gearbox.refreshFromConfig();
@@ -586,15 +586,15 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
         removePlanckBody(car);
       }
       registerPlanckCars(cars);
-      
+
       // If clone physics is enabled, sync changes to all AI cars through the clone system
       if (els.clonePhysics && els.clonePhysics.checked) {
         applyClonePhysicsToAI();
       }
     }
-      sharedPlanckRefresh = refreshActiveCarPhysics;
+    sharedPlanckRefresh = refreshActiveCarPhysics;
 
-    function applyArtChange(prop, value, opts = {}){
+    function applyArtChange(prop, value, opts = {}) {
       const targets = targetKinds();
       let changed = false;
       for (const kind of targets) {
@@ -620,7 +620,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       }
     }
 
-    function applyColliderChange(prop, value){
+    function applyColliderChange(prop, value) {
       const targets = targetKinds();
       let changed = false;
       for (const kind of targets) {
@@ -638,7 +638,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       }
     }
 
-    function applyColliderVisibilityChange(next){
+    function applyColliderVisibilityChange(next) {
       const enabled = !!next;
       colliderVisible = enabled;
       if (els.colShow) els.colShow.checked = enabled;
@@ -647,7 +647,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       }
     }
 
-    function applyPhysChange(prop, value, opts = {}){
+    function applyPhysChange(prop, value, opts = {}) {
       const targets = Array.isArray(opts.targets)
         ? opts.targets
         : opts.singleKind
@@ -680,7 +680,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       refreshFields();
     }
 
-    function resetSelection(){
+    function resetSelection() {
       const targets = targetKinds();
       for (const kind of targets) {
         if (artDefaults[kind]) {
@@ -709,88 +709,88 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     }
 
     if (els.toggle && els.panel) {
-      els.toggle.addEventListener('click', ()=>{
+      els.toggle.addEventListener('click', () => {
         els.panel.classList.toggle('open');
         els.toggle.textContent = els.panel.classList.contains('open') ? 'Vehicle Tweaker ▴' : 'Vehicle Tweaker ▾';
       });
     }
     if (els.kind) {
-      els.kind.addEventListener('change', ()=> refreshFields());
+      els.kind.addEventListener('change', () => refreshFields());
     }
     if (els.width) {
-      els.width.addEventListener('input', ()=>{
+      els.width.addEventListener('input', () => {
         const v = clamp(+els.width.value || 0, 10, 80);
         applyArtChange('width', v);
       });
     }
     if (els.length) {
-      els.length.addEventListener('input', ()=>{
+      els.length.addEventListener('input', () => {
         const v = clamp(+els.length.value || 0, 30, 140);
         applyArtChange('length', v, { lockAspect: !!(els.lock && els.lock.checked) });
       });
     }
     if (els.colWidth) {
-      els.colWidth.addEventListener('input', ()=>{
+      els.colWidth.addEventListener('input', () => {
         const v = clamp(+els.colWidth.value || 0, 10, 80);
         applyColliderChange('width', v);
       });
     }
     if (els.colLength) {
-      els.colLength.addEventListener('input', ()=>{
+      els.colLength.addEventListener('input', () => {
         const v = clamp(+els.colLength.value || 0, 30, 140);
         applyColliderChange('length', v);
       });
     }
     if (els.colShow) {
-      els.colShow.addEventListener('change', ()=>{
+      els.colShow.addEventListener('change', () => {
         applyColliderVisibilityChange(!!els.colShow.checked);
       });
     }
     if (els.wheel) {
-      els.wheel.addEventListener('input', ()=>{
+      els.wheel.addEventListener('input', () => {
         const v = clamp(+els.wheel.value || 0, 20, 140);
         applyPhysChange('wheelbase', v);
       });
     }
     if (els.cgf) {
-      els.cgf.addEventListener('input', ()=>{
+      els.cgf.addEventListener('input', () => {
         const v = clamp(+els.cgf.value || 0, 5, 120);
         applyPhysChange('cgToFront', v);
       });
     }
     if (els.cgr) {
-      els.cgr.addEventListener('input', ()=>{
+      els.cgr.addEventListener('input', () => {
         const v = clamp(+els.cgr.value || 0, 5, 120);
         applyPhysChange('cgToRear', v);
       });
     }
     if (els.accel) {
-      els.accel.addEventListener('input', ()=>{
+      els.accel.addEventListener('input', () => {
         const v = clamp(+els.accel.value || 1.0, 1.0, 10.0);
         applyPhysChange('accelDurationMult', v, { singleKind: anchorKind() });
       });
     }
     if (els.maxSpeed) {
-      els.maxSpeed.addEventListener('input', ()=>{
+      els.maxSpeed.addEventListener('input', () => {
         const v = clamp(+els.maxSpeed.value || 100, 100, 2000);
         applyPhysChange('maxSpeed', v);
       });
     }
     if (els.gears) {
-      els.gears.addEventListener('input', ()=>{
+      els.gears.addEventListener('input', () => {
         const v = Math.round(clamp(+els.gears.value || 6, 3, 10));
         applyPhysChange('gearCount', v);
       });
     }
     if (els.reset) els.reset.addEventListener('click', resetSelection);
-    if (els.sync) els.sync.addEventListener('click', ()=>{
+    if (els.sync) els.sync.addEventListener('click', () => {
       refreshActiveCarPhysics(targetKinds());
     });
 
     refreshFields();
   }
 
-  function forcePlanckRefresh(kinds){
+  function forcePlanckRefresh(kinds) {
     if (!sharedPlanckRefresh) return;
     const list = Array.isArray(kinds) ? kinds : [kinds];
     sharedPlanckRefresh(list);
@@ -804,25 +804,25 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
   };
   let REVERSE_CFG = { ...REVERSE_CFG_DEFAULTS };
 
-  function loadReverseCfg(){
+  function loadReverseCfg() {
     try {
       if (typeof localStorage === 'undefined') return;
       const j = JSON.parse(localStorage.getItem('RacingVibesReverseCfg.json') || '{}');
       REVERSE_CFG = { ...REVERSE_CFG, ...j };
-    } catch(_){}
+    } catch (_) { }
   }
-  function saveReverseCfg(){
+  function saveReverseCfg() {
     try {
       if (typeof localStorage === 'undefined') return;
       localStorage.setItem('RacingVibesReverseCfg.json', JSON.stringify(REVERSE_CFG));
-    } catch(_){}
+    } catch (_) { }
   }
   loadReverseCfg();
   // -------------------------------------------------------------
 
   const DEVTOOLS_SAVE_KEY = 'RacingVibesSavedDevTools.json';
   let DEVTOOLS_SAVED = {};
-  function loadDevtoolsSaved(){
+  function loadDevtoolsSaved() {
     try {
       if (typeof localStorage === 'undefined') return;
       const raw = localStorage.getItem(DEVTOOLS_SAVE_KEY);
@@ -832,22 +832,22 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
           DEVTOOLS_SAVED = parsed;
         }
       }
-    } catch(_){}
+    } catch (_) { }
   }
-  function saveDevtoolsSaved(){
+  function saveDevtoolsSaved() {
     try {
       if (typeof localStorage === 'undefined') return;
       localStorage.setItem(DEVTOOLS_SAVE_KEY, JSON.stringify(DEVTOOLS_SAVED));
-    } catch(_){}
+    } catch (_) { }
   }
   loadDevtoolsSaved();
 
-  async function ensureStoragePersistence(){
+  async function ensureStoragePersistence() {
     try {
       if (typeof navigator === 'undefined' || !navigator.storage || !navigator.storage.persist) return;
       const already = await navigator.storage.persisted();
       if (!already) await navigator.storage.persist();
-    } catch(_){/* ignore */}
+    } catch (_) {/* ignore */ }
   }
   ensureStoragePersistence();
 
@@ -857,31 +857,31 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
   const PRESET_FALLBACK_KEY = 'RacingVibesDevPresetsFallback';
   let presetDBPromise = null;
 
-  function loadPresetFallbackMap(){
+  function loadPresetFallbackMap() {
     try {
       const raw = localStorage.getItem(PRESET_FALLBACK_KEY);
       if (!raw) return {};
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') return parsed;
-    } catch(_){/* ignore */}
+    } catch (_) {/* ignore */ }
     return {};
   }
 
-  function savePresetFallbackMap(map){
+  function savePresetFallbackMap(map) {
     try {
       localStorage.setItem(PRESET_FALLBACK_KEY, JSON.stringify(map));
-    } catch(_){/* ignore */}
+    } catch (_) {/* ignore */ }
   }
 
-  function hasIndexedDB(){
+  function hasIndexedDB() {
     try {
       return typeof indexedDB !== 'undefined';
-    } catch(_){
+    } catch (_) {
       return false;
     }
   }
 
-  function openPresetDB(){
+  function openPresetDB() {
     if (!hasIndexedDB()) return Promise.resolve(null);
     if (presetDBPromise) return presetDBPromise;
     presetDBPromise = new Promise((resolve, reject) => {
@@ -906,7 +906,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     return presetDBPromise;
   }
 
-  async function listPresetEntries(){
+  async function listPresetEntries() {
     try {
       const db = await openPresetDB();
       if (!db) {
@@ -934,7 +934,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     }
   }
 
-  async function savePresetRecord(entry){
+  async function savePresetRecord(entry) {
     try {
       const db = await openPresetDB();
       entry.updatedAt = Date.now();
@@ -961,7 +961,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     }
   }
 
-  async function deletePresetRecord(name){
+  async function deletePresetRecord(name) {
     try {
       const db = await openPresetDB();
       if (!db) {
@@ -990,7 +990,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
   }
 
   let DEVTOOLS_PRESETS = {};
-  async function loadDevtoolsPresets(){
+  async function loadDevtoolsPresets() {
     const entries = await listPresetEntries();
     DEVTOOLS_PRESETS = {};
     for (const entry of entries) {
@@ -998,20 +998,20 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     }
     return DEVTOOLS_PRESETS;
   }
-  loadDevtoolsPresets().catch(()=>{});
+  loadDevtoolsPresets().catch(() => { });
 
-  function worldToBody(vx, vy, angle){
-    const c=Math.cos(angle), s=Math.sin(angle);
-    return { x:  c*vx + s*vy, y: -s*vx + c*vy };
+  function worldToBody(vx, vy, angle) {
+    const c = Math.cos(angle), s = Math.sin(angle);
+    return { x: c * vx + s * vy, y: -s * vx + c * vy };
   }
-  function bodyToWorld(vx, vy, angle){
-    const c=Math.cos(angle), s=Math.sin(angle);
-    return { x: c*vx - s*vy, y: s*vx + c*vy };
+  function bodyToWorld(vx, vy, angle) {
+    const c = Math.cos(angle), s = Math.sin(angle);
+    return { x: c * vx - s * vy, y: s * vx + c * vy };
   }
 
-  function axleNormalLoads(mass, a, b){
+  function axleNormalLoads(mass, a, b) {
     // Static distribution across front (at distance a from CG) and rear (b)
-    const L = a+b; const Fzf = mass * g * (b/L); const Fzr = mass * g * (a/L); // per axle (aggregate of 2 tires)
+    const L = a + b; const Fzf = mass * g * (b / L); const Fzr = mass * g * (a / L); // per axle (aggregate of 2 tires)
     return { Fzf, Fzr };
   }
 
@@ -1031,20 +1031,20 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     needsWorldBuild: false
   };
 
-  function destroyPlanckWorld(){
+  function destroyPlanckWorld() {
     if (!planckState.world) return;
     for (const { body } of planckState.carEntries.values()) {
-      try { planckState.world.destroyBody(body); } catch(_){}
+      try { planckState.world.destroyBody(body); } catch (_) { }
     }
     planckState.carEntries.clear();
     if (planckState.trackBody) {
-      try { planckState.world.destroyBody(planckState.trackBody); } catch(_){}
+      try { planckState.world.destroyBody(planckState.trackBody); } catch (_) { }
     }
     planckState.trackBody = null;
     planckState.world = null;
   }
 
-  function configureTrackCollision(trackSegments, opts = {}){
+  function configureTrackCollision(trackSegments, opts = {}) {
     planckState.trackSegments = Array.isArray(trackSegments) ? trackSegments.slice() : [];
     if (typeof opts.ppm === 'number' && Number.isFinite(opts.ppm) && opts.ppm > 0) {
       planckState.ppm = opts.ppm;
@@ -1061,19 +1061,13 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     planckState.needsWorldBuild = true;
   }
 
-  function rebuildPlanckWorld({ cars } = {}){
+  function rebuildPlanckWorld({ cars } = {}) {
     const carList = Array.isArray(cars) ? cars.slice() : Array.from(planckState.carEntries.keys());
     destroyPlanckWorld();
     const world = createWorld({ gravityY: planckState.gravityY, doSleep: planckState.doSleep });
     planckState.world = world;
-    if (planckState.trackSegments.length) {
-      try {
-        planckState.trackBody = buildTrackBodies(world, planckState.trackSegments, planckState.ppm, { restitution: planckState.restitution });
-      } catch(err) {
-        console.warn('[RacerPhysics] Failed to build track bodies', err);
-        planckState.trackBody = null;
-      }
-    }
+    // Wall behavior permanently disabled - cars can freely drive over curbs onto grass
+    planckState.trackBody = null;
     planckState.needsWorldBuild = false;
     planckState.steppedThisFrame = false;
     planckState.pendingDt = 0;
@@ -1082,11 +1076,11 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     }
   }
 
-  function removePlanckBody(car){
+  function removePlanckBody(car) {
     if (!car) return;
     const entry = planckState.carEntries.get(car);
     if (entry && planckState.world) {
-      try { planckState.world.destroyBody(entry.body); } catch(_){}
+      try { planckState.world.destroyBody(entry.body); } catch (_) { }
     }
     planckState.carEntries.delete(car);
     if (car.physics) {
@@ -1094,7 +1088,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     }
   }
 
-  function updateBodyPose(body, car, ppm){
+  function updateBodyPose(body, car, ppm) {
     if (!body || !car) return;
     const pl = window.planck;
     if (!pl) return;
@@ -1104,7 +1098,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     body.setAngularVelocity(0);
   }
 
-  function createCarBody(world, car, P, ppmOverride){
+  function createCarBody(world, car, P, ppmOverride) {
     const pl = window.planck;
     if (!world || !car || !pl) return null;
     const ppm = ppmOverride || planckState.ppm || PPM_DEFAULT;
@@ -1116,7 +1110,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     const lengthMeters = meters(colliderLengthPx, ppm);
     const widthMeters = meters(colliderWidthPx, ppm);
     const halfLength = Math.max(0.01, lengthMeters * 0.5);
-    const halfWidth  = Math.max(0.01, widthMeters  * 0.5);
+    const halfWidth = Math.max(0.01, widthMeters * 0.5);
     const desiredMass = (P && typeof P.mass === 'number') ? Math.max(0.01, P.mass) : 1.0;
     const area = Math.max(1e-6, lengthMeters * widthMeters);
     const density = desiredMass / area;
@@ -1139,7 +1133,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     return body;
   }
 
-  function ensurePlanckBody(car, P){
+  function ensurePlanckBody(car, P) {
     if (!car || !P || !P.usePlanck) {
       removePlanckBody(car);
       return null;
@@ -1169,7 +1163,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     return entry.body;
   }
 
-  function registerPlanckCars(cars){
+  function registerPlanckCars(cars) {
     if (!cars) return;
     const arr = Array.isArray(cars) ? cars : [cars];
     for (const car of arr) {
@@ -1183,14 +1177,14 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     }
   }
 
-  function planckBeginStep(dt, cars){
+  function planckBeginStep(dt, cars) {
     if (dt <= 0) { planckState.pendingDt = 0; planckState.steppedThisFrame = false; return; }
     if (cars) registerPlanckCars(cars);
     planckState.pendingDt = dt;
     planckState.steppedThisFrame = false;
   }
 
-  function syncCarFromBody(car, entry){
+  function syncCarFromBody(car, entry) {
     if (!car || !entry) return;
     const body = entry.body;
     if (!body) return;
@@ -1213,13 +1207,13 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     car.speed = Math.hypot(car.vx || 0, car.vy || 0);
   }
 
-  function planckStep(){
+  function planckStep() {
     if (!planckState.world || planckState.steppedThisFrame) return;
     const dt = planckState.pendingDt;
     if (!dt || dt <= 0) return;
     try {
       stepWorld(planckState.world, dt, planckState.velIters, planckState.posIters);
-    } catch(err) {
+    } catch (err) {
       console.warn('[RacerPhysics] Planck world step failed', err);
     }
     planckState.steppedThisFrame = true;
@@ -1229,7 +1223,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     }
   }
 
-  function usesPlanckWorld(){
+  function usesPlanckWorld() {
     if (!planckState.world) return false;
     if (!planckState.carEntries.size) return false;
     for (const car of planckState.carEntries.keys()) {
@@ -1241,7 +1235,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     return false;
   }
 
-  function initCar(car, kind){
+  function initCar(car, kind) {
     const k = kind || car.kind || 'GT';
     const base = VEHICLE_DEFAULTS[k] || VEHICLE_DEFAULTS.GT;
     const touchSteerDefaults = base.touchSteer ? { ...base.touchSteer } : {
@@ -1253,7 +1247,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       returnGain: 0,
       filterTau: 0.12
     };
-  const params = { ...PLANCK_DEFAULTS, ...base, touchSteer: touchSteerDefaults };
+    const params = { ...PLANCK_DEFAULTS, ...base, touchSteer: touchSteerDefaults };
     // If the art length/width differs, adapt wheelbase slightly to fit
     const Lpx = car.colliderLength || car.length || 36;
     const Wpx = car.colliderWidth || car.width || 18;
@@ -1289,7 +1283,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     return car.physics;
   }
 
-  function tireLateralForce(muLat, Fz, Calpha, slipAngle){
+  function tireLateralForce(muLat, Fz, Calpha, slipAngle) {
     // Simple linear up to limit, then saturate (friction circle simplified)
     const Fy_lin = -Calpha * slipAngle; // negative: resists slip
     const Fy_max = muLat * Fz;
@@ -1297,15 +1291,15 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
   }
 
   // Longitudinal slip ratio response: unity gain around zero, saturates at |1|
-  function slipRatioResponse(s, _sPeak = 0.15, _falloff = 0.65){
+  function slipRatioResponse(s, _sPeak = 0.15, _falloff = 0.65) {
     if (!Number.isFinite(s)) return 0;
     if (s > 1) return 1;
     if (s < -1) return -1;
     return s;
   }
-  function lerp(a,b,t){ return a + (b - a) * t; }
+  function lerp(a, b, t) { return a + (b - a) * t; }
 
-  function updateCar(car, input, surface, dt){
+  function updateCar(car, input, surface, dt) {
     // input: {throttle:0..1, brake:0..1, steer:-1..1}
     // surface: {onRoad:boolean}
     if (!car.physics) initCar(car, car.kind);
@@ -1345,14 +1339,14 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     const inertiaLength = car.colliderLength || car.length || 36;
     const inertiaWidth = car.colliderWidth || car.width || 18;
     const Izz = car.physics.Izz || inferIzz(P.mass, inertiaLength, inertiaWidth);
-    const a = car.physics.a, b = car.physics.b, L=a+b;
+    const a = car.physics.a, b = car.physics.b, L = a + b;
     const onRoad = surface && surface.onRoad !== false;
     const muLat = onRoad ? P.muLatRoad : P.muLatGrass;
     const muLong = onRoad ? P.muLongRoad : P.muLongGrass;
-  const accelDurMult = (P.accelDurationMult != null) ? P.accelDurationMult : 1.0;
-  const accelDurMultSq = accelDurMult * accelDurMult;
-  const dragK = (P.dragK / accelDurMultSq) * (onRoad?1:0.7); // slightly less aero on grass due to lower speeds
-  const rollK = P.rollK  * (onRoad?1.0:1.6); // higher rolling on grass
+    const accelDurMult = (P.accelDurationMult != null) ? P.accelDurationMult : 1.0;
+    const accelDurMultSq = accelDurMult * accelDurMult;
+    const dragK = (P.dragK / accelDurMultSq) * (onRoad ? 1 : 0.7); // slightly less aero on grass due to lower speeds
+    const rollK = P.rollK * (onRoad ? 1.0 : 1.6); // higher rolling on grass
 
     // Body-frame velocity
     const vb = worldToBody(car.physics.vx, car.physics.vy, car.angle);
@@ -1418,216 +1412,216 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     if (steeringMode === 'touch') {
       car.physics.steer = clamp(car.physics.steer, -steerMax, steerMax);
     }
-  let steerEff = car.physics.steer;
-  if (reversing) steerEff *= REVERSE_CFG.steerScale;
-  const delta = steerEff;
-  const deltaEff = delta; // body-frame wheel angle; reverse handled in slipF
-  car.physics.visualSteerTarget = deltaEff;
-  car.physics.visualSteerLimit = Math.max(1e-3, (steerMax || 0) * (reversing ? REVERSE_CFG.steerScale : 1));
-  const visualTarget = deltaEff;
-  const prevVisual = (car.steerVis == null || !Number.isFinite(car.steerVis)) ? visualTarget : car.steerVis;
-  const blend = Math.min(1, dt * 12);
-  const blendedVisual = prevVisual + (visualTarget - prevVisual) * blend;
-  const visLimit = car.physics.visualSteerLimit;
-  car.steerVis = clamp(blendedVisual, -visLimit, visLimit);
+    let steerEff = car.physics.steer;
+    if (reversing) steerEff *= REVERSE_CFG.steerScale;
+    const delta = steerEff;
+    const deltaEff = delta; // body-frame wheel angle; reverse handled in slipF
+    car.physics.visualSteerTarget = deltaEff;
+    car.physics.visualSteerLimit = Math.max(1e-3, (steerMax || 0) * (reversing ? REVERSE_CFG.steerScale : 1));
+    const visualTarget = deltaEff;
+    const prevVisual = (car.steerVis == null || !Number.isFinite(car.steerVis)) ? visualTarget : car.steerVis;
+    const blend = Math.min(1, dt * 12);
+    const blendedVisual = prevVisual + (visualTarget - prevVisual) * blend;
+    const visLimit = car.physics.visualSteerLimit;
+    car.steerVis = clamp(blendedVisual, -visLimit, visLimit);
 
-  // Normal loads per axle (static baseline)
-  const loadsStatic = axleNormalLoads(mass, a, b);
-  let Fzf = loadsStatic.Fzf, Fzr = loadsStatic.Fzr;
+    // Normal loads per axle (static baseline)
+    const loadsStatic = axleNormalLoads(mass, a, b);
+    let Fzf = loadsStatic.Fzf, Fzr = loadsStatic.Fzr;
 
-  // Speed-based downforce split by static distribution
-  {
-    const vDF = Math.hypot(car.physics.vx, car.physics.vy);
-    const DF  = (P.downforceK != null ? P.downforceK : 0) * vDF * vDF;
-    const frontShare = b / (a + b);
-    const rearShare  = a / (a + b);
-    Fzf += DF * frontShare;
-    Fzr += DF * rearShare;
-  }
+    // Speed-based downforce split by static distribution
+    {
+      const vDF = Math.hypot(car.physics.vx, car.physics.vy);
+      const DF = (P.downforceK != null ? P.downforceK : 0) * vDF * vDF;
+      const frontShare = b / (a + b);
+      const rearShare = a / (a + b);
+      Fzf += DF * frontShare;
+      Fzr += DF * rearShare;
+    }
 
-  // Cornering stiffness proportional to available grip (linear range roughly at ~8 deg)
-  const slip0 = 0.14; // ~8 degrees
-  // Define reference loads for load sensitivity
-  const Fzf_ref = loadsStatic.Fzf, Fzr_ref = loadsStatic.Fzr;
-  const loadSenseK = (P.loadSenseK != null ? P.loadSenseK : 0.08);
-  let muLatF = muLat * (1 - loadSenseK * (Fzf / Math.max(1e-6, Fzf_ref) - 1));
-  let muLatR = muLat * (1 - loadSenseK * (Fzr / Math.max(1e-6, Fzr_ref) - 1));
-  let Cf = muLatF * Fzf / slip0;
-  let Cr = muLatR * Fzr / slip0;
+    // Cornering stiffness proportional to available grip (linear range roughly at ~8 deg)
+    const slip0 = 0.14; // ~8 degrees
+    // Define reference loads for load sensitivity
+    const Fzf_ref = loadsStatic.Fzf, Fzr_ref = loadsStatic.Fzr;
+    const loadSenseK = (P.loadSenseK != null ? P.loadSenseK : 0.08);
+    let muLatF = muLat * (1 - loadSenseK * (Fzf / Math.max(1e-6, Fzf_ref) - 1));
+    let muLatR = muLat * (1 - loadSenseK * (Fzr / Math.max(1e-6, Fzr_ref) - 1));
+    let Cf = muLatF * Fzf / slip0;
+    let Cr = muLatR * Fzr / slip0;
 
     // Avoid singularity at very low speed
-  const eps = 0.001;
-  const vyFront = vy + a * car.physics.r;
-  const vyRear  = vy - b * car.physics.r;
-  // IMPORTANT: Reverse is handled by fwd*delta in slipF. Do NOT also flip vy or multiply delta again elsewhere.
-  let slipF = Math.atan2(vyFront, vxAbs) - fwd * delta;
-  let slipR = Math.atan2(vyRear, vxAbs);
-  const slipLimit = 0.7; // cap extreme slip angles to avoid runaway forces at very low speed
-  slipF = clamp(slipF, -slipLimit, slipLimit);
-  slipR = clamp(slipR, -slipLimit, slipLimit);
-  const devReverseCheckEnabled = ((typeof window !== 'undefined' && window.__DEV__) || (typeof DEBUG !== 'undefined' && DEBUG));
-  if (devReverseCheckEnabled) {
-    if (Math.abs(vxBody) < 1 && Math.abs(delta) > 0.02) {
-      const expected = Math.sign(-fwd * delta) || 0;
-      const got = Math.sign(slipF) || 0;
-      if (expected && got && expected !== got) {
-        console.warn('[ReverseCheck] Slip sign mismatch near vx≈0', { vxBody, fwd, delta, slipF });
-      }
-    }
-    
-  }
-
-  // Lateral forces will be computed after load transfer adjustments
-  let FyF = 0;
-  let FyR_unc = 0;
-
-  // Longitudinal forces (drive on rear axle), limited by traction; analog inputs 0..1
-  let throttle = clamp(+((input && input.throttle) || 0), 0, 1);
-  let brake = clamp(+((input && input.brake) || 0), 0, 1);
-  if (car.physics.prevDriveSlip == null) car.physics.prevDriveSlip = 0;
-  const slipInfo = { driveSlip: car.physics.prevDriveSlip || 0 };
-
-  const throttlePressedGlobal = throttle > 0.05;
-  const brakePressedGlobal = brake > 0.05;
-  const vForward = vx / Math.max(1e-3, ppm); // m/s forward velocity (body X projected)
-  if (gb) {
-    if (car.physics.exitReverseHold == null) car.physics.exitReverseHold = false;
-    let exitReverseHold = !!car.physics.exitReverseHold;
-    const forwardSpeedBody = vx;
-    const reverseEntrySpeed = (P.reverseEntrySpeed != null ? P.reverseEntrySpeed : 40);
-    const reverseDeadband = Math.max(6, VX_HYST * 0.5);
-    const reverseShiftReady = Math.max(4, reverseDeadband * 0.6);
-    const reverseBrakeRamp = Math.max(30, reverseEntrySpeed);
-    if (throttlePressedGlobal && (forwardSpeedBody < -reverseShiftReady || exitReverseHold)) {
-      exitReverseHold = true;
-    } else if (!throttlePressedGlobal) {
-      exitReverseHold = false;
-    }
-
-    if (exitReverseHold) {
-      const backwardSpeed = Math.max(0, -forwardSpeedBody);
-      const brakeRamp = backwardSpeed > 0
-        ? Math.min(1, backwardSpeed / reverseBrakeRamp)
-        : 0.35;
-      const requestedBrake = Math.max(throttle, brakeRamp);
-      brake = Math.max(brake, requestedBrake);
-      throttle = 0;
-
-      if (backwardSpeed <= reverseShiftReady) {
-        if (gb.gearIndex < 1) {
-          const before = gb.gearIndex;
-          gb.shiftUp();
-          if (gb.gearIndex === before && gb.state) {
-            gb.state.manualShiftUp = true;
-          }
-        } else {
-          exitReverseHold = false;
+    const eps = 0.001;
+    const vyFront = vy + a * car.physics.r;
+    const vyRear = vy - b * car.physics.r;
+    // IMPORTANT: Reverse is handled by fwd*delta in slipF. Do NOT also flip vy or multiply delta again elsewhere.
+    let slipF = Math.atan2(vyFront, vxAbs) - fwd * delta;
+    let slipR = Math.atan2(vyRear, vxAbs);
+    const slipLimit = 0.7; // cap extreme slip angles to avoid runaway forces at very low speed
+    slipF = clamp(slipF, -slipLimit, slipLimit);
+    slipR = clamp(slipR, -slipLimit, slipLimit);
+    const devReverseCheckEnabled = ((typeof window !== 'undefined' && window.__DEV__) || (typeof DEBUG !== 'undefined' && DEBUG));
+    if (devReverseCheckEnabled) {
+      if (Math.abs(vxBody) < 1 && Math.abs(delta) > 0.02) {
+        const expected = Math.sign(-fwd * delta) || 0;
+        const got = Math.sign(slipF) || 0;
+        if (expected && got && expected !== got) {
+          console.warn('[ReverseCheck] Slip sign mismatch near vx≈0', { vxBody, fwd, delta, slipF });
         }
       }
+
     }
-    car.physics.exitReverseHold = exitReverseHold;
 
-    if (gb.c.auto) {
-      const throttlePressed = throttlePressedGlobal;
-      const brakePressed = brakePressedGlobal;
-      const speedMag = Math.hypot(car.physics.vx, car.physics.vy);
-      const forwardSpeed = vx;
+    // Lateral forces will be computed after load transfer adjustments
+    let FyF = 0;
+    let FyR_unc = 0;
 
-      if (brakePressed && !throttlePressed) {
-        if (gb.gearIndex > -1 && Math.abs(forwardSpeed) < 35 && speedMag < 45) {
-          if (gb.gearIndex > 0) gb.shiftDown();
-          if (gb.gearIndex > -1) gb.shiftDown();
-        }
-      } else if (throttlePressed) {
-        if (gb.gearIndex <= 0 && Math.abs(forwardSpeed) < 35 && speedMag < 45) {
+    // Longitudinal forces (drive on rear axle), limited by traction; analog inputs 0..1
+    let throttle = clamp(+((input && input.throttle) || 0), 0, 1);
+    let brake = clamp(+((input && input.brake) || 0), 0, 1);
+    if (car.physics.prevDriveSlip == null) car.physics.prevDriveSlip = 0;
+    const slipInfo = { driveSlip: car.physics.prevDriveSlip || 0 };
+
+    const throttlePressedGlobal = throttle > 0.05;
+    const brakePressedGlobal = brake > 0.05;
+    const vForward = vx / Math.max(1e-3, ppm); // m/s forward velocity (body X projected)
+    if (gb) {
+      if (car.physics.exitReverseHold == null) car.physics.exitReverseHold = false;
+      let exitReverseHold = !!car.physics.exitReverseHold;
+      const forwardSpeedBody = vx;
+      const reverseEntrySpeed = (P.reverseEntrySpeed != null ? P.reverseEntrySpeed : 40);
+      const reverseDeadband = Math.max(6, VX_HYST * 0.5);
+      const reverseShiftReady = Math.max(4, reverseDeadband * 0.6);
+      const reverseBrakeRamp = Math.max(30, reverseEntrySpeed);
+      if (throttlePressedGlobal && (forwardSpeedBody < -reverseShiftReady || exitReverseHold)) {
+        exitReverseHold = true;
+      } else if (!throttlePressedGlobal) {
+        exitReverseHold = false;
+      }
+
+      if (exitReverseHold) {
+        const backwardSpeed = Math.max(0, -forwardSpeedBody);
+        const brakeRamp = backwardSpeed > 0
+          ? Math.min(1, backwardSpeed / reverseBrakeRamp)
+          : 0.35;
+        const requestedBrake = Math.max(throttle, brakeRamp);
+        brake = Math.max(brake, requestedBrake);
+        throttle = 0;
+
+        if (backwardSpeed <= reverseShiftReady) {
           if (gb.gearIndex < 1) {
             const before = gb.gearIndex;
             gb.shiftUp();
             if (gb.gearIndex === before && gb.state) {
               gb.state.manualShiftUp = true;
             }
+          } else {
+            exitReverseHold = false;
           }
         }
       }
+      car.physics.exitReverseHold = exitReverseHold;
 
-      if (gb.gearIndex === 1 && throttlePressed && forwardSpeed < -12) {
-        brake = Math.max(brake, Math.min(1, Math.abs(forwardSpeed) / 60));
-        throttle = 0;
-      }
-      if (gb.gearIndex === -1 && throttlePressed && forwardSpeed > 12) {
-        brake = Math.max(brake, Math.min(1, forwardSpeed / 60));
-        throttle = 0;
-      }
+      if (gb.c.auto) {
+        const throttlePressed = throttlePressedGlobal;
+        const brakePressed = brakePressedGlobal;
+        const speedMag = Math.hypot(car.physics.vx, car.physics.vy);
+        const forwardSpeed = vx;
 
-      if (gb.gearIndex === -1) {
         if (brakePressed && !throttlePressed) {
-          throttle = brake;
-          brake = 0;
+          if (gb.gearIndex > -1 && Math.abs(forwardSpeed) < 35 && speedMag < 45) {
+            if (gb.gearIndex > 0) gb.shiftDown();
+            if (gb.gearIndex > -1) gb.shiftDown();
+          }
+        } else if (throttlePressed) {
+          if (gb.gearIndex <= 0 && Math.abs(forwardSpeed) < 35 && speedMag < 45) {
+            if (gb.gearIndex < 1) {
+              const before = gb.gearIndex;
+              gb.shiftUp();
+              if (gb.gearIndex === before && gb.state) {
+                gb.state.manualShiftUp = true;
+              }
+            }
+          }
         }
-      } else if (gb.gearIndex >= 1) {
-        if (throttlePressed && forwardSpeed < -12) {
-          const ramp = Math.min(1, Math.abs(forwardSpeed) / 60);
-          brake = Math.max(brake, ramp);
+
+        if (gb.gearIndex === 1 && throttlePressed && forwardSpeed < -12) {
+          brake = Math.max(brake, Math.min(1, Math.abs(forwardSpeed) / 60));
           throttle = 0;
         }
+        if (gb.gearIndex === -1 && throttlePressed && forwardSpeed > 12) {
+          brake = Math.max(brake, Math.min(1, forwardSpeed / 60));
+          throttle = 0;
+        }
+
+        if (gb.gearIndex === -1) {
+          if (brakePressed && !throttlePressed) {
+            throttle = brake;
+            brake = 0;
+          }
+        } else if (gb.gearIndex >= 1) {
+          if (throttlePressed && forwardSpeed < -12) {
+            const ramp = Math.min(1, Math.abs(forwardSpeed) / 60);
+            brake = Math.max(brake, ramp);
+            throttle = 0;
+          }
+        }
+
       }
 
+      // --- universal anti-reverse assist (runs for auto & manual) ---
+      const throttlePressed = throttle > 0.05;
+      const forwardSpeed = vxBody;
+      if (gb.gearIndex >= 1 && throttlePressed && fwd < 0 && forwardSpeed < -12) {
+        const ramp = Math.min(1, Math.abs(forwardSpeed) / 60);
+        brake = Math.max(brake, ramp);
+        throttle = 0;
+      }
+      if (gb.gearIndex === -1 && throttlePressed && fwd > 0 && forwardSpeed > 12) {
+        const ramp = Math.min(1, forwardSpeed / 60);
+        brake = Math.max(brake, ramp);
+        throttle = 0;
+      }
+      // --------------------------------------------------------------
     }
-
-    // --- universal anti-reverse assist (runs for auto & manual) ---
-    const throttlePressed = throttle > 0.05;
-    const forwardSpeed = vxBody;
-    if (gb.gearIndex >= 1 && throttlePressed && fwd < 0 && forwardSpeed < -12) {
-      const ramp = Math.min(1, Math.abs(forwardSpeed) / 60);
-      brake = Math.max(brake, ramp);
-      throttle = 0;
+    const gbState = gb ? gb.state : null;
+    let Fx_drive = 0;
+    if (gbState && gb) {
+      const speedForGearbox = Math.max(0, Math.abs(vForward));
+      const gbInputs = {
+        throttle,
+        brake,
+        speedMps: speedForGearbox,
+        auto: gb.c.auto !== false
+      };
+      if (gbState.manualShiftUp) gbInputs.shiftUp = true;
+      if (gbState.manualShiftDown) gbInputs.shiftDown = true;
+      updateGearbox(gbState, dt, gbInputs);
+      if (typeof gb.applyState === 'function') {
+        gb.applyState();
+      }
+      Fx_drive = getDriveForce(gbState, speedForGearbox, throttle);
+      gb.lastRequestedForce = Fx_drive;
+      const wheelRadius = gbState.tireRadiusM ?? gbState.wheelRadius ?? GEARBOX_CONFIG.tireRadiusM;
+      car.physics.lastGb = {
+        gear: gb.gear,
+        gearIndex: gbState.gear,
+        rpm: gb.rpm,
+        smoothedRpm: gbState.smoothedRpm ?? gb.rpm,
+        requestedForce: Fx_drive,
+        requestedForceRaw: gbState.lastDriveForce ?? Fx_drive,
+        cutRemainingMs: gbState.cutRemainingMs ?? 0,
+        ratio: gbState.currentRatio ?? 0,
+        totalRatio: gbState.totalRatio ?? 0,
+        engineTorque: gbState.lastEngineTorque ?? 0,
+        wheelTorque: gbState.lastWheelTorque ?? Fx_drive * wheelRadius,
+        isReverse: gbState.isReverse,
+        isNeutral: gbState.isNeutral
+      };
+      reversing = reversing || !!gbState.isReverse;
+    } else {
+      car.physics.lastGb = null;
+      Fx_drive = 0;
     }
-    if (gb.gearIndex === -1 && throttlePressed && fwd > 0 && forwardSpeed > 12) {
-      const ramp = Math.min(1, forwardSpeed / 60);
-      brake = Math.max(brake, ramp);
-      throttle = 0;
-    }
-    // --------------------------------------------------------------
-  }
-  const gbState = gb ? gb.state : null;
-  let Fx_drive = 0;
-  if (gbState && gb) {
-    const speedForGearbox = Math.max(0, Math.abs(vForward));
-    const gbInputs = {
-      throttle,
-      brake,
-      speedMps: speedForGearbox,
-      auto: gb.c.auto !== false
-    };
-    if (gbState.manualShiftUp) gbInputs.shiftUp = true;
-    if (gbState.manualShiftDown) gbInputs.shiftDown = true;
-    updateGearbox(gbState, dt, gbInputs);
-    if (typeof gb.applyState === 'function') {
-      gb.applyState();
-    }
-    Fx_drive = getDriveForce(gbState, speedForGearbox, throttle);
-    gb.lastRequestedForce = Fx_drive;
-    const wheelRadius = gbState.tireRadiusM ?? gbState.wheelRadius ?? GEARBOX_CONFIG.tireRadiusM;
-    car.physics.lastGb = {
-      gear: gb.gear,
-      gearIndex: gbState.gear,
-      rpm: gb.rpm,
-      smoothedRpm: gbState.smoothedRpm ?? gb.rpm,
-      requestedForce: Fx_drive,
-      requestedForceRaw: gbState.lastDriveForce ?? Fx_drive,
-      cutRemainingMs: gbState.cutRemainingMs ?? 0,
-      ratio: gbState.currentRatio ?? 0,
-      totalRatio: gbState.totalRatio ?? 0,
-      engineTorque: gbState.lastEngineTorque ?? 0,
-      wheelTorque: gbState.lastWheelTorque ?? Fx_drive * wheelRadius,
-      isReverse: gbState.isReverse,
-      isNeutral: gbState.isNeutral
-    };
-    reversing = reversing || !!gbState.isReverse;
-  } else {
-    car.physics.lastGb = null;
-    Fx_drive = 0;
-  }
     const brakeForceCmd = brake * P.brakeForce;
     let Fx_brake = 0;
     if (brakeForceCmd > 0) {
@@ -1646,7 +1640,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     const Fx_cmd = Fx_drive - Fx_brake;
     const ax_cmd = (Fx_cmd - F_drag - F_roll) / mass;
     const prevAx = Number.isFinite(car.physics.axLongFiltered) ? car.physics.axLongFiltered : 0;
-    const dtClamp = clamp(dt, 1/400, 0.25);
+    const dtClamp = clamp(dt, 1 / 400, 0.25);
     const tauAx = 0.10;
     const alphaAx = clamp(1 - Math.exp(-dtClamp / tauAx), 0, 1);
     const ax_est = prevAx + (ax_cmd - prevAx) * alphaAx;
@@ -1654,7 +1648,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     car.physics.axLongRaw = ax_cmd;
 
     // Longitudinal load transfer update
-    const cgH = (P.cgHeight!=null?P.cgHeight:8);
+    const cgH = (P.cgHeight != null ? P.cgHeight : 8);
     if (cgH > 0) {
       const dF = mass * cgH * ax_est / L; // shift proportional to accel (filtered)
       const totalLoad = Math.max(1e-3, loadsStatic.Fzf + loadsStatic.Fzr);
@@ -1694,7 +1688,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     const FxF_cmd = -brakeFrontShare * (brake * P.brakeForce) * fwd;
     if (frontCircle > 0) {
       const uxF = (muLongEffF * Fzf > 1e-6) ? (FxF_cmd / (muLongEffF * Fzf)) : 0;
-      const uyF = (muLatF * Fzf > 1e-6) ? (FyF_unc  / (muLatF * Fzf)) : 0;
+      const uyF = (muLatF * Fzf > 1e-6) ? (FyF_unc / (muLatF * Fzf)) : 0;
       const lambdaF = Math.hypot(uxF, uyF);
       if (lambdaF > 1) {
         FyF_unc = FyF_unc / (1 + frontCircle * (lambdaF - 1));
@@ -1706,7 +1700,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     FyF = FyF_unc;
 
     // Mild rear combined slip limiting (scale only lateral)
-    const rearCircle = (P.rearCircle!=null?P.rearCircle:0.5);
+    const rearCircle = (P.rearCircle != null ? P.rearCircle : 0.5);
     let lambda = 0;
     if (rearCircle > 0) {
       // Use wheel-originated longitudinal at rear contact for combined slip
@@ -1716,7 +1710,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       const Fr_cap = Math.max(1e-6, muLongEffR * Fzr);
       const FxR_cmd = Math.max(-Fr_cap, Math.min(Fr_cap, FxR_cmd_raw));
       const uxR = FxR_cmd / Fr_cap;
-      const uy = (muLatR*Fzr>1e-6) ? (FyR_unc / (muLatR * Fzr)) : 0;
+      const uy = (muLatR * Fzr > 1e-6) ? (FyR_unc / (muLatR * Fzr)) : 0;
       lambda = Math.hypot(uxR, uy);
       if (lambda > 1) {
         FyR_unc = FyR_unc / (1 + rearCircle * (lambda - 1));
@@ -1727,14 +1721,14 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
 
     // Now compute post-transfer longitudinal traction using slip ratio
     const Fr_max = muLongEffR * Fzr;
-    const sPeak  = (P.longSlipPeak != null ? P.longSlipPeak : 0.18);
-    const s_req  = Fr_max > 1e-6 ? (Fx_cmd / Fr_max) : 0;
+    const sPeak = (P.longSlipPeak != null ? P.longSlipPeak : 0.18);
+    const s_req = Fr_max > 1e-6 ? (Fx_cmd / Fr_max) : 0;
     if (Math.abs(s_req) > sPeak) {
       const overPeak = Math.min(1, Math.abs(s_req) - sPeak);
       const latScale = Math.max(0, 1 - 0.35 * overPeak);
       FyR *= latScale;
     }
-    const falloff= (P.longSlipFalloff != null ? P.longSlipFalloff : 0.80);
+    const falloff = (P.longSlipFalloff != null ? P.longSlipFalloff : 0.80);
     const tractionRatio = slipRatioResponse(s_req, sPeak, falloff);
     let Fx_trac = Fr_max * tractionRatio;
     car.physics.lastSlipReq = s_req;
@@ -1743,7 +1737,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     const ax = Fx_long / mass;
     car.physics.lastAx = ax;
     car.physics._dbgFyR_avail = muLatR * Fzr;
-    car.physics._dbgUx = Math.min(1, Math.abs(Fx_long)/Math.max(1e-6, Fr_max));
+    car.physics._dbgUx = Math.min(1, Math.abs(Fx_long) / Math.max(1e-6, Fr_max));
     car.physics._dbgFyR = FyR;
 
     if (usePlanck && planckBody) {
@@ -1781,7 +1775,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     dr_dyn += -yawDamp * car.physics.r;
 
     // Kinematic fallback
-    const vKineBlend = (P.vKineBlend!=null?P.vKineBlend:40);
+    const vKineBlend = (P.vKineBlend != null ? P.vKineBlend : 40);
     const speedBody2 = Math.hypot(vx, vy);
     let dvx_kine = 0, dvy_kine = 0, dr_kine = 0;
     if (vKineBlend > 0) {
@@ -1791,14 +1785,14 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     let alphaBlend = 1;
     if (vKineBlend > 0) {
       const t = clamp(speedBody2 / vKineBlend, 0, 1);
-      alphaBlend = t*t*(3-2*t);
+      alphaBlend = t * t * (3 - 2 * t);
     }
-  // IMPORTANT: do NOT blend longitudinal acceleration; previous version blended dvx
-  // which zeroed propulsion at low speed (alphaBlend~0) causing cars to stay frozen.
-  const dvx = dvx_dyn;
+    // IMPORTANT: do NOT blend longitudinal acceleration; previous version blended dvx
+    // which zeroed propulsion at low speed (alphaBlend~0) causing cars to stay frozen.
+    const dvx = dvx_dyn;
     const dvy = dvy_kine + (dvy_dyn - dvy_kine) * alphaBlend;
     let dr = dr_kine + (dr_dyn - dr_kine) * alphaBlend;
-  car.physics.lastAlphaBlend = alphaBlend;
+    car.physics.lastAlphaBlend = alphaBlend;
 
     if (!usePlanck) {
       vx += dvx * dt;
@@ -1815,14 +1809,14 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       car.angle += car.physics.r * dt;
     }
 
-  // Cache debug values
-  car.physics.lastSlipF = slipF;
-  car.physics.lastSlipR = slipR;
-  car.physics.lastFx_long = Fx_long;
-  car.physics.lastFwd = fwd;
-  car.physics.lastDeltaEff = deltaEff;
-  car.physics.lastLambda = car.physics._dbgLambda || 0;
-  car.physics.lastReversing = reversing;
+    // Cache debug values
+    car.physics.lastSlipF = slipF;
+    car.physics.lastSlipR = slipR;
+    car.physics.lastFx_long = Fx_long;
+    car.physics.lastFwd = fwd;
+    car.physics.lastDeltaEff = deltaEff;
+    car.physics.lastLambda = car.physics._dbgLambda || 0;
+    car.physics.lastReversing = reversing;
 
     // Apply top speed cap
     const maxSpeed = P.maxSpeed != null ? P.maxSpeed : 10000;
@@ -1911,13 +1905,13 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     car.sfxGrass = !onRoad;
 
     // Skid intensity from combined slip
-    const skidLatRaw = Math.max(0, Math.min(1, (Math.abs(slipF) + Math.abs(slipR)) / (2*0.35)));
+    const skidLatRaw = Math.max(0, Math.min(1, (Math.abs(slipF) + Math.abs(slipR)) / (2 * 0.35)));
     const driveSlipRaw = Math.max(0, Math.min(1, Math.abs(Fx_long) / Math.max(1, muLong * Fzr) - 0.85));
     const skidSpeedThreshold = (P.skidSpeedThreshold != null ? P.skidSpeedThreshold : 120);
     const skidEligible = (fwd > 0) && vxAbs > 60 && car.speed > skidSpeedThreshold; // suppress low-speed or backward skids
-    const skid = skidEligible ? clamp(0.5*skidLatRaw + 0.5*driveSlipRaw, 0, 1) : 0;
+    const skid = skidEligible ? clamp(0.5 * skidLatRaw + 0.5 * driveSlipRaw, 0, 1) : 0;
     car.physics.skid = skid;
-    car.sfxSlip = (car.sfxSlip||0) * 0.85 + skid * 0.15;
+    car.sfxSlip = (car.sfxSlip || 0) * 0.85 + skid * 0.15;
 
     return {
       skid,
@@ -1935,48 +1929,48 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     };
   }
 
-  function wheelPositions(car){
-    const halfW = (car.width||18) * 0.45;
+  function wheelPositions(car) {
+    const halfW = (car.width || 18) * 0.45;
     const nx = -Math.sin(car.angle), ny = Math.cos(car.angle);
     return {
-      left:  { x: car.x + nx*halfW, y: car.y + ny*halfW },
-      right: { x: car.x - nx*halfW, y: car.y - ny*halfW }
+      left: { x: car.x + nx * halfW, y: car.y + ny * halfW },
+      right: { x: car.x - nx * halfW, y: car.y - ny * halfW }
     };
   }
 
   // Simple debug draw: velocity vector and slip
   let DEBUG = false;
-  function setDebugEnabled(v){ DEBUG = !!v; }
-  function drawDebug(ctx, car){
+  function setDebugEnabled(v) { DEBUG = !!v; }
+  function drawDebug(ctx, car) {
     if (!DEBUG) return;
     ctx.save();
     ctx.strokeStyle = '#00e5ff'; ctx.lineWidth = 1.5; // velocity
-    ctx.beginPath(); ctx.moveTo(car.x, car.y); ctx.lineTo(car.x + car.physics.vx*0.25, car.y + car.physics.vy*0.25); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(car.x, car.y); ctx.lineTo(car.x + car.physics.vx * 0.25, car.y + car.physics.vy * 0.25); ctx.stroke();
     ctx.strokeStyle = '#ff4081'; // heading
-    ctx.beginPath(); ctx.moveTo(car.x, car.y); ctx.lineTo(car.x + Math.cos(car.angle)*18, car.y + Math.sin(car.angle)*18); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(car.x, car.y); ctx.lineTo(car.x + Math.cos(car.angle) * 18, car.y + Math.sin(car.angle) * 18); ctx.stroke();
 
     // Compact physics line (player-oriented). Expect prior updateCar to have stored debug fields.
     try {
       const p = car.physics || {};
-      if (p._dbgFyR_avail != null){
+      if (p._dbgFyR_avail != null) {
         const lambda = p.lastLambda != null ? p.lastLambda : 0;
-        const speedMag = Math.hypot(car.physics.vx||0, car.physics.vy||0);
+        const speedMag = Math.hypot(car.physics.vx || 0, car.physics.vy || 0);
         const gbState = car.physics.lastGb || (car.gearbox ? {
           gear: car.gearbox.gear,
           rpm: car.gearbox.rpm,
           requestedForce: car.gearbox.lastRequestedForce ?? 0
         } : null);
         const slipReq = car.physics.lastSlipReq != null ? car.physics.lastSlipReq : 0;
-        const gbLine = gbState ? ` G${gbState.gear} ${Math.round(gbState.rpm||0)}rpm ReqF=${Math.round(gbState.requestedForce||0)} Slip=${Math.round(Math.abs(slipReq)*100)}%` : '';
-        const line = `fwd=${(p.lastFwd!=null?p.lastFwd:1)} ${(p.lastReversing?'REV ':'')}|v|=${speedMag.toFixed(1)} vx=${(car.physics.vx||0).toFixed(1)} vy=${(car.physics.vy||0).toFixed(1)} dEff=${(p.lastDeltaEff||0).toFixed(3)} slipF=${(p.lastSlipF||0).toFixed(3)} slipR=${(p.lastSlipR||0).toFixed(3)} lambda=${lambda.toFixed(2)} ax=${(p.lastAx||0).toFixed(2)} FzF=${(p.lastFzf||0).toFixed(0)} FzR=${(p.lastFzr||0).toFixed(0)} ${(p.lastAlphaBlend<0.999)?'KIN':''}${gbLine}`;
+        const gbLine = gbState ? ` G${gbState.gear} ${Math.round(gbState.rpm || 0)}rpm ReqF=${Math.round(gbState.requestedForce || 0)} Slip=${Math.round(Math.abs(slipReq) * 100)}%` : '';
+        const line = `fwd=${(p.lastFwd != null ? p.lastFwd : 1)} ${(p.lastReversing ? 'REV ' : '')}|v|=${speedMag.toFixed(1)} vx=${(car.physics.vx || 0).toFixed(1)} vy=${(car.physics.vy || 0).toFixed(1)} dEff=${(p.lastDeltaEff || 0).toFixed(3)} slipF=${(p.lastSlipF || 0).toFixed(3)} slipR=${(p.lastSlipR || 0).toFixed(3)} lambda=${lambda.toFixed(2)} ax=${(p.lastAx || 0).toFixed(2)} FzF=${(p.lastFzf || 0).toFixed(0)} FzR=${(p.lastFzr || 0).toFixed(0)} ${(p.lastAlphaBlend < 0.999) ? 'KIN' : ''}${gbLine}`;
         ctx.font = '11px monospace';
         ctx.textBaseline = 'top';
         const x = car.x + 20, y = car.y - 30;
-        ctx.fillStyle = 'rgba(0,0,0,0.55)'; const w = ctx.measureText(line).width + 8; ctx.fillRect(x-4,y-2,w,16);
-        ctx.fillStyle = (lambda>1.01) ? '#ff5050' : '#e0f2f1';
+        ctx.fillStyle = 'rgba(0,0,0,0.55)'; const w = ctx.measureText(line).width + 8; ctx.fillRect(x - 4, y - 2, w, 16);
+        ctx.fillStyle = (lambda > 1.01) ? '#ff5050' : '#e0f2f1';
         ctx.fillText(line, x, y);
       }
-    } catch(_){ }
+    } catch (_) { }
     ctx.restore();
   }
   const DEVTOOLS_STYLE = `
@@ -2022,7 +2016,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     }
   `;
 
-  function ensureDevPanelStyles(){
+  function ensureDevPanelStyles() {
     if (document.getElementById('rv-devtools-style')) return;
     const style = document.createElement('style');
     style.id = 'rv-devtools-style';
@@ -2031,7 +2025,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
   }
 
   // Dev tools UI
-  async function injectDevTools(getCars){
+  async function injectDevTools(getCars) {
     if (document.getElementById('rv-devtools')) return; // once
     ensureDevPanelStyles();
 
@@ -2043,23 +2037,23 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       pixelsPerMeter: "Scale from pixels to physics meters. Affects body sizes in the solver.",
       linearDamp: "Planck: global damping on linear velocity. Prefer Drag/Rolling for coasting.",
       angularDamp: "Planck: damping on yaw (rotational) velocity. Prefer Yaw damp for tuning feel.",
-  gravity: "World gravity in px/s². Higher values increase weight transfer and available grip.",
+      gravity: "World gravity in px/s². Higher values increase weight transfer and available grip.",
       restitution: "Bounciness on wall impacts.",
       velIters: "Solver velocity iterations. Higher = more accurate contacts (slower).",
       posIters: "Solver position iterations. Higher = fewer penetrations (slower).",
       mass: "Car mass & inertia. Higher = more planted, harder to spin; may need more Brake.",
-  enginePowerMult: "Multiplier on gearbox drive torque. >1 = more power, <1 = detuned.",
+      enginePowerMult: "Multiplier on gearbox drive torque. >1 = more power, <1 = detuned.",
       brakeForce: "Peak braking force. Higher = shorter stops; too high can overwhelm grip.",
       maxSteer: "Maximum steering lock. Higher = tighter turns, riskier at speed.",
       steerSpeed: "How fast steering moves toward target. Higher = snappier steering.",
-  steerMode: "Switch player steering between manual input and adaptive touch assist.",
-  touchMaxLow: "Touch: steering lock available at low speeds before blending down.",
-  touchMaxHigh: "Touch: steering lock available at high speeds after blending.",
-  touchFalloff: "Touch: speed (px/s) where steering lock transitions toward the high-speed limit.",
-  touchBaseRate: "Touch: base steering slew rate before speed-based reductions.",
-  touchRateFalloff: "Touch: controls how quickly steer rate slows down as speed rises.",
-  touchReturn: "Touch: centering gain that eases the wheel back toward center.",
-  touchFilter: "Touch: smoothing constant (seconds) for the speed filter driving the assist.",
+      steerMode: "Switch player steering between manual input and adaptive touch assist.",
+      touchMaxLow: "Touch: steering lock available at low speeds before blending down.",
+      touchMaxHigh: "Touch: steering lock available at high speeds after blending.",
+      touchFalloff: "Touch: speed (px/s) where steering lock transitions toward the high-speed limit.",
+      touchBaseRate: "Touch: base steering slew rate before speed-based reductions.",
+      touchRateFalloff: "Touch: controls how quickly steer rate slows down as speed rises.",
+      touchReturn: "Touch: centering gain that eases the wheel back toward center.",
+      touchFilter: "Touch: smoothing constant (seconds) for the speed filter driving the assist.",
       muLatRoad: "Sideways (lateral) grip on road. Raises cornering limit before slide.",
       muLongRoad: "Forward/back (longitudinal) grip on road. Affects traction & braking.",
       muLatGrass: "Sideways grip on grass (usually much lower than road).",
@@ -2086,6 +2080,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     DESCRIPTIONS.reverseSteer = "Steering scale when reversing (lower = calmer).";
     DESCRIPTIONS.yawReverseMul = "Yaw damping multiplier when reversing.";
     DESCRIPTIONS.clonePhysics = "Continuously sync player physics (engine, grip, mass, etc.) to all AI cars of the same vehicle type. Each vehicle type gets its own physics from the player driving that type.";
+
 
     const escapeAttr = (value) => String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
     const tipAttr = (key) => {
@@ -2125,6 +2120,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
           <div class="rv-row" data-no-ai-clone><label for="rv-veliters"><span class="rv-name"${tipAttr('velIters')}>Vel iters</span><span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label><input id="rv-veliters" type="number" min="1" max="50" step="1"></div>
           <div class="rv-row" data-no-ai-clone><label for="rv-positers"><span class="rv-name"${tipAttr('posIters')}>Pos iters</span><span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label><input id="rv-positers" type="number" min="1" max="50" step="1"></div>
           <div class="rv-row"><button id="rv-planck-rebuild"${tipAttr('rebuildWorld')}>Rebuild physics world</button></div>
+
         </div>
         <div class="rv-row"><label for="rv-mass"><span class="rv-name"${tipAttr('mass')}>Mass</span></label><input id="rv-mass" type="range" min="0.6" max="2.2" step="0.05"><div class="val" id="rv-mass-v"></div></div>
   <div class="rv-row"><label for="rv-eng"><span class="rv-name"${tipAttr('enginePowerMult')}>Engine</span></label><input id="rv-eng" type="range" min="0.5" max="2" step="0.05"><div class="val" id="rv-eng-v"></div></div>
@@ -2187,55 +2183,56 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
 
     const panel = wrap.querySelector('.rv-panel');
     const toggle = wrap.querySelector('.toggle');
-    toggle.addEventListener('click', ()=>{ panel.classList.toggle('open'); });
+    toggle.addEventListener('click', () => { panel.classList.toggle('open'); });
 
     const els = {
       kind: wrap.querySelector('#rv-kind'),
       applyAI: wrap.querySelector('#rv-apply-ai'),
       clonePhysics: wrap.querySelector('#rv-clone-physics'),
       debug: wrap.querySelector('#rv-debug'),
-  planck: wrap.querySelector('#rv-planck'),
-  ppm: wrap.querySelector('#rv-ppm'),
-  gravity: wrap.querySelector('#rv-gravity'), gravityV: wrap.querySelector('#rv-gravity-v'),
-  ldamp: wrap.querySelector('#rv-ldamp'),     ldampV: wrap.querySelector('#rv-ldamp-v'),
-  adamp: wrap.querySelector('#rv-adamp'),     adampV: wrap.querySelector('#rv-adamp-v'),
-  rest: wrap.querySelector('#rv-rest'),       restV: wrap.querySelector('#rv-rest-v'),
-  veliters: wrap.querySelector('#rv-veliters'),
-  positers: wrap.querySelector('#rv-positers'),
-      mass: wrap.querySelector('#rv-mass'),   massV: wrap.querySelector('#rv-mass-v'),
-      eng: wrap.querySelector('#rv-eng'),     engV: wrap.querySelector('#rv-eng-v'),
-      brk: wrap.querySelector('#rv-brk'),     brkV: wrap.querySelector('#rv-brk-v'),
+      planck: wrap.querySelector('#rv-planck'),
+      ppm: wrap.querySelector('#rv-ppm'),
+      gravity: wrap.querySelector('#rv-gravity'), gravityV: wrap.querySelector('#rv-gravity-v'),
+      ldamp: wrap.querySelector('#rv-ldamp'), ldampV: wrap.querySelector('#rv-ldamp-v'),
+      adamp: wrap.querySelector('#rv-adamp'), adampV: wrap.querySelector('#rv-adamp-v'),
+      rest: wrap.querySelector('#rv-rest'), restV: wrap.querySelector('#rv-rest-v'),
+      veliters: wrap.querySelector('#rv-veliters'),
+      positers: wrap.querySelector('#rv-positers'),
+      mass: wrap.querySelector('#rv-mass'), massV: wrap.querySelector('#rv-mass-v'),
+      eng: wrap.querySelector('#rv-eng'), engV: wrap.querySelector('#rv-eng-v'),
+      brk: wrap.querySelector('#rv-brk'), brkV: wrap.querySelector('#rv-brk-v'),
       steer: wrap.querySelector('#rv-steer'), steerV: wrap.querySelector('#rv-steer-v'),
       steers: wrap.querySelector('#rv-steers'), steersV: wrap.querySelector('#rv-steers-v'),
-  steerMode: wrap.querySelector('#rv-steerMode'),
-  touchMaxLow: wrap.querySelector('#rv-touchMaxLow'), touchMaxLowV: wrap.querySelector('#rv-touchMaxLow-v'),
-  touchMaxHigh: wrap.querySelector('#rv-touchMaxHigh'), touchMaxHighV: wrap.querySelector('#rv-touchMaxHigh-v'),
-  touchFalloff: wrap.querySelector('#rv-touchFalloff'), touchFalloffV: wrap.querySelector('#rv-touchFalloff-v'),
-  touchBaseRate: wrap.querySelector('#rv-touchBaseRate'), touchBaseRateV: wrap.querySelector('#rv-touchBaseRate-v'),
-  touchRateFalloff: wrap.querySelector('#rv-touchRateFalloff'), touchRateFalloffV: wrap.querySelector('#rv-touchRateFalloff-v'),
-  touchReturn: wrap.querySelector('#rv-touchReturn'), touchReturnV: wrap.querySelector('#rv-touchReturn-v'),
-  touchFilter: wrap.querySelector('#rv-touchFilter'), touchFilterV: wrap.querySelector('#rv-touchFilter-v'),
-      mulr: wrap.querySelector('#rv-mulr'),   mulrV: wrap.querySelector('#rv-mulr-v'),
-      muor: wrap.querySelector('#rv-muor'),   muorV: wrap.querySelector('#rv-muor-v'),
-      mulg: wrap.querySelector('#rv-mulg'),   mulgV: wrap.querySelector('#rv-mulg-v'),
-      muog: wrap.querySelector('#rv-muog'),   muogV: wrap.querySelector('#rv-muog-v'),
-    drag: wrap.querySelector('#rv-drag'),   dragV: wrap.querySelector('#rv-drag-v'),
-  roll: wrap.querySelector('#rv-roll'),   rollV: wrap.querySelector('#rv-roll-v'),
-  rearc: wrap.querySelector('#rv-rearc'), rearcV: wrap.querySelector('#rv-rearc-v'),
-  frontc: wrap.querySelector('#rv-frontc'), frontcV: wrap.querySelector('#rv-frontc-v'),
-  brkfs: wrap.querySelector('#rv-brkfs'), brkfsV: wrap.querySelector('#rv-brkfs-v'),
-  lspe: wrap.querySelector('#rv-lspe'), lspeV: wrap.querySelector('#rv-lspe-v'),
-  lsfo: wrap.querySelector('#rv-lsfo'), lsfoV: wrap.querySelector('#rv-lsfo-v'),
-  llat: wrap.querySelector('#rv-llat'), llatV: wrap.querySelector('#rv-llat-v'),
-  llong: wrap.querySelector('#rv-llong'), llongV: wrap.querySelector('#rv-llong-v'),
-  df: wrap.querySelector('#rv-df'), dfV: wrap.querySelector('#rv-df-v'),
-  vkine: wrap.querySelector('#rv-vkine'), vkineV: wrap.querySelector('#rv-vkine-v'),
-  cgh: wrap.querySelector('#rv-cgh'), cghV: wrap.querySelector('#rv-cgh-v'),
-  yawd: wrap.querySelector('#rv-yawd'), yawdV: wrap.querySelector('#rv-yawd-v'),
-  reventry: wrap.querySelector('#rv-reventry'), reventryV: wrap.querySelector('#rv-reventry-v'),
+      steerMode: wrap.querySelector('#rv-steerMode'),
+      touchMaxLow: wrap.querySelector('#rv-touchMaxLow'), touchMaxLowV: wrap.querySelector('#rv-touchMaxLow-v'),
+      touchMaxHigh: wrap.querySelector('#rv-touchMaxHigh'), touchMaxHighV: wrap.querySelector('#rv-touchMaxHigh-v'),
+      touchFalloff: wrap.querySelector('#rv-touchFalloff'), touchFalloffV: wrap.querySelector('#rv-touchFalloff-v'),
+      touchBaseRate: wrap.querySelector('#rv-touchBaseRate'), touchBaseRateV: wrap.querySelector('#rv-touchBaseRate-v'),
+      touchRateFalloff: wrap.querySelector('#rv-touchRateFalloff'), touchRateFalloffV: wrap.querySelector('#rv-touchRateFalloff-v'),
+      touchReturn: wrap.querySelector('#rv-touchReturn'), touchReturnV: wrap.querySelector('#rv-touchReturn-v'),
+      touchFilter: wrap.querySelector('#rv-touchFilter'), touchFilterV: wrap.querySelector('#rv-touchFilter-v'),
+      mulr: wrap.querySelector('#rv-mulr'), mulrV: wrap.querySelector('#rv-mulr-v'),
+      muor: wrap.querySelector('#rv-muor'), muorV: wrap.querySelector('#rv-muor-v'),
+      mulg: wrap.querySelector('#rv-mulg'), mulgV: wrap.querySelector('#rv-mulg-v'),
+      muog: wrap.querySelector('#rv-muog'), muogV: wrap.querySelector('#rv-muog-v'),
+      drag: wrap.querySelector('#rv-drag'), dragV: wrap.querySelector('#rv-drag-v'),
+      roll: wrap.querySelector('#rv-roll'), rollV: wrap.querySelector('#rv-roll-v'),
+      rearc: wrap.querySelector('#rv-rearc'), rearcV: wrap.querySelector('#rv-rearc-v'),
+      frontc: wrap.querySelector('#rv-frontc'), frontcV: wrap.querySelector('#rv-frontc-v'),
+      brkfs: wrap.querySelector('#rv-brkfs'), brkfsV: wrap.querySelector('#rv-brkfs-v'),
+      lspe: wrap.querySelector('#rv-lspe'), lspeV: wrap.querySelector('#rv-lspe-v'),
+      lsfo: wrap.querySelector('#rv-lsfo'), lsfoV: wrap.querySelector('#rv-lsfo-v'),
+      llat: wrap.querySelector('#rv-llat'), llatV: wrap.querySelector('#rv-llat-v'),
+      llong: wrap.querySelector('#rv-llong'), llongV: wrap.querySelector('#rv-llong-v'),
+      df: wrap.querySelector('#rv-df'), dfV: wrap.querySelector('#rv-df-v'),
+      vkine: wrap.querySelector('#rv-vkine'), vkineV: wrap.querySelector('#rv-vkine-v'),
+      cgh: wrap.querySelector('#rv-cgh'), cghV: wrap.querySelector('#rv-cgh-v'),
+      yawd: wrap.querySelector('#rv-yawd'), yawdV: wrap.querySelector('#rv-yawd-v'),
+      reventry: wrap.querySelector('#rv-reventry'), reventryV: wrap.querySelector('#rv-reventry-v'),
       revtorque: wrap.querySelector('#rv-revtorque'), revtorqueV: wrap.querySelector('#rv-revtorque-v'),
       planckRebuild: wrap.querySelector('#rv-planck-rebuild'),
-      reset: wrap.querySelector('#rv-reset')
+      reset: wrap.querySelector('#rv-reset'),
+      curbwall: wrap.querySelector('#rv-curbwall')
     };
 
     const vxh = document.getElementById('rv-vxhyst');
@@ -2254,7 +2251,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       if (rsteerv) rsteerv.textContent = REVERSE_CFG.steerScale.toFixed(2);
       if (yawmv) yawmv.textContent = REVERSE_CFG.yawMul.toFixed(2);
     };
-    
+
 
     const onReverseInput = () => {
       if (!vxh || !rsteer || !yawm) return;
@@ -2281,7 +2278,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       try {
         const stored = (typeof localStorage !== 'undefined') ? localStorage.getItem('steeringMode') : null;
         return STEERING_MODES.has(stored) ? stored : 'touch';
-      } catch(_) {
+      } catch (_) {
         return 'touch';
       }
     };
@@ -2289,7 +2286,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       const chosen = STEERING_MODES.has(mode) ? mode : 'touch';
       try {
         if (typeof localStorage !== 'undefined') localStorage.setItem('steeringMode', chosen);
-      } catch(_){/* ignore */}
+      } catch (_) {/* ignore */ }
       let set = carSet;
       if (!set && typeof getCars === 'function') {
         set = getCars() || {};
@@ -2303,7 +2300,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       }
     };
 
-    function attachControlButtons(input, id){
+    function attachControlButtons(input, id) {
       if (!input) return;
       const row = input.closest('.rv-row');
       if (!row) return;
@@ -2325,7 +2322,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       defaultBtn.addEventListener('click', () => handleDefault(id));
     }
 
-    function handleSave(id){
+    function handleSave(id) {
       const handler = controlHandlers[id];
       if (!handler) return;
       const meta = CONTROL_META[id] || {};
@@ -2339,7 +2336,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       if (typeof meta.onSave === 'function') meta.onSave(value);
     }
 
-    function handleDefault(id){
+    function handleDefault(id) {
       const handler = controlHandlers[id];
       if (!handler) return;
       const meta = CONTROL_META[id] || {};
@@ -2361,7 +2358,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       if (typeof handler.applyChange === 'function') handler.applyChange();
     }
 
-    function registerControl(id, meta){
+    function registerControl(id, meta) {
       const input = document.getElementById(id);
       if (!input) return;
       CONTROL_META[id] = meta || {};
@@ -2400,7 +2397,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       attachControlButtons(input, id);
     }
 
-    function applySavedControlValues(){
+    function applySavedControlValues() {
       for (const [id, handler] of Object.entries(controlHandlers)) {
         const meta = CONTROL_META[id] || {};
         if (meta.skipStorage) continue;
@@ -2429,16 +2426,21 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
 
     const CONTROL_SETUP = [
       ['rv-debug', { kind: 'global', type: 'checkbox', getDefault: () => false, apply: false, afterSet: () => setDebugEnabled(!!els.debug.checked) }],
-      ['rv-planck', { kind: 'vehicle', type: 'checkbox', getDefault: (kind) => {
-        const defaults = defaultSnapshot[kind] || {};
-        return defaults.usePlanck !== false;
-      }}],
+      ['rv-planck', {
+        kind: 'vehicle', type: 'checkbox', getDefault: (kind) => {
+          const defaults = defaultSnapshot[kind] || {};
+          return defaults.usePlanck !== false;
+        }
+      }],
       ['rv-apply-ai', { kind: 'global', type: 'checkbox', getDefault: () => false, apply: false }],
       ['rv-clone-physics', { kind: 'global', type: 'checkbox', getDefault: () => true, apply: false, afterSet: () => applyClonePhysicsToAI() }],
-      ['rv-ppm', { kind: 'vehicle', type: 'number', format: fmtInt, getDefault: (kind) => {
-        const defaults = defaultSnapshot[kind] || {};
-        return defaults.pixelsPerMeter != null ? defaults.pixelsPerMeter : PLANCK_DEFAULTS.pixelsPerMeter;
-      }}],
+
+      ['rv-ppm', {
+        kind: 'vehicle', type: 'number', format: fmtInt, getDefault: (kind) => {
+          const defaults = defaultSnapshot[kind] || {};
+          return defaults.pixelsPerMeter != null ? defaults.pixelsPerMeter : PLANCK_DEFAULTS.pixelsPerMeter;
+        }
+      }],
       ['rv-gravity', { kind: 'global', valueEl: els.gravityV, format: fmtInt, getDefault: () => GRAVITY_DEFAULT }],
       ['rv-ldamp', { kind: 'vehicle', valueEl: els.ldampV, format: fmtTwo, getDefault: vehicleDefault('linearDamp', 0) }],
       ['rv-adamp', { kind: 'vehicle', valueEl: els.adampV, format: fmtTwo, getDefault: vehicleDefault('angularDamp', 0) }],
@@ -2446,16 +2448,18 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       ['rv-veliters', { kind: 'vehicle', type: 'number', parse: (v) => parseInt(v, 10) || 0, format: fmtInt, getDefault: vehicleDefault('velIters', PLANCK_DEFAULTS.velIters) }],
       ['rv-positers', { kind: 'vehicle', type: 'number', parse: (v) => parseInt(v, 10) || 0, format: fmtInt, getDefault: vehicleDefault('posIters', PLANCK_DEFAULTS.posIters) }],
       ['rv-mass', { kind: 'vehicle', valueEl: els.massV, format: fmtTwo, getDefault: vehicleDefault('mass') }],
-  ['rv-eng', { kind: 'vehicle', valueEl: els.engV, format: fmtTwo, getDefault: vehicleDefault('enginePowerMult', 1) }],
+      ['rv-eng', { kind: 'vehicle', valueEl: els.engV, format: fmtTwo, getDefault: vehicleDefault('enginePowerMult', 1) }],
       ['rv-brk', { kind: 'vehicle', valueEl: els.brkV, format: fmtInt, getDefault: vehicleDefault('brakeForce') }],
       ['rv-steer', { kind: 'vehicle', valueEl: els.steerV, format: fmtTwo, getDefault: vehicleDefault('maxSteer') }],
       ['rv-steers', { kind: 'vehicle', valueEl: els.steersV, format: fmtOne, getDefault: vehicleDefault('steerSpeed') }],
-  ['rv-steerMode', { kind: 'global', type: 'select', getDefault: () => 'touch', format: (value) => value === 'manual' ? 'Manual' : 'Touch', afterSet: (value) => applySteeringModeSelection(value) }],
+      ['rv-steerMode', { kind: 'global', type: 'select', getDefault: () => 'touch', format: (value) => value === 'manual' ? 'Manual' : 'Touch', afterSet: (value) => applySteeringModeSelection(value) }],
       ['rv-touchMaxLow', { kind: 'vehicle', valueEl: els.touchMaxLowV, format: fmtTwo, getDefault: vehicleTouchDefault('maxSteerLowSpeed', (defaults) => (defaults.maxSteer != null ? defaults.maxSteer : 0.60)) }],
-      ['rv-touchMaxHigh', { kind: 'vehicle', valueEl: els.touchMaxHighV, format: fmtTwo, getDefault: vehicleTouchDefault('maxSteerHighSpeed', (defaults) => {
-        const base = defaults.maxSteer != null ? defaults.maxSteer : 0.50;
-        return base * 0.6;
-      }) }],
+      ['rv-touchMaxHigh', {
+        kind: 'vehicle', valueEl: els.touchMaxHighV, format: fmtTwo, getDefault: vehicleTouchDefault('maxSteerHighSpeed', (defaults) => {
+          const base = defaults.maxSteer != null ? defaults.maxSteer : 0.50;
+          return base * 0.6;
+        })
+      }],
       ['rv-touchFalloff', { kind: 'vehicle', valueEl: els.touchFalloffV, format: fmtInt, getDefault: vehicleTouchDefault('falloffSpeed', 260) }],
       ['rv-touchBaseRate', { kind: 'vehicle', valueEl: els.touchBaseRateV, format: fmtOne, getDefault: vehicleTouchDefault('baseSteerRate', (defaults) => (defaults.steerSpeed != null ? defaults.steerSpeed : 5)) }],
       ['rv-touchRateFalloff', { kind: 'vehicle', valueEl: els.touchRateFalloffV, format: fmtFour, getDefault: vehicleTouchDefault('steerRateFalloff', 0.0035) }],
@@ -2480,24 +2484,30 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       ['rv-yawd', { kind: 'vehicle', valueEl: els.yawdV, format: fmtTwo, getDefault: vehicleDefault('yawDampK', 0.12) }],
       ['rv-reventry', { kind: 'vehicle', valueEl: els.reventryV, format: fmtInt, getDefault: vehicleDefault('reverseEntrySpeed', 40) }],
       ['rv-revtorque', { kind: 'vehicle', valueEl: els.revtorqueV, format: fmtTwo, getDefault: vehicleDefault('reverseTorqueScale', 0.60) }],
-      ['rv-vxhyst', { kind: 'reverse', valueEl: vxhv, format: fmtInt, skipStorage: true, getDefault: () => REVERSE_CFG_DEFAULTS.vxHyst, afterSet: (value) => {
-        REVERSE_CFG.vxHyst = Math.round(Number(value));
-        saveReverseCfg();
-      }, onSave: () => {
-        saveReverseCfg();
-      }}],
-      ['rv-rsteer', { kind: 'reverse', valueEl: rsteerv, format: fmtTwo, skipStorage: true, getDefault: () => REVERSE_CFG_DEFAULTS.steerScale, afterSet: (value) => {
-        REVERSE_CFG.steerScale = Math.max(0.3, Math.min(1.0, Number(value)));
-        saveReverseCfg();
-      }, onSave: () => {
-        saveReverseCfg();
-      }}],
-      ['rv-yawmul', { kind: 'reverse', valueEl: yawmv, format: fmtTwo, skipStorage: true, getDefault: () => REVERSE_CFG_DEFAULTS.yawMul, afterSet: (value) => {
-        REVERSE_CFG.yawMul = Math.max(1.0, Math.min(2.0, Number(value)));
-        saveReverseCfg();
-      }, onSave: () => {
-        saveReverseCfg();
-      }}]
+      ['rv-vxhyst', {
+        kind: 'reverse', valueEl: vxhv, format: fmtInt, skipStorage: true, getDefault: () => REVERSE_CFG_DEFAULTS.vxHyst, afterSet: (value) => {
+          REVERSE_CFG.vxHyst = Math.round(Number(value));
+          saveReverseCfg();
+        }, onSave: () => {
+          saveReverseCfg();
+        }
+      }],
+      ['rv-rsteer', {
+        kind: 'reverse', valueEl: rsteerv, format: fmtTwo, skipStorage: true, getDefault: () => REVERSE_CFG_DEFAULTS.steerScale, afterSet: (value) => {
+          REVERSE_CFG.steerScale = Math.max(0.3, Math.min(1.0, Number(value)));
+          saveReverseCfg();
+        }, onSave: () => {
+          saveReverseCfg();
+        }
+      }],
+      ['rv-yawmul', {
+        kind: 'reverse', valueEl: yawmv, format: fmtTwo, skipStorage: true, getDefault: () => REVERSE_CFG_DEFAULTS.yawMul, afterSet: (value) => {
+          REVERSE_CFG.yawMul = Math.max(1.0, Math.min(2.0, Number(value)));
+          saveReverseCfg();
+        }, onSave: () => {
+          saveReverseCfg();
+        }
+      }]
     ];
     CONTROL_SETUP.forEach(([id, meta]) => registerControl(id, meta));
     const steerModeHandler = controlHandlers['rv-steerMode'];
@@ -2622,7 +2632,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       });
     }
 
-    function refresh(kind){
+    function refresh(kind) {
       const k = kind || els.kind.value;
       const d = VEHICLE_DEFAULTS[k];
       if (els.gravity) {
@@ -2647,7 +2657,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       const powerMult = (d.enginePowerMult != null ? d.enginePowerMult : 1);
       els.eng.value = powerMult;
       els.engV.textContent = (+powerMult).toFixed(2);
-      els.brk.value = d.brakeForce; els.brkV.textContent = d.brakeForce|0;
+      els.brk.value = d.brakeForce; els.brkV.textContent = d.brakeForce | 0;
       els.steer.value = d.maxSteer; els.steerV.textContent = (+d.maxSteer).toFixed(2);
       els.steers.value = d.steerSpeed; els.steersV.textContent = d.steerSpeed.toFixed(1);
       if (els.steerMode) {
@@ -2696,23 +2706,23 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       els.muog.value = d.muLongGrass; els.muogV.textContent = d.muLongGrass.toFixed(2);
       els.drag.value = d.dragK; els.dragV.textContent = (+d.dragK).toFixed(4);
       els.roll.value = d.rollK; els.rollV.textContent = d.rollK.toFixed(2);
-      els.rearc.value = (d.rearCircle!=null?d.rearCircle:0.50).toFixed(2); els.rearcV.textContent = (+els.rearc.value).toFixed(2);
-      els.frontc.value = (d.frontCircle!=null?d.frontCircle:0.50).toFixed(2); els.frontcV.textContent = (+els.frontc.value).toFixed(2);
-      els.brkfs.value = (d.brakeFrontShare!=null?d.brakeFrontShare:0.60).toFixed(2); els.brkfsV.textContent = (+els.brkfs.value).toFixed(2);
-      els.lspe.value = (d.longSlipPeak!=null?d.longSlipPeak:0.18).toFixed(2); els.lspeV.textContent = (+els.lspe.value).toFixed(2);
-      els.lsfo.value = (d.longSlipFalloff!=null?d.longSlipFalloff:0.80).toFixed(2); els.lsfoV.textContent = (+els.lsfo.value).toFixed(2);
-      els.llat.value = (d.loadSenseK!=null?d.loadSenseK:0.08).toFixed(2); els.llatV.textContent = (+els.llat.value).toFixed(2);
-      els.llong.value = (d.muLongLoadSenseK!=null?d.muLongLoadSenseK:0.04).toFixed(2); els.llongV.textContent = (+els.llong.value).toFixed(2);
-      els.df.value = (d.downforceK!=null?d.downforceK:0.00025).toFixed(5); els.dfV.textContent = (+els.df.value).toFixed(5);
-      els.vkine.value = (d.vKineBlend!=null?d.vKineBlend:40).toFixed(0); els.vkineV.textContent = els.vkine.value;
-      els.cgh.value = (d.cgHeight!=null?d.cgHeight:8).toFixed(0); els.cghV.textContent = els.cgh.value;
-      els.yawd.value = (d.yawDampK!=null?d.yawDampK:0.12).toFixed(2); els.yawdV.textContent = (+els.yawd.value).toFixed(2);
-      els.reventry.value = (d.reverseEntrySpeed!=null?d.reverseEntrySpeed:40).toFixed(0); els.reventryV.textContent = els.reventry.value;
-      els.revtorque.value = (d.reverseTorqueScale!=null?d.reverseTorqueScale:0.60).toFixed(2); els.revtorqueV.textContent = (+els.revtorque.value).toFixed(2);
+      els.rearc.value = (d.rearCircle != null ? d.rearCircle : 0.50).toFixed(2); els.rearcV.textContent = (+els.rearc.value).toFixed(2);
+      els.frontc.value = (d.frontCircle != null ? d.frontCircle : 0.50).toFixed(2); els.frontcV.textContent = (+els.frontc.value).toFixed(2);
+      els.brkfs.value = (d.brakeFrontShare != null ? d.brakeFrontShare : 0.60).toFixed(2); els.brkfsV.textContent = (+els.brkfs.value).toFixed(2);
+      els.lspe.value = (d.longSlipPeak != null ? d.longSlipPeak : 0.18).toFixed(2); els.lspeV.textContent = (+els.lspe.value).toFixed(2);
+      els.lsfo.value = (d.longSlipFalloff != null ? d.longSlipFalloff : 0.80).toFixed(2); els.lsfoV.textContent = (+els.lsfo.value).toFixed(2);
+      els.llat.value = (d.loadSenseK != null ? d.loadSenseK : 0.08).toFixed(2); els.llatV.textContent = (+els.llat.value).toFixed(2);
+      els.llong.value = (d.muLongLoadSenseK != null ? d.muLongLoadSenseK : 0.04).toFixed(2); els.llongV.textContent = (+els.llong.value).toFixed(2);
+      els.df.value = (d.downforceK != null ? d.downforceK : 0.00025).toFixed(5); els.dfV.textContent = (+els.df.value).toFixed(5);
+      els.vkine.value = (d.vKineBlend != null ? d.vKineBlend : 40).toFixed(0); els.vkineV.textContent = els.vkine.value;
+      els.cgh.value = (d.cgHeight != null ? d.cgHeight : 8).toFixed(0); els.cghV.textContent = els.cgh.value;
+      els.yawd.value = (d.yawDampK != null ? d.yawDampK : 0.12).toFixed(2); els.yawdV.textContent = (+els.yawd.value).toFixed(2);
+      els.reventry.value = (d.reverseEntrySpeed != null ? d.reverseEntrySpeed : 40).toFixed(0); els.reventryV.textContent = els.reventry.value;
+      els.revtorque.value = (d.reverseTorqueScale != null ? d.reverseTorqueScale : 0.60).toFixed(2); els.revtorqueV.textContent = (+els.revtorque.value).toFixed(2);
     }
     refresh(els.kind.value);
 
-    function apply(){
+    function apply() {
       const k = els.kind.value;
       const steeringModeSelection = els.steerMode ? els.steerMode.value : getStoredSteeringMode();
       const carSet = (typeof getCars === 'function') ? (getCars() || {}) : null;
@@ -2761,27 +2771,27 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
         muLatGrass: +els.mulg.value,
         muLongGrass: +els.muog.value,
         dragK: +els.drag.value,
-    rollK: +els.roll.value,
-  rearCircle: +els.rearc.value,
-  frontCircle: +els.frontc.value,
-  brakeFrontShare: +els.brkfs.value,
-  longSlipPeak: +els.lspe.value,
-  longSlipFalloff: +els.lsfo.value,
-  loadSenseK: +els.llat.value,
-  muLongLoadSenseK: +els.llong.value,
-  downforceK: +els.df.value,
-  vKineBlend: +els.vkine.value,
-  cgHeight: +els.cgh.value,
-  yawDampK: +els.yawd.value,
-  reverseEntrySpeed: +els.reventry.value,
-  reverseTorqueScale: +els.revtorque.value,
+        rollK: +els.roll.value,
+        rearCircle: +els.rearc.value,
+        frontCircle: +els.frontc.value,
+        brakeFrontShare: +els.brkfs.value,
+        longSlipPeak: +els.lspe.value,
+        longSlipFalloff: +els.lsfo.value,
+        loadSenseK: +els.llat.value,
+        muLongLoadSenseK: +els.llong.value,
+        downforceK: +els.df.value,
+        vKineBlend: +els.vkine.value,
+        cgHeight: +els.cgh.value,
+        yawDampK: +els.yawd.value,
+        reverseEntrySpeed: +els.reventry.value,
+        reverseTorqueScale: +els.revtorque.value,
         touchSteer: { ...touchSteerCfg }
       };
       const cars = carSet || {};
       const applyTo = [cars.player].filter(Boolean);
       if (els.applyAI.checked && Array.isArray(cars.ai)) applyTo.push(...cars.ai);
       applySteeringModeSelection(steeringModeSelection, cars);
-      for (const c of applyTo){
+      for (const c of applyTo) {
         if (!c) continue;
         if (!c.physics) initCar(c, c.kind);
         c.physics.params = { ...c.physics.params, ...p };
@@ -2799,7 +2809,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
               fix.setFriction(p.contactFriction != null ? p.contactFriction : 0.45);
               fix.setRestitution(p.restitution ?? planckState.restitution);
             }
-          } catch(_){/* ignore */}
+          } catch (_) {/* ignore */ }
         }
       }
       registerPlanckCars(applyTo);
@@ -2857,8 +2867,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
 
         // Always use VEHICLE_DEFAULTS for accelDurationMult (per-vehicle slider setting)
         const vehicleDefaults = VEHICLE_DEFAULTS[carKind] || {};
-        const accelDurMultForKind = vehicleDefaults.accelDurationMult != null 
-          ? vehicleDefaults.accelDurationMult 
+        const accelDurMultForKind = vehicleDefaults.accelDurationMult != null
+          ? vehicleDefaults.accelDurationMult
           : (sourceParams.accelDurationMult != null ? sourceParams.accelDurationMult : 5.0);
 
         // Clone safe physics parameters (not steering mode stuff)
@@ -2913,16 +2923,16 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
             for (let fix = body.getFixtureList(); fix; fix = fix.getNext()) {
               fix.setRestitution(safeParams.restitution ?? planckState.restitution);
             }
-          } catch(_){/* ignore */}
+          } catch (_) {/* ignore */ }
         }
       }
     }
 
-  for (const key of ['gravity','ldamp','adamp','rest','mass','eng','brk','steer','steers','touchMaxLow','touchMaxHigh','touchFalloff','touchBaseRate','touchRateFalloff','touchReturn','touchFilter','mulr','muor','mulg','muog','drag','roll','rearc','frontc','brkfs','lspe','lsfo','llat','llong','df','vkine','cgh','yawd','reventry','revtorque']){
-    const controlId = `rv-${key}`;
-      els[key].addEventListener('input', ()=>{
+    for (const key of ['gravity', 'ldamp', 'adamp', 'rest', 'mass', 'eng', 'brk', 'steer', 'steers', 'touchMaxLow', 'touchMaxHigh', 'touchFalloff', 'touchBaseRate', 'touchRateFalloff', 'touchReturn', 'touchFilter', 'mulr', 'muor', 'mulg', 'muog', 'drag', 'roll', 'rearc', 'frontc', 'brkfs', 'lspe', 'lsfo', 'llat', 'llong', 'df', 'vkine', 'cgh', 'yawd', 'reventry', 'revtorque']) {
+      const controlId = `rv-${key}`;
+      els[key].addEventListener('input', () => {
         const v = els[key].value;
-        const label = key+'V';
+        const label = key + 'V';
         if (els[label]) {
           let display;
           switch (key) {
@@ -2948,7 +2958,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
               display = String(Math.round(+v));
               break;
             default:
-              display = (''+v).slice(0, 4);
+              display = ('' + v).slice(0, 4);
           }
           els[label].textContent = display;
         }
@@ -2957,23 +2967,23 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       });
     }
     if (els.steerMode) {
-      els.steerMode.addEventListener('change', ()=>{
+      els.steerMode.addEventListener('change', () => {
         apply();
         handleSave('rv-steerMode');
       });
     }
-    els.kind.addEventListener('change', ()=>{
+    els.kind.addEventListener('change', () => {
       refresh(els.kind.value);
       applySavedControlValues();
       apply();
       applySavedControlValues();
     });
-    if (els.planck) els.planck.addEventListener('change', ()=>{ apply(); handleSave('rv-planck'); });
-    if (els.ppm) els.ppm.addEventListener('change', ()=>{ apply(); handleSave('rv-ppm'); });
-    if (els.veliters) els.veliters.addEventListener('change', ()=>{ apply(); handleSave('rv-veliters'); });
-    if (els.positers) els.positers.addEventListener('change', ()=>{ apply(); handleSave('rv-positers'); });
+    if (els.planck) els.planck.addEventListener('change', () => { apply(); handleSave('rv-planck'); });
+    if (els.ppm) els.ppm.addEventListener('change', () => { apply(); handleSave('rv-ppm'); });
+    if (els.veliters) els.veliters.addEventListener('change', () => { apply(); handleSave('rv-veliters'); });
+    if (els.positers) els.positers.addEventListener('change', () => { apply(); handleSave('rv-positers'); });
     if (els.planckRebuild) {
-      els.planckRebuild.addEventListener('click', ()=>{
+      els.planckRebuild.addEventListener('click', () => {
         apply();
         if (typeof rebuildPlanckWorld === 'function' && getCars) {
           const cset = getCars() || {};
@@ -2984,18 +2994,18 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
         }
       });
     }
-    els.reset.addEventListener('click', ()=>{ VEHICLE_DEFAULTS[els.kind.value] = { ...defaultSnapshot[els.kind.value] }; refresh(els.kind.value); apply(); });
-    els.debug.addEventListener('change', ()=>{
+    els.reset.addEventListener('click', () => { VEHICLE_DEFAULTS[els.kind.value] = { ...defaultSnapshot[els.kind.value] }; refresh(els.kind.value); apply(); });
+    els.debug.addEventListener('change', () => {
       setDebugEnabled(!!els.debug.checked);
       handleSave('rv-debug');
     });
     if (els.applyAI) {
-      els.applyAI.addEventListener('change', ()=>{
+      els.applyAI.addEventListener('change', () => {
         handleSave('rv-apply-ai');
       });
     }
     if (els.clonePhysics) {
-      els.clonePhysics.addEventListener('change', ()=>{
+      els.clonePhysics.addEventListener('change', () => {
         handleSave('rv-clone-physics');
         // Toggle caution icons visibility
         if (els.clonePhysics.checked) {
