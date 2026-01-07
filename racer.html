@@ -1840,6 +1840,7 @@
               countdownActiveRef.current = false;
               runningRef.current = true;
               setRunning(true);
+              if (player) player.lastCross = performance.now();
               const hideId = setTimeout(() => {
                 countdownOverlayRef.current = null;
                 setCountdownOverlay(null);
@@ -4353,7 +4354,7 @@
             const currentLap = Math.min(completed + 1, totalLaps);
             const finished = completed >= totalLaps;
             const lapText = finished ? `Finished ${totalLaps} laps` : `Lap ${currentLap} / ${totalLaps}`;
-            const debugText = ` | CP: ${player.nextCp}/${checkpoints ? checkpoints.length : 0} | Last: ${(performance.now() - (player.lastCross || 0)).toFixed(0)}`;
+            const debugText = ` | CP: ${player.nextCp}/${checkpoints ? checkpoints.length : 0} | Last: ${player.lastCross ? (performance.now() - player.lastCross).toFixed(0) : "0"}`;
             const fullText = lapText + debugText;
             ctx.font = "600 24px system-ui";
             ctx.textBaseline = "middle";
@@ -4570,9 +4571,9 @@
               // Debounce
               if (now - (car.lastCross || 0) > 500) {
                 car.nextCp = (idx + 1) % checkpoints.length;
-                car.lastCross = now;
 
                 if (idx === 0) {
+                  car.lastCross = now;
                   if (!car.hasPassedStartLine) {
                     car.hasPassedStartLine = true;
                     car.lapStart = now;
