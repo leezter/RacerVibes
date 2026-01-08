@@ -786,6 +786,9 @@
     const ZOOM_SPEED_FULL_DEFAULT = 89;
     const ZOOM_SPEED_GAP = 5;
     const ZOOM_STORAGE_PREFIX = "cameraZoom_";
+    // Camera intro zoom during countdown
+    const CAMERA_INTRO_ZOOM_MULTIPLIER = 6.0; // How much closer to start (car fills screen)
+    const CAMERA_INTRO_DURATION = 3500; // Duration in ms (matches countdown: 320ms base + 3*900ms gaps + 900ms GO)
     function clampScale(value) {
       return Math.min(SCALE_MAX, Math.max(SCALE_MIN, value));
     }
@@ -1816,6 +1819,15 @@
         countdownActiveRef.current = true;
         runningRef.current = false;
         setRunning(false);
+        // Activate camera intro zoom - snap camera to close zoom immediately
+        cameraIntroRef.current = { active: true, startTime: performance.now() };
+        const cam = camRef.current;
+        if (cam) {
+          // Instantly set camera to close zoom (no interpolation)
+          const closeZoom = (cam.targetScale || cam.scale || CAM_BASE_ZOOM) * CAMERA_INTRO_ZOOM_MULTIPLIER;
+          cam.scale = closeZoom;
+          cam.targetScale = closeZoom;
+        }
         const baseDelay = 320;
         const gap = 900;
         const sequence = [
@@ -1878,6 +1890,7 @@
       const displayScaleRef = useRef(1);
       const baseDisplayScaleRef = useRef(1);
       const camInitRef = useRef(false);
+      const cameraIntroRef = useRef({ active: false, startTime: null }); // Intro zoom state
       const loadTrackRef = useRef(() => { });
       useEffect(() => {
         if (!hudTip) return;
@@ -4925,7 +4938,31 @@
           const spd = Math.abs(player.speed || 0);
           if (cam) {
             const { minZoom, maxZoom, targetZoom } = computeCameraZoom(spd);
-            cam.targetScale = Math.max(minZoom, Math.min(maxZoom, targetZoom));
+
+            // Handle camera intro zoom during countdown
+            const intro = cameraIntroRef.current;
+            let effectiveTargetZoom = targetZoom;
+
+            if (intro && intro.active && intro.startTime !== null) {
+              const elapsed = performance.now() - intro.startTime;
+              const progress = Math.min(1, elapsed / CAMERA_INTRO_DURATION);
+
+              // Ease-out cubic for smooth deceleration as we zoom out
+              const easedProgress = 1 - Math.pow(1 - progress, 3);
+
+              // Start zoom is the normal zoom multiplied by intro factor (results in closer view)
+              // Higher cam.scale = more zoomed in (closer)
+              const introZoom = targetZoom * CAMERA_INTRO_ZOOM_MULTIPLIER;
+              effectiveTargetZoom = introZoom + (targetZoom - introZoom) * easedProgress;
+
+              // Deactivate intro when complete
+              if (progress >= 1) {
+                intro.active = false;
+                intro.startTime = null;
+              }
+            }
+
+            cam.targetScale = Math.max(minZoom, Math.min(maxZoom * CAMERA_INTRO_ZOOM_MULTIPLIER, effectiveTargetZoom));
             const zoomEase = clampZoomResponse(zoomResponseRate);
             cam.scale += (cam.targetScale - cam.scale) * Math.min(1, dt * zoomEase);
             if (typeof cam.targetX === "number" && typeof cam.targetY === "number") {
