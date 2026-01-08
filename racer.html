@@ -6427,6 +6427,12 @@
         resetBtn.addEventListener('click', () => {
           const defaults = cloneConfig(getDefaultConfig());
           if (!defaults) return;
+          // Preserve the powerMult calculated by the physics system - it's derived from
+          // vehicle parameters (enginePowerMult, accelDurationMult) and should not be reset
+          const car = getPlayerCar();
+          if (car?.gearbox?.c?.powerMult != null) {
+            defaults.powerMult = car.gearbox.c.powerMult;
+          }
           const stored = persistConfig(defaults);
           fillForm(stored || defaults);
         });
