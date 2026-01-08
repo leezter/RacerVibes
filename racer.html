@@ -4442,20 +4442,20 @@
 
             ctx.restore();
           }
-          // Minimap (top-right)
+          // Minimap (below Lap panel on the left)
           if (centerline && centerline.length) {
-            const mw = 180, mh = 120, pad = 10; const x = viewW - mw - pad, y = pad;
-            ctx.fillStyle = "rgba(10,16,24,0.75)"; ctx.strokeStyle = "#223453"; ctx.lineWidth = 1.5;
-            ctx.fillRect(x, y, mw, mh); ctx.strokeRect(x, y, mw, mh);
+            const mw = 360, mh = 240, pad = 10;
+            const x = 22, y = 20 + 56 + 50; // Position below Lap panel with more spacing
+            // No background panel - just the track
             const bb = trackBounds || { minX: 0, minY: 0, w: W, h: H };
             const s = Math.min((mw - 12) / bb.w, (mh - 12) / bb.h);
             const ox = x + 6 - (bb.minX) * s; const oy = y + 6 - (bb.minY) * s;
-            ctx.save(); ctx.beginPath(); ctx.rect(x + 2, y + 2, mw - 4, mh - 4); ctx.clip();
-            ctx.lineWidth = Math.max(1, ROAD_WIDTH * 0.12 * s);
+            ctx.save(); ctx.beginPath(); ctx.rect(x, y, mw, mh); ctx.clip();
+            ctx.lineWidth = Math.max(2, ROAD_WIDTH * 0.25 * s);
             ctx.strokeStyle = "#9aa5b1"; ctx.beginPath(); for (let i = 0; i < centerline.length; i++) { const p = centerline[i]; const px = p.x * s + ox, py = p.y * s + oy; if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py); } ctx.stroke();
             if (showAiLineRef.current && racingLine && racingLine.length > 1) {
               ctx.strokeStyle = "rgba(96,165,250,0.9)";
-              ctx.lineWidth = Math.max(1, ROAD_WIDTH * 0.08 * s);
+              ctx.lineWidth = Math.max(1.5, ROAD_WIDTH * 0.15 * s);
               ctx.setLineDash([8, 6]);
               ctx.beginPath();
               for (let i = 0; i < racingLine.length; i++) {
@@ -4469,12 +4469,10 @@
               ctx.setLineDash([]);
             }
             // cars
-            function dot(col, px, py) { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI * 2); ctx.fill(); }
+            function dot(col, px, py) { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(px, py, 5, 0, Math.PI * 2); ctx.fill(); }
             const ppx = player.x * s + ox, ppy = player.y * s + oy; dot('#e53935', ppx, ppy);
             for (const a of aiCars) { dot('#7dd3fc', a.x * s + ox, a.y * s + oy); }
             ctx.restore();
-            // Label
-            ctx.fillStyle = "#cbd5e1"; ctx.font = "11px system-ui"; ctx.fillText(activeTrack && activeTrack.name ? activeTrack.name : trackName, x + 8, y + 14);
           }
           if (player && player.gearbox) {
             const gearLabel = player.gearbox.gear;
