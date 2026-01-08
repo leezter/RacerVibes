@@ -4233,8 +4233,10 @@
           }
 
           // Checkpoint visuals (subtle)
-          ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.lineWidth = 2;
-          for (const cp of checkpoints) { ctx.beginPath(); ctx.moveTo(cp.a.x, cp.a.y); ctx.lineTo(cp.b.x, cp.b.y); ctx.stroke(); }
+          if (window.__CHECKPOINTS_ENABLED) {
+            ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.lineWidth = 2;
+            for (const cp of checkpoints) { ctx.beginPath(); ctx.moveTo(cp.a.x, cp.a.y); ctx.lineTo(cp.b.x, cp.b.y); ctx.stroke(); }
+          }
 
           if (decorLayer && decorLayer.shadowCanvas) {
             ctx.save();
@@ -4267,7 +4269,7 @@
           if (window.RacerPhysics) { for (const car of allCars) window.RacerPhysics.drawDebug(ctx, car); }
 
           // DEBUG: Draw Checkpoints
-          if (true) { // Always on for debugging now
+          if (window.__CHECKPOINTS_ENABLED) {
             ctx.save();
             ctx.lineWidth = 4;
             checkpoints.forEach((cp, idx) => {

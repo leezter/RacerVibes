@@ -1944,7 +1944,15 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
 
   // Simple debug draw: velocity vector and slip
   let DEBUG = false;
+  let CHECKPOINTS_VISIBLE = false;
+  window.__CHECKPOINTS_ENABLED = false;
+
   function setDebugEnabled(v) { DEBUG = !!v; }
+  function setCheckpointsEnabled(v) {
+    CHECKPOINTS_VISIBLE = !!v;
+    window.__CHECKPOINTS_ENABLED = !!v;
+  }
+  function getCheckpointsEnabled() { return !!window.__CHECKPOINTS_ENABLED; }
   function drawDebug(ctx, car) {
     if (!DEBUG) return;
     ctx.save();
@@ -2078,7 +2086,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       reverseEntry: "Speed threshold/window to allow reverse mode.",
       reverseTorque: "Percent of engine torque available in reverse.",
       rebuildWorld: "Rebuild the Planck physics world/bodies with current settings.",
-      resetDefaults: "Reset this vehicle’s sliders to default values."
+      resetDefaults: "Reset this vehicle’s sliders to default values.",
+      showCheckpoints: "Toggle visibility of track checkpoints."
     };
     DESCRIPTIONS.vxHyst = "Hysteresis around 0 px/s before direction flips (prevents sign flapping).";
     DESCRIPTIONS.reverseSteer = "Steering scale when reversing (lower = calmer).";
@@ -2113,6 +2122,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
         </div>
         <div class="rv-row"><label class="small" for="rv-clone-physics"><input type="checkbox" id="rv-clone-physics"> <span class="rv-name"${tipAttr('clonePhysics')}>Clone player physics to AI (per vehicle)</span></label></div>
         <div class="rv-row"><label for="rv-debug"><span class="rv-name"${tipAttr('debugOverlay')}>Debug overlay</span></label><input type="checkbox" id="rv-debug"></div>
+        <div class="rv-row"><label for="rv-checkpoints"><span class="rv-name"${tipAttr('showCheckpoints')}>Show checkpoints</span></label><input type="checkbox" id="rv-checkpoints"></div>
         <div class="rv-section planck">
           <h4>Planck</h4>
           <div class="rv-row" data-no-ai-clone><label for="rv-planck"><span class="rv-name"${tipAttr('usePlanck')}>Use Planck</span><span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label><input type="checkbox" id="rv-planck"></div>
@@ -2194,6 +2204,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       applyAI: wrap.querySelector('#rv-apply-ai'),
       clonePhysics: wrap.querySelector('#rv-clone-physics'),
       debug: wrap.querySelector('#rv-debug'),
+      checkpoints: wrap.querySelector('#rv-checkpoints'),
       planck: wrap.querySelector('#rv-planck'),
       ppm: wrap.querySelector('#rv-ppm'),
       gravity: wrap.querySelector('#rv-gravity'), gravityV: wrap.querySelector('#rv-gravity-v'),
@@ -2430,6 +2441,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
 
     const CONTROL_SETUP = [
       ['rv-debug', { kind: 'global', type: 'checkbox', getDefault: () => false, apply: false, afterSet: () => setDebugEnabled(!!els.debug.checked) }],
+      ['rv-checkpoints', { kind: 'global', type: 'checkbox', getDefault: () => false, apply: false, afterSet: () => setCheckpointsEnabled(!!els.checkpoints.checked) }],
       ['rv-planck', {
         kind: 'vehicle', type: 'checkbox', getDefault: (kind) => {
           const defaults = defaultSnapshot[kind] || {};
@@ -2826,8 +2838,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
         planckState.needsWorldBuild = true;
       }
       setDebugEnabled(!!els.debug.checked);
+      setCheckpointsEnabled(!!els.checkpoints.checked);
       refresh(k);
-      // After applying, also sync physics to AI if clone mode is enabled
       if (els.clonePhysics && els.clonePhysics.checked) {
         applyClonePhysicsToAI();
       }
@@ -3003,6 +3015,10 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       setDebugEnabled(!!els.debug.checked);
       handleSave('rv-debug');
     });
+    els.checkpoints.addEventListener('change', () => {
+      setCheckpointsEnabled(!!els.checkpoints.checked);
+      handleSave('rv-checkpoints');
+    });
     if (els.applyAI) {
       els.applyAI.addEventListener('change', () => {
         handleSave('rv-apply-ai');
@@ -3042,6 +3058,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     wheelPositions,
     drawDebug,
     setDebugEnabled,
+    setCheckpointsEnabled,
+    getCheckpointsEnabled,
     injectDevTools,
     injectVehicleTweaker,
     configureTrackCollision,
