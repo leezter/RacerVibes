@@ -1835,18 +1835,23 @@
             };
             countdownOverlayRef.current = overlayState;
             setCountdownOverlay(overlayState);
-            playCountdownBeep(step.freq, step.final ? 0.55 : 0.35, step.accent || 1);
             if (step.final) {
               countdownActiveRef.current = false;
               runningRef.current = true;
               setRunning(true);
               if (player) player.lastCross = performance.now();
-              const hideId = setTimeout(() => {
-                countdownOverlayRef.current = null;
-                setCountdownOverlay(null);
-              }, 750);
-              countdownTimersRef.current.push(hideId);
+              // Schedule removal of the GO message
+              setTimeout(() => {
+                // Ensure we only clear if this specific overlay is still active
+                // This prevents race conditions where we might clear a new countdown
+                if (countdownOverlayRef.current === overlayState) {
+                  countdownOverlayRef.current = null;
+                  setCountdownOverlay(null);
+                }
+              }, 1500);
             }
+            playCountdownBeep(step.freq, step.final ? 0.55 : 0.35, step.accent || 1);
+
           }, baseDelay + idx * gap);
           countdownTimersRef.current.push(timer);
         });
@@ -4315,7 +4320,19 @@
             ctx.fillText(statusText, viewW / 2 - ctx.measureText(statusText).width / 2, viewH / 2);
           }
 
-          const overlay = countdownOverlayRef.current;
+          let overlay = countdownOverlayRef.current;
+          // Consistency Check: If "GO" is visible but race hasn't started, force start it.
+          if (overlay && overlay.final && !runningRef.current) {
+            runningRef.current = true;
+            setRunning(true);
+            if (player) {
+              player.lastCross = performance.now();
+            }
+          }
+          // Failsafe: Auto-hide "Go" message if it persists longer than 1.5 seconds
+          if (overlay && overlay.final && (performance.now() - (overlay.startedAt || 0)) > 1500) {
+            overlay = null;
+          }
           if (overlay) {
             const now = performance.now();
             const elapsed = overlay.startedAt ? (now - overlay.startedAt) : 0;
