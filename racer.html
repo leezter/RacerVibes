@@ -156,6 +156,253 @@
       transform: translateY(1px);
     }
 
+    /* Pause button (top-right) */
+    .pause-btn {
+      position: fixed;
+      right: 12px;
+      top: 12px;
+      z-index: 40;
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid rgba(71, 85, 105, 0.5);
+      color: #e2e8f0;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, .45);
+      font-size: 18px;
+      transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+    }
+
+    .pause-btn:hover {
+      background: rgba(30, 41, 59, 0.96);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, .55);
+    }
+
+    .pause-btn:active {
+      transform: scale(0.95);
+    }
+
+    /* Pause menu overlay */
+    .pause-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    .pause-overlay.open {
+      display: flex;
+    }
+
+    .pause-menu {
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(71, 85, 105, 0.6);
+      border-radius: 20px;
+      padding: 32px 40px;
+      min-width: 280px;
+      max-width: 90vw;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.65), 0 0 80px rgba(59, 130, 246, 0.15);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      animation: pauseSlideIn 0.25s ease-out;
+    }
+
+    @keyframes pauseSlideIn {
+      from {
+        opacity: 0;
+        transform: scale(0.92) translateY(-10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
+    }
+
+    .pause-menu h2 {
+      margin: 0 0 16px;
+      font-size: 26px;
+      font-weight: 700;
+      text-align: center;
+      background: linear-gradient(135deg, #60a5fa, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .pause-menu-btn {
+      appearance: none;
+      border: none;
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(139, 92, 246, 0.2));
+      border: 1px solid rgba(96, 165, 250, 0.35);
+      color: #e2e8f0;
+      font-size: 16px;
+      font-weight: 600;
+      padding: 14px 24px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: center;
+    }
+
+    .pause-menu-btn:hover {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.4), rgba(139, 92, 246, 0.35));
+      border-color: rgba(96, 165, 250, 0.6);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(59, 130, 246, 0.25);
+    }
+
+    .pause-menu-btn:active {
+      transform: translateY(0);
+    }
+
+    .pause-menu-btn.resume {
+      background: linear-gradient(135deg, rgba(34, 197, 94, 0.3), rgba(16, 185, 129, 0.25));
+      border-color: rgba(34, 197, 94, 0.5);
+    }
+
+    .pause-menu-btn.resume:hover {
+      background: linear-gradient(135deg, rgba(34, 197, 94, 0.5), rgba(16, 185, 129, 0.4));
+      border-color: rgba(34, 197, 94, 0.7);
+      box-shadow: 0 8px 24px rgba(34, 197, 94, 0.25);
+    }
+
+    .pause-menu-btn.quit {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: rgba(239, 68, 68, 0.35);
+    }
+
+    .pause-menu-btn.quit:hover {
+      background: rgba(239, 68, 68, 0.3);
+      border-color: rgba(239, 68, 68, 0.6);
+      box-shadow: 0 8px 24px rgba(239, 68, 68, 0.2);
+    }
+
+    /* Settings panel within pause menu */
+    .pause-settings {
+      display: none;
+      flex-direction: column;
+      gap: 16px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(71, 85, 105, 0.4);
+      margin-top: 8px;
+    }
+
+    .pause-settings.open {
+      display: flex;
+    }
+
+    .pause-settings h3 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #94a3b8;
+    }
+
+    .settings-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .settings-row label {
+      font-size: 14px;
+      color: #cbd5e1;
+      font-weight: 500;
+    }
+
+    .settings-row input[type="range"] {
+      flex: 1;
+      max-width: 150px;
+      accent-color: #60a5fa;
+    }
+
+    .settings-row .value-display {
+      min-width: 40px;
+      text-align: right;
+      font-size: 13px;
+      color: #94a3b8;
+      font-feature-settings: "tnum";
+    }
+
+    /* Toggle switch for gyro */
+    .toggle-switch {
+      position: relative;
+      width: 52px;
+      height: 28px;
+      background: rgba(71, 85, 105, 0.6);
+      border-radius: 999px;
+      cursor: pointer;
+      transition: background 0.25s ease;
+    }
+
+    .toggle-switch.on {
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+    }
+
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 22px;
+      height: 22px;
+      background: #fff;
+      border-radius: 50%;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      transition: transform 0.25s ease;
+    }
+
+    .toggle-switch.on::after {
+      transform: translateX(24px);
+    }
+
+    .settings-back-btn {
+      appearance: none;
+      border: none;
+      background: rgba(71, 85, 105, 0.3);
+      border: 1px solid rgba(71, 85, 105, 0.5);
+      color: #94a3b8;
+      font-size: 14px;
+      padding: 10px 20px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-top: 8px;
+    }
+
+    .settings-back-btn:hover {
+      background: rgba(71, 85, 105, 0.5);
+      color: #e2e8f0;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 600px) {
+      .pause-menu {
+        padding: 24px 28px;
+        min-width: 260px;
+      }
+
+      .pause-menu h2 {
+        font-size: 22px;
+      }
+
+      .pause-menu-btn {
+        font-size: 14px;
+        padding: 12px 20px;
+      }
+    }
+
     /* Portrait orientation warning */
     .portrait-warning {
       position: fixed;
@@ -1679,8 +1926,8 @@
       const [hudTip, setHudTip] = useState("");
       const [countdownOverlay, setCountdownOverlay] = useState(null);
       const countdownOverlayRef = useRef(countdownOverlay);
-      const countdownTimersRef = useRef([]);
       const countdownActiveRef = useRef(false);
+      const countdownTimersRef = useRef([]);
       const [devPanelOpen, setDevPanelOpen] = useState(false);
       const [geoScaleInput, setGeoScaleInput] = useState(() => clampScale(GEO_SCALE));
       const [widthScaleInput, setWidthScaleInput] = useState(() => clampScale(WIDTH_SCALE));
@@ -1717,6 +1964,76 @@
       const [aiPanelOpen, setAiPanelOpen] = useState(false);
       const [devMenuOpen, setDevMenuOpen] = useState(false);
       const [activeDevPanel, setActiveDevPanel] = useState(null); // 'scales', 'ai', 'devtools', 'gbx', 'tweaker'
+
+      // Pause menu state
+      const [pauseMenuOpen, setPauseMenuOpen] = useState(false);
+      const [pauseSettingsOpen, setPauseSettingsOpen] = useState(false);
+      const pauseMenuOpenRef = useRef(pauseMenuOpen);
+      useEffect(() => { pauseMenuOpenRef.current = pauseMenuOpen; }, [pauseMenuOpen]);
+
+      // Settings state (master volume and gyro steering)
+      const [masterVolume, setMasterVolume] = useState(() => {
+        try {
+          const stored = localStorage.getItem('masterVolume');
+          if (stored === null) return 0.9;
+          const val = parseFloat(stored);
+          return Number.isFinite(val) ? Math.max(0, Math.min(1, val)) : 0.9;
+        } catch (_) { return 0.9; }
+      });
+      const [gyroSteeringEnabled, setGyroSteeringEnabled] = useState(() => {
+        try {
+          const stored = localStorage.getItem('gyroSteeringEnabled');
+          return stored === '1' || stored === 'true';
+        } catch (_) { return false; }
+      });
+
+      // Apply master volume changes to audio
+      useEffect(() => {
+        try {
+          localStorage.setItem('masterVolume', String(masterVolume));
+          if (SFX && SFX.master) {
+            SFX.master.gain.value = masterVolume;
+          }
+        } catch (_) { }
+      }, [masterVolume]);
+
+      // Persist gyro steering setting
+      useEffect(() => {
+        try {
+          localStorage.setItem('gyroSteeringEnabled', gyroSteeringEnabled ? '1' : '0');
+        } catch (_) { }
+      }, [gyroSteeringEnabled]);
+
+      // Pause menu handlers
+      const openPauseMenu = () => {
+        if (countdownActiveRef.current) return; // Don't pause during countdown
+        runningRef.current = false; // Immediately stop the game loop
+        pauseMenuOpenRef.current = true; // Immediately mark menu as open
+        setRunning(false);
+        setPauseMenuOpen(true);
+        setPauseSettingsOpen(false);
+      };
+
+      const closePauseMenu = () => {
+        pauseMenuOpenRef.current = false; // Immediately mark menu as closed
+        setPauseMenuOpen(false);
+        setPauseSettingsOpen(false);
+        runningRef.current = true; // Immediately resume the game loop
+        setRunning(true);
+      };
+
+      const handleRestart = () => {
+        setPauseMenuOpen(false);
+        setPauseSettingsOpen(false);
+        if (loadTrackRef.current) {
+          loadTrackRef.current(trackName);
+        }
+      };
+
+      const handleQuitToMenu = () => {
+        window.location.href = 'racer_start_menu.html';
+      };
+
       const [aiControls, setAIControls] = useState(() => {
         const lineDefaults = getLineDefaults();
         const skillDefaults = getAISkillDefaults(initialAIDifficulty);
@@ -4795,10 +5112,23 @@
           if (k === "s") keys.s = down;
           if (k === "a") keys.a = down;
           if (k === "d") keys.d = down;
-          if (down && (k === "r" || k === "enter")) loadTrack(trackName); // restart current track
+          if (down && (k === "r" || k === "enter")) {
+            if (pauseMenuOpenRef.current) return; // Don't restart when menu is open
+            loadTrack(trackName); // restart current track
+          }
           if (down && k === " ") {
             if (countdownActiveRef.current) return;
+            if (pauseMenuOpenRef.current) return; // Don't toggle pause when menu is open
             setRunning((r) => !r);
+          }
+          // Escape key toggles pause menu
+          if (down && k === "escape") {
+            if (countdownActiveRef.current) return;
+            if (pauseMenuOpenRef.current) {
+              closePauseMenu();
+            } else {
+              openPauseMenu();
+            }
           }
           if (down && k === "t") {
             const next = trackName === "Test" ? "Sharp_Corners" : "Test";
@@ -5757,6 +6087,75 @@
               </div>
             </label>
           </div>
+
+          {/* Pause Button (top-right) */}
+          <div
+            className="pause-btn"
+            onClick={openPauseMenu}
+            title="Pause"
+            aria-label="Pause game"
+          >
+            ❚❚
+          </div>
+
+          {/* Pause Menu Overlay */}
+          <div className={`pause-overlay ${pauseMenuOpen ? 'open' : ''}`}>
+            <div className="pause-menu">
+              {!pauseSettingsOpen ? (
+                <>
+                  <h2>Paused</h2>
+                  <button className="pause-menu-btn resume" onClick={closePauseMenu}>
+                    Resume
+                  </button>
+                  <button className="pause-menu-btn" onClick={handleRestart}>
+                    Restart
+                  </button>
+                  <button className="pause-menu-btn" onClick={() => setPauseSettingsOpen(true)}>
+                    Settings
+                  </button>
+                  <button className="pause-menu-btn quit" onClick={handleQuitToMenu}>
+                    Quit (Main Menu)
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h2>Settings</h2>
+                  <div className="settings-row">
+                    <label>Master Volume</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={masterVolume}
+                      onChange={(e) => setMasterVolume(parseFloat(e.target.value))}
+                    />
+                    <span className="value-display">{Math.round(masterVolume * 100)}%</span>
+                  </div>
+                  <div className="settings-row">
+                    <label>Gyro Steering (Mobile)</label>
+                    <div
+                      className={`toggle-switch ${gyroSteeringEnabled ? 'on' : ''}`}
+                      onClick={() => setGyroSteeringEnabled(!gyroSteeringEnabled)}
+                      role="switch"
+                      aria-checked={gyroSteeringEnabled}
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setGyroSteeringEnabled(!gyroSteeringEnabled);
+                        }
+                      }}
+                    />
+                  </div>
+                  <button className="settings-back-btn" onClick={() => setPauseSettingsOpen(false)}>
+                    ← Back
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
           <canvas ref={canvasRef} width="1000" height="700"></canvas>
         </div>
       );
