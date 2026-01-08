@@ -467,6 +467,71 @@
     return pts;
   }
 
+  // Squared distance from point p to segment v-w
+  function distToSegmentSquared(p, v, w) {
+    const l2 = (v.x - w.x) ** 2 + (v.y - w.y) ** 2;
+    if (l2 === 0) return (p.x - v.x) ** 2 + (p.y - v.y) ** 2;
+    let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return (p.x - (v.x + t * (w.x - v.x))) ** 2 + (p.y - (v.y + t * (w.y - v.y))) ** 2;
+  }
+
+  function findTrackOverlaps(points, roadWidth) {
+    const pts = ensureClosed(points);
+    const limit = roadWidth * 0.9; // 10% tolerance
+    const limitSq = limit * limit;
+
+    // Precompute cumulative distances
+    const dists = [0];
+    let totalDist = 0;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const d = distance(pts[i], pts[i + 1]);
+      totalDist += d;
+      dists.push(totalDist);
+    }
+
+    // Minimum distance along the track to consider a "fresh" segment
+    // If we check segments closer than this, we are just checking the road against itself
+    const minGeodesicDist = roadWidth * 1.5;
+
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a1 = pts[i];
+      const a2 = pts[i + 1];
+
+      // Only check forward to avoid duplicates
+      for (let j = i + 1; j < pts.length - 1; j++) {
+        // Geodesic distance (distance along the track)
+        const geoDist = Math.abs(dists[j] - dists[i]);
+
+        // Check both direct path and wrap-around path
+        // If EITHER is too short, we are locally close and should skip
+        const wrapDist = totalDist - geoDist;
+
+        if (geoDist < minGeodesicDist || wrapDist < minGeodesicDist) continue;
+
+        const b1 = pts[j];
+        const b2 = pts[j + 1];
+
+        // Quick AABB check
+        if (Math.max(a1.x, a2.x) + limit < Math.min(b1.x, b2.x)) continue;
+        if (Math.min(a1.x, a2.x) - limit > Math.max(b1.x, b2.x)) continue;
+        if (Math.max(a1.y, a2.y) + limit < Math.min(b1.y, b2.y)) continue;
+        if (Math.min(a1.y, a2.y) - limit > Math.max(b1.y, b2.y)) continue;
+
+        // Intersection check (strict crossover)
+        if (segmentIntersection(a1, a2, b1, b2)) return true;
+
+        // Distance check (near miss/touching)
+        if (distToSegmentSquared(a1, b1, b2) < limitSq) return true;
+        if (distToSegmentSquared(a2, b1, b2) < limitSq) return true;
+        if (distToSegmentSquared(b1, a1, a2) < limitSq) return true;
+        if (distToSegmentSquared(b2, a1, a2) < limitSq) return true;
+      }
+    }
+    return false;
+  }
+
+
   function findSelfIntersections(points) {
     const pts = ensureClosed(points);
     const intersections = [];
@@ -676,6 +741,7 @@
     this.viewOffsetX = 0;
     this.viewOffsetY = 0;
 
+    this.bakeBtn = null;
     this.init();
   }
 
@@ -871,7 +937,16 @@
     this.roadWidthLabel = overlay.querySelector('[data-label="roadWidth"]');
     this.lengthStat = overlay.querySelector('[data-stat="length"]');
     this.turnsStat = overlay.querySelector('[data-stat="turns"]');
+    this.turnStat = overlay.querySelector('[data-stat="turns"]');
     this.propertiesPanel = overlay.querySelector('.tb-properties-panel');
+    this.bakeBtn = overlay.querySelector('[data-action="bake"]');
+
+    // Initial state: disable bake button
+    if (this.bakeBtn) {
+      this.bakeBtn.disabled = true;
+      this.bakeBtn.style.opacity = '0.5';
+      this.bakeBtn.style.pointerEvents = 'none';
+    }
 
     this.resizeCanvas();
   };
@@ -1098,8 +1173,41 @@
 
     if (isClosed) {
       this.circuitStatus.classList.remove('hidden');
+
+      // Calculate visual width for overlap check
+      const widthScale = readWidthScale();
+      const visualRoadWidth = this.state.roadWidth * widthScale;
+
+      const hasOverlaps = findTrackOverlaps(pts, visualRoadWidth);
+      const statusText = this.circuitStatus.querySelector('.tb-status-text');
+
+      if (statusText) {
+        if (hasOverlaps) {
+          statusText.textContent = "OVERLAPPING NOT ALLOWED";
+          this.circuitStatus.classList.add('error');
+          if (this.bakeBtn) {
+            this.bakeBtn.disabled = true;
+            this.bakeBtn.style.opacity = '0.5';
+            this.bakeBtn.style.pointerEvents = 'none';
+          }
+        } else {
+          statusText.textContent = "CIRCUIT CLOSED";
+          this.circuitStatus.classList.remove('error');
+          if (this.bakeBtn) {
+            this.bakeBtn.disabled = false;
+            this.bakeBtn.style.opacity = '1';
+            this.bakeBtn.style.pointerEvents = 'auto';
+          }
+        }
+      }
     } else {
       this.circuitStatus.classList.add('hidden');
+      this.circuitStatus.classList.remove('error');
+      if (this.bakeBtn) {
+        this.bakeBtn.disabled = true;
+        this.bakeBtn.style.opacity = '0.5';
+        this.bakeBtn.style.pointerEvents = 'none';
+      }
     }
 
     // Update stats
