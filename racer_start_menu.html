@@ -1511,7 +1511,8 @@
 
       // Save Config to Session
       const ghostToggleEl = document.getElementById('ghostToggle');
-      const ghostEnabled = ghostToggleEl ? ghostToggleEl.checked : false;
+      // Ghost is only enabled in Time Trial mode when the checkbox is checked
+      const ghostEnabled = state.gameMode === 'time_trial' && ghostToggleEl ? ghostToggleEl.checked : false;
       const payload = {
         mode: state.mode,
         car: state.vehicle,
