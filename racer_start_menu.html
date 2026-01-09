@@ -995,9 +995,9 @@
           <div class="selection-grid">
             <div class="card selected" onclick="selectClass('grip', this)">
               <div class="card-icon">🏆</div>
-              <div class="card-title">Grip Class</div>
+              <div class="card-title">Mixed (for development)</div>
               <div class="card-desc">Standard mixed racing. Features a balance of speed and handling. Perfect for
-                beginners.</div>
+                development.</div>
             </div>
             <div class="card" onclick="selectClass('gt', this)">
               <div class="card-icon">🚗</div>
@@ -1019,6 +1019,11 @@
               <div class="card-icon">🚚</div>
               <div class="card-title">Truck Class</div>
               <div class="card-desc">Heavy metal behemoths. High torque and intimidation factor.</div>
+            </div>
+            <div class="card" onclick="selectClass('bubble', this)">
+              <div class="card-icon">🫧</div>
+              <div class="card-title">Bubble Class</div>
+              <div class="card-desc">Fun bubbly racing. Physics that bounce and float.</div>
             </div>
           </div>
         </div>
@@ -1300,35 +1305,25 @@
       const grid = document.getElementById('vehicleGrid');
       grid.innerHTML = '';
 
-      // Filter vehicles? Or just show all? The prompt implies 
-      // "Select class -> Select vehicle", so maybe only show vehicles in that class?
-      // For now, let's just show relevant ones or generic if the mode is 'grip'.
+      // Filter vehicles based on selected class
+      const filtered = state.mode === 'grip' ? VEHICLES : VEHICLES.filter(v => v.class === state.mode);
 
-      // If mode is specific (e.g. truck), maybe only show trucks?
-      // The game structure seems to pair mode=truck with vehicle=Truck mostly.
-      // But let's show all for 'grip' mode, and lock others?
+      // Auto-select first vehicle if current selection is invalid for this mode
+      if (filtered.length > 0 && !filtered.find(v => v.id === state.vehicle)) {
+        state.vehicle = filtered[0].id;
+      }
 
-      // Simpler approach: Show all, but highlight recommended.
-
-      VEHICLES.forEach(v => {
+      filtered.forEach(v => {
         const div = document.createElement('div');
 
-        div.className = `card ${state.vehicle === v.id ? 'selected' : ''
-          }
-
-          `;
+        div.className = `card ${state.vehicle === v.id ? 'selected' : ''}`;
         div.onclick = () => selectVehicle(v.id, div);
 
-        div.innerHTML = ` <div class="card-icon" >${v.icon
-          }
-
-          </div> <div class="card-title" >${v.name
-          }
-
-          </div> <div class="card-desc" >Class: ${v.class.toUpperCase()
-          }
-
-          </div> `;
+        div.innerHTML = ` 
+          <div class="card-icon">${v.icon}</div> 
+          <div class="card-title">${v.name}</div> 
+          <div class="card-desc">Class: ${v.class.toUpperCase()}</div> 
+        `;
         grid.appendChild(div);
       });
     }
