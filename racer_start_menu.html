@@ -176,6 +176,12 @@
       transform: translateY(-2px);
     }
 
+    .menu-item.selected {
+      background: linear-gradient(135deg, #2a1010, var(--bg-card));
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent);
+    }
+
     .menu-icon {
       font-size: 48px;
       margin-bottom: 16px;
@@ -945,7 +951,7 @@
     <!-- SCREEN: MAIN MENU -->
     <div id="mainMenu" class="screen active">
       <div class="menu-grid">
-        <div class="menu-item large" onclick="startFreePlay()">
+        <div class="menu-item large" onclick="startFreePlay(this)">
           <div class="menu-icon">🏎️</div>
           <div class="menu-label">Free Play</div>
         </div>
@@ -953,7 +959,7 @@
           <div class="menu-icon">🏆</div>
           <div class="menu-label">Career Mode</div>
         </div>
-        <div class="menu-item" onclick="switchToTimeTrial()">
+        <div class="menu-item" onclick="switchToTimeTrial(this)">
           <div class="menu-icon">⏱️</div>
           <div class="menu-label">Time-Trial</div>
         </div>
@@ -961,7 +967,7 @@
           <div class="menu-icon">🌍</div>
           <div class="menu-label">Online Multiplayer</div>
         </div>
-        <div class="menu-item" onclick="openOptions()">
+        <div class="menu-item" onclick="openOptions(this)">
           <div class="menu-icon">🔧</div>
           <div class="menu-label">Options</div>
         </div>
@@ -994,7 +1000,7 @@
         <!-- Step 1: Class -->
         <div id="step1" class="wizard-step">
           <div class="selection-grid">
-            <div class="card selected" onclick="selectClass('gt', this)">
+            <div class="card" onclick="selectClass('gt', this)">
               <div class="card-icon">🚗</div>
               <div class="card-title">GT Class</div>
               <div class="card-desc">High performance touring cars. Excellent grip and acceleration.</div>
@@ -1136,10 +1142,10 @@
     const state = {
 
       step: 0,
-      mode: 'gt', // Vehicle class
+      mode: null, // Vehicle class
       gameMode: 'race', // 'race' or 'time_trial'
-      vehicle: 'GT',
-      track: 'Test',
+      vehicle: null,
+      track: null,
       config: {
         laps: 3,
         difficulty: 2, // 0=Easy, 1=Normal, 2=Hard, 3=Pro
@@ -1191,23 +1197,26 @@
 
     // ===== UI NAVIGATION =====
 
-    function startFreePlay() {
-      state.gameMode = 'race';
-      state.config.botCount = 8;
-      state.config.gridPos = 8;
-      state.config.laps = 3;
+    function startFreePlay(el) {
+      if (el) highlightMenu(el);
+      setTimeout(() => {
+        state.gameMode = 'race';
+        state.config.botCount = 8;
+        state.config.gridPos = 8;
+        state.config.laps = 3;
 
-      const setVal = (id, val, logicId) => {
-        const el = document.getElementById(id);
-        if (el) el.value = val;
-        updateVal(logicId, val);
-      };
+        const setVal = (id, val, logicId) => {
+          const el = document.getElementById(id);
+          if (el) el.value = val;
+          updateVal(logicId, val);
+        };
 
-      setVal('botsInp', 8, 'botsVal');
-      setVal('gridInp', 8, 'gridVal');
-      setVal('lapsInp', 3, 'lapsVal');
+        setVal('botsInp', 8, 'botsVal');
+        setVal('gridInp', 8, 'gridVal');
+        setVal('lapsInp', 3, 'lapsVal');
 
-      startWizard();
+        startWizard();
+      }, 200);
     }
 
     function startWizard() {
@@ -1215,16 +1224,25 @@
       setStep(1);
     }
 
-    function switchToTimeTrial() {
-      state.gameMode = 'time_trial';
-      // Preset logic
-      if (state.config.botCount > 0) state.config.botCount = 0;
-      startWizard();
+    function switchToTimeTrial(el) {
+      if (el) highlightMenu(el);
+      setTimeout(() => {
+        state.gameMode = 'time_trial';
+        // Preset logic
+        if (state.config.botCount > 0) state.config.botCount = 0;
+        startWizard();
+      }, 200);
     }
 
     function switchScreen(id) {
       document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
       document.getElementById(id).classList.add('active');
+
+      // Clear main menu selection on return
+      if (id === 'mainMenu') {
+        const items = document.querySelectorAll('#mainMenu .menu-item');
+        items.forEach(el => el.classList.remove('selected'));
+      }
     }
 
     function setStep(n) {
@@ -1251,15 +1269,21 @@
 
       if (n === 1) {
         title.textContent = "Select Class";
+        // Clear selection on revisit
+        state.mode = null;
+        const step1Cards = document.querySelectorAll('#step1 .card');
+        step1Cards.forEach(c => c.classList.remove('selected'));
       }
 
       else if (n === 2) {
         title.textContent = "Select Vehicle";
+        state.vehicle = null; // Clear prev selection
         renderVehicles();
       }
 
       else if (n === 3) {
         title.textContent = "Select Track";
+        state.track = null; // Clear prev selection
         renderTracks();
       }
 
@@ -1354,6 +1378,13 @@
       el.classList.add('selected');
     }
 
+    function highlightMenu(el) {
+      // clear siblings
+      const sibling = el.parentNode.querySelectorAll('.menu-item');
+      sibling.forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+    }
+
     // ===== RENDERING =====
 
     function renderVehicles() {
@@ -1362,11 +1393,6 @@
 
       // Filter vehicles based on selected class
       const filtered = state.mode === 'grip' ? VEHICLES : VEHICLES.filter(v => v.class === state.mode);
-
-      // Auto-select first vehicle if current selection is invalid for this mode
-      if (filtered.length > 0 && !filtered.find(v => v.id === state.vehicle)) {
-        state.vehicle = filtered[0].id;
-      }
 
       filtered.forEach(v => {
         const div = document.createElement('div');
@@ -1524,24 +1550,27 @@
 
     // ===== OPTIONS MENU LOGIC =====
 
-    function openOptions() {
-      switchScreen('optionsScreen');
+    function openOptions(el) {
+      if (el) highlightMenu(el);
+      setTimeout(() => {
+        switchScreen('optionsScreen');
 
-      // Load Volume
-      const vol = localStorage.getItem('masterVolume');
-      const vVal = vol === null ? 70 : Math.round(parseFloat(vol) * 100);
-      document.getElementById('optVolume').value = vVal;
-      document.getElementById('optVolumeVal').textContent = vVal + '%';
+        // Load Volume
+        const vol = localStorage.getItem('masterVolume');
+        const vVal = vol === null ? 70 : Math.round(parseFloat(vol) * 100);
+        document.getElementById('optVolume').value = vVal;
+        document.getElementById('optVolumeVal').textContent = vVal + '%';
 
-      // Load Controls (Touch vs Tilt)
-      // "Touch" = steeringMode:touch, gyro:false
-      // "Tilt" = steeringMode:touch, gyro:true
-      const gyro = localStorage.getItem('gyroSteeringEnabled') === 'true';
-      setOptModeUI(gyro ? 'tilt' : 'touch');
+        // Load Controls (Touch vs Tilt)
+        // "Touch" = steeringMode:touch, gyro:false
+        // "Tilt" = steeringMode:touch, gyro:true
+        const gyro = localStorage.getItem('gyroSteeringEnabled') === 'true';
+        setOptModeUI(gyro ? 'tilt' : 'touch');
 
-      // Load SFX (default to true if null)
-      const sfx = localStorage.getItem('sfxEnabled') !== 'false';
-      document.getElementById('optSfx').checked = sfx;
+        // Load SFX (default to true if null)
+        const sfx = localStorage.getItem('sfxEnabled') !== 'false';
+        document.getElementById('optSfx').checked = sfx;
+      }, 200);
     }
 
     function closeOptions() {
