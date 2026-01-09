@@ -1510,6 +1510,8 @@
     function launchGame() {
 
       // Save Config to Session
+      const ghostToggleEl = document.getElementById('ghostToggle');
+      const ghostEnabled = ghostToggleEl ? ghostToggleEl.checked : false;
       const payload = {
         mode: state.mode,
         car: state.vehicle,
@@ -1517,7 +1519,8 @@
         laps: state.config.laps,
         difficulty: state.config.difficulty, // 0-3
         botCount: state.config.botCount,
-        gridPos: state.config.gridPos
+        gridPos: state.config.gridPos,
+        ghostEnabled: ghostEnabled
       }
 
         ;
