@@ -2665,6 +2665,7 @@
         const modeConfig = getCurrentModeConfig();
         const DEFAULT_AI_CAR_COUNT = (START_PAYLOAD && typeof START_PAYLOAD.botCount === 'number') ? START_PAYLOAD.botCount : ((modeConfig && modeConfig.ai && typeof modeConfig.ai.count === 'number') ? modeConfig.ai.count : 9);
         const LAPS_TO_FINISH = (START_PAYLOAD && typeof START_PAYLOAD.laps === 'number') ? START_PAYLOAD.laps : 3;
+        const PLAYER_GRID_POS = (START_PAYLOAD && typeof START_PAYLOAD.gridPos === 'number') ? START_PAYLOAD.gridPos : 1; // 1-based index
         let aiCars = []; // array of AI cars
         let racingLine = [];
         let baseRacingLine = [];
@@ -4025,19 +4026,22 @@
           const gridSlots = (activeTrack && activeTrack.isCustom)
             ? buildGridSlots({ startLine, roadWidth: ROAD_WIDTH, totalCars: totalGridSlots, forwardAngle: player.angle })
             : null;
+          const base = aiSpawn || pSpawn;
+          const baseAngle = typeof rawAi.angle === "number" ? rawAi.angle : base.angle;
+
           if (gridSlots && gridSlots.length) {
-            const playerSlot = gridSlots[0];
+            let pIdx = (PLAYER_GRID_POS || 1) - 1;
+            // Fallback: clamps to last slot if gridPos > total slots
+            pIdx = Math.max(0, Math.min(pIdx, gridSlots.length - 1));
+
+            const playerSlot = gridSlots[pIdx];
             if (playerSlot) {
               player.x = playerSlot.x;
               player.y = playerSlot.y;
               player.angle = playerSlot.angle;
             }
-          }
 
-          const base = aiSpawn || pSpawn;
-          const baseAngle = typeof rawAi.angle === "number" ? rawAi.angle : base.angle;
-          if (gridSlots && gridSlots.length > 1) {
-            const aiSlotDefs = gridSlots.slice(1, 1 + DEFAULT_AI_CAR_COUNT);
+            const aiSlotDefs = gridSlots.filter((_, i) => i !== pIdx);
             aiCars = buildAICarsFromSlots(aiSlotDefs);
           } else {
             aiCars = buildLegacyAICars(DEFAULT_AI_CAR_COUNT, base, baseAngle);
