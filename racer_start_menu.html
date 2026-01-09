@@ -130,7 +130,7 @@
     .menu-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      grid-template-rows: repeat(2, 1fr);
+      grid-auto-rows: minmax(0, 1fr);
       gap: 20px;
       width: 100%;
       max-width: 1400px;
@@ -475,16 +475,28 @@
     }
 
     .screen {
-      padding: clamp(60px, 10vh, 100px) var(--screen-padding) var(--screen-padding);
+      padding: clamp(140px, 18vh, 180px) var(--screen-padding) var(--screen-padding);
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
 
     .menu-grid {
-      height: auto;
-      max-height: calc(100vh - clamp(100px, 15vh, 150px));
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      max-height: none;
       grid-template-columns: repeat(4, 1fr);
-      grid-template-rows: repeat(2, minmax(0, 1fr));
+      grid-auto-rows: minmax(0, 1fr);
       gap: var(--gap-size);
+    }
+
+    /* Ensure content inside wizard container also fills space if needed */
+    .wizard-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
     }
 
     .menu-icon {
@@ -494,11 +506,6 @@
 
     .menu-label {
       font-size: var(--label-size);
-    }
-
-    .wizard-container {
-      max-height: calc(100vh - clamp(80px, 12vh, 120px));
-      overflow: hidden;
     }
 
     .wizard-header {
@@ -597,7 +604,6 @@
     @media (max-width: 1024px) and (min-width: 769px) {
       .menu-grid {
         grid-template-columns: repeat(4, 1fr);
-        grid-template-rows: repeat(2, minmax(0, 1fr));
       }
 
       .menu-item.large {
@@ -623,7 +629,6 @@
 
       .menu-grid {
         grid-template-columns: repeat(2, 1fr);
-        grid-template-rows: repeat(4, minmax(0, 1fr));
         max-height: calc(100vh - clamp(70px, 10vh, 100px));
         gap: 8px;
       }
@@ -706,7 +711,7 @@
     /* Mobile (480px and below) */
     @media (max-width: 480px) {
       .screen {
-        padding-top: clamp(45px, 7vh, 60px);
+        padding-top: clamp(80px, 12vh, 100px);
         padding-left: 8px;
         padding-right: 8px;
         padding-bottom: 8px;
@@ -714,8 +719,6 @@
 
       .menu-grid {
         grid-template-columns: repeat(2, 1fr);
-        grid-template-rows: repeat(4, minmax(0, 1fr));
-        max-height: calc(100vh - clamp(60px, 8vh, 80px));
         gap: 6px;
       }
 
