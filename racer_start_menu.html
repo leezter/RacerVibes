@@ -1224,34 +1224,30 @@
       const nextBtn = document.getElementById('nextBtn');
       const bar = document.getElementById('actionBar');
 
-      bar.classList.remove('hidden');
+      bar.classList.add('hidden');
 
       if (n === 1) {
         title.textContent = "Select Class";
-        nextBtn.innerHTML = "Select Vehicle &rarr;";
       }
 
       else if (n === 2) {
         title.textContent = "Select Vehicle";
-        nextBtn.innerHTML = "Select Track &rarr;";
         renderVehicles();
       }
 
       else if (n === 3) {
         title.textContent = "Select Track";
-        nextBtn.innerHTML = "Race Settings &rarr;";
         renderTracks();
       }
 
       else if (n === 4) {
         title.textContent = "Race Settings";
+        bar.classList.remove('hidden');
         nextBtn.innerHTML = "START RACE 🏁";
 
         // Sync toggles with global settings
         const sfx = localStorage.getItem('sfxEnabled') !== 'false';
         document.getElementById('sfxToggle').checked = sfx;
-
-
       }
     }
 
@@ -1280,16 +1276,19 @@
     function selectClass(cls, el) {
       state.mode = cls;
       highlightCard(el);
+      setTimeout(wizardNext, 200); // Small delay for visual feedback
     }
 
     function selectVehicle(vid, el) {
       state.vehicle = vid;
       highlightCard(el);
+      setTimeout(wizardNext, 200);
     }
 
     function selectTrack(tid, el) {
       state.track = tid;
       highlightCard(el);
+      setTimeout(wizardNext, 200);
     }
 
     function highlightCard(el) {
