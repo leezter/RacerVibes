@@ -874,6 +874,7 @@
     .tb-slider {
       width: 100%;
       -webkit-appearance: none;
+      appearance: none;
       background: rgba(255, 255, 255, 0.1);
       height: 6px;
       border-radius: 3px;
@@ -944,7 +945,7 @@
     <!-- SCREEN: MAIN MENU -->
     <div id="mainMenu" class="screen active">
       <div class="menu-grid">
-        <div class="menu-item large" onclick="startWizard()">
+        <div class="menu-item large" onclick="startFreePlay()">
           <div class="menu-icon">🏎️</div>
           <div class="menu-label">Free Play</div>
         </div>
@@ -1042,25 +1043,25 @@
         <!-- Step 4: Settings -->
         <div id="step4" class="wizard-step hidden">
           <div class="settings-form">
-            <div class="form-group"><label class="form-label">AI Difficulty</label>
+            <div class="form-group" id="grpDifficulty"><label class="form-label">AI Difficulty</label>
               <div class="range-wrap"><input type="range" min="0" max="3" step="1" value="2" id="difficultyInp"
                   oninput="updateDiff(this.value)">
                 <div class="range-val" id="difficultyVal">Pro</div>
               </div>
             </div>
-            <div class="form-group"><label class="form-label">Number of Laps</label>
+            <div class="form-group" id="grpLaps"><label class="form-label">Number of Laps</label>
               <div class="range-wrap"><input type="range" min="1" max="50" step="1" value="3" id="lapsInp"
                   oninput="updateVal('lapsVal', this.value)">
                 <div class="range-val" id="lapsVal">3</div>
               </div>
             </div>
-            <div class="form-group"><label class="form-label">Number of Vehicles</label>
+            <div class="form-group" id="grpBots"><label class="form-label">Number of Vehicles</label>
               <div class="range-wrap"><input type="range" min="1" max="20" step="1" value="8" id="botsInp"
                   oninput="updateVal('botsVal', this.value)">
                 <div class="range-val" id="botsVal">8</div>
               </div>
             </div>
-            <div class="form-group"><label class="form-label">Grid Position</label>
+            <div class="form-group" id="grpGrid"><label class="form-label">Grid Position</label>
               <div class="range-wrap"><input type="range" min="1" max="20" step="1" value="8" id="gridInp"
                   oninput="updateVal('gridVal', this.value)">
                 <div class="range-val" id="gridVal">8</div>
@@ -1068,10 +1069,14 @@
             </div>
             <!-- Other toggles -->
             <div class="form-group"><label class="form-label">Game Options</label>
-              <div style="display:flex; gap:20px;"><label
-                  style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox"
-                    id="sfxToggle" checked style="width:20px; height:20px;">Sound Effects
-                </label></div>
+              <div style="display:flex; gap:20px;">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                  <input type="checkbox" id="sfxToggle" checked style="width:20px; height:20px;">Sound Effects
+                </label>
+                <label id="ghostToggleLbl" style="display:none; align-items:center; gap:8px; cursor:pointer;">
+                  <input type="checkbox" id="ghostToggle" style="width:20px; height:20px;">Ghost
+                </label>
+              </div>
             </div>
           </div>
         </div>
@@ -1131,7 +1136,8 @@
     const state = {
 
       step: 0,
-      mode: 'gt',
+      mode: 'gt', // Vehicle class
+      gameMode: 'race', // 'race' or 'time_trial'
       vehicle: 'GT',
       track: 'Test',
       config: {
@@ -1185,18 +1191,35 @@
 
     // ===== UI NAVIGATION =====
 
+    function startFreePlay() {
+      state.gameMode = 'race';
+      state.config.botCount = 8;
+      state.config.gridPos = 8;
+      state.config.laps = 3;
+
+      const setVal = (id, val, logicId) => {
+        const el = document.getElementById(id);
+        if (el) el.value = val;
+        updateVal(logicId, val);
+      };
+
+      setVal('botsInp', 8, 'botsVal');
+      setVal('gridInp', 8, 'gridVal');
+      setVal('lapsInp', 3, 'lapsVal');
+
+      startWizard();
+    }
+
     function startWizard() {
       switchScreen('wizard');
       setStep(1);
     }
 
     function switchToTimeTrial() {
-      // Preset for time trial loop
-      state.config.laps = 100;
-      state.config.botCount = 0;
-      state.mode = 'time-trial';
-      startWizard(); // Reuse wizard but maybe skip vehicle selection or auto-set?
-      // For now, simpler to just use the wizard flow but pre-set things
+      state.gameMode = 'time_trial';
+      // Preset logic
+      if (state.config.botCount > 0) state.config.botCount = 0;
+      startWizard();
     }
 
     function switchScreen(id) {
@@ -1245,12 +1268,37 @@
         bar.classList.remove('hidden');
         nextBtn.innerHTML = "START RACE 🏁";
 
-        // Reset difficulty to Pro (2)
-        state.config.difficulty = 2;
-        const diffInp = document.getElementById('difficultyInp');
-        if (diffInp) {
-          diffInp.value = 2;
-          updateDiff(2);
+        // TIME TRIAL LOGIC
+        const isTimeTrial = state.gameMode === 'time_trial';
+
+        // Helper to toggle visibility
+        const show = (id, visible) => {
+          const el = document.getElementById(id);
+          if (el) el.style.display = visible ? 'block' : 'none';
+        };
+
+        show('grpDifficulty', !isTimeTrial);
+        show('grpBots', !isTimeTrial);
+        show('grpGrid', !isTimeTrial);
+
+        // Ghost Toggle (flex for alignment)
+        const ghost = document.getElementById('ghostToggleLbl');
+        if (ghost) ghost.style.display = isTimeTrial ? 'flex' : 'none';
+
+        // Laps logic
+        if (isTimeTrial) {
+          state.config.laps = 50;
+          const lapsInp = document.getElementById('lapsInp');
+          if (lapsInp) lapsInp.value = 50;
+          updateVal('lapsVal', 50);
+        } else {
+          // ensure difficulty reset for Race mode
+          state.config.difficulty = 2;
+          const diffInp = document.getElementById('difficultyInp');
+          if (diffInp) {
+            diffInp.value = 2;
+            updateDiff(2);
+          }
         }
 
         // Sync toggles with global settings
