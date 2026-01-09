@@ -1915,7 +1915,15 @@
         return { maxOffset: 0.65, roadFriction: 1.1, minRadius: 12, straightSpeed: 3000, cornerSpeedFloor: 140 };
       }
       const modeDefault = currentModeConfig && currentModeConfig.ai && currentModeConfig.ai.defaultDifficulty ? currentModeConfig.ai.defaultDifficulty : null;
-      const initialAIDifficulty = loadStoredDifficulty() || sanitizeDifficulty(modeDefault) || sanitizeDifficulty("hard") || AVAILABLE_AI_DIFFICULTIES[0];
+      function getPayloadDifficulty() {
+        if (START_PAYLOAD && typeof START_PAYLOAD.difficulty === 'number') {
+          const map = ['easy', 'medium', 'hard', 'realistic'];
+          const d = map[START_PAYLOAD.difficulty];
+          if (d && sanitizeDifficulty(d)) return d;
+        }
+        return null;
+      }
+      const initialAIDifficulty = getPayloadDifficulty() || loadStoredDifficulty() || sanitizeDifficulty(modeDefault) || sanitizeDifficulty("hard") || AVAILABLE_AI_DIFFICULTIES[0];
       const canvasRef = useRef(null);
       const trackMapRef = useRef(null);
       const [running, setRunning] = useState(false);
@@ -2655,8 +2663,8 @@
           try { if (window.RacerPhysics) window.RacerPhysics.initCar(player, player.kind); } catch (_) { }
         }).catch(err => console.warn('Gearbox init failed', err));
         const modeConfig = getCurrentModeConfig();
-        const DEFAULT_AI_CAR_COUNT = (modeConfig && modeConfig.ai && typeof modeConfig.ai.count === 'number') ? modeConfig.ai.count : 9;
-        const LAPS_TO_FINISH = 3;
+        const DEFAULT_AI_CAR_COUNT = (START_PAYLOAD && typeof START_PAYLOAD.botCount === 'number') ? START_PAYLOAD.botCount : ((modeConfig && modeConfig.ai && typeof modeConfig.ai.count === 'number') ? modeConfig.ai.count : 9);
+        const LAPS_TO_FINISH = (START_PAYLOAD && typeof START_PAYLOAD.laps === 'number') ? START_PAYLOAD.laps : 3;
         let aiCars = []; // array of AI cars
         let racingLine = [];
         let baseRacingLine = [];

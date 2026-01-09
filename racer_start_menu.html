@@ -4,1313 +4,485 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-  <meta name="theme-color" content="#0a0e17" />
+  <meta name="theme-color" content="#0f0f12" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <title>RacingVibes — Start Menu</title>
-  <script src="utils/utils.js" defer></script>
+  <title>RacingVibes - Menu</title>
+
+  <!-- Preload fonts if possible or use system stack -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Exo+2:ital,wght@0,300;0,400;0,600;0,700;0,800;1,400;1,700&family=Rajdhani:wght@500;600;700&display=swap"
+    rel="stylesheet">
+
   <script src="ai/racer_ai.js" defer></script>
   <script src="utils/storage-utils.js" defer></script>
   <script src="track_storage.js" defer></script>
   <script src="track_editor.js" defer></script>
   <script src="track_builder.js" defer></script>
+
   <style>
-    /* ===== CSS Variables & Reset ===== */
     :root {
-      --sat: env(safe-area-inset-top);
-      --sab: env(safe-area-inset-bottom);
-      --sal: env(safe-area-inset-left);
-      --sar: env(safe-area-inset-right);
+      --bg-dark: #0a0a0c;
+      --bg-panel: #131317;
+      --bg-card: #1c1c22;
+      --accent: #ef4444;
+      /* Racing Red */
+      --accent-glow: rgba(239, 68, 68, 0.4);
+      --text-main: #ffffff;
+      --text-muted: #94a3b8;
 
-      /* Color Palette - Racing Theme */
-      --bg-dark: #0a0e17;
-      --bg-card: #0f1724;
-      --bg-card-hover: #151d2e;
-      --bg-elevated: #141c2b;
-      --bg-glass: rgba(15, 23, 42, 0.85);
+      --font-display: 'Rajdhani', sans-serif;
+      --font-body: 'Exo 2', sans-serif;
 
-      --accent-primary: #3b82f6;
-      --accent-primary-glow: rgba(59, 130, 246, 0.4);
-      --accent-secondary: #06b6d4;
-      --accent-hot: #f43f5e;
-      --accent-gold: #f59e0b;
-      --accent-success: #10b981;
-
-      --text-primary: #f1f5f9;
-      --text-secondary: #94a3b8;
-      --text-muted: #64748b;
-
-      --border-subtle: rgba(148, 163, 184, 0.12);
-      --border-active: rgba(59, 130, 246, 0.5);
-
-      /* Sizing */
-      --btn-min-touch: 48px;
-      --radius-sm: 8px;
-      --radius-md: 12px;
-      --radius-lg: 16px;
-      --radius-xl: 20px;
-
-      /* Transitions */
-      --transition-fast: 0.15s ease;
-      --transition-normal: 0.25s ease;
-      --transition-smooth: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
     }
 
-    *,
-    *::before,
-    *::after {
+    * {
       box-sizing: border-box;
+    }
+
+    body {
       margin: 0;
-      padding: 0;
-    }
-
-    html,
-    body {
-      height: 100%;
-      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      -webkit-text-size-adjust: 100%;
-      -webkit-font-smoothing: antialiased;
-      background: var(--bg-dark);
-      color: var(--text-primary);
-    }
-
-    body {
+      height: 100vh;
+      background-color: var(--bg-dark);
+      background-image:
+        radial-gradient(circle at 50% 0%, #2a2a35 0%, transparent 70%),
+        linear-gradient(45deg, #111 25%, transparent 25%, transparent 75%, #111 75%, #111),
+        linear-gradient(45deg, #111 25%, transparent 25%, transparent 75%, #111 75%, #111);
+      background-size: 100% 100%, 20px 20px, 20px 20px;
+      background-position: 0 0, 0 0, 10px 10px;
+      color: var(--text-main);
+      font-family: var(--font-body);
       overflow: hidden;
-      background:
-        radial-gradient(ellipse at 20% 0%, rgba(59, 130, 246, 0.08) 0%, transparent 50%),
-        radial-gradient(ellipse at 80% 100%, rgba(6, 182, 212, 0.06) 0%, transparent 50%),
-        var(--bg-dark);
-    }
-
-    /* ===== Layout Container ===== */
-    .app-container {
-      height: 100svh;
-      max-height: 100svh;
       display: flex;
       flex-direction: column;
-      padding: var(--sat) var(--sar) var(--sab) var(--sal);
-      overflow: hidden;
+    }
+
+    /* Screen Container */
+    #app {
+      flex: 1;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      perspective: 1000px;
+    }
+
+    /* ===== Background Elements ===== */
+    .racing-flag-bg {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      background: repeating-linear-gradient(45deg, #ffffff05 0, #ffffff05 20px, transparent 20px, transparent 40px);
+      pointer-events: none;
+      z-index: 0;
     }
 
     /* ===== Header ===== */
-    .header {
+    header {
+      padding: 24px 40px;
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      padding: 16px 24px;
-      gap: 16px;
-      flex-shrink: 0;
-    }
-
-    .logo-section {
-      display: flex;
       align-items: center;
-      gap: 12px;
-    }
-
-    .logo-icon {
-      width: 42px;
-      height: 42px;
-      background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
-      border-radius: var(--radius-md);
-      display: grid;
-      place-items: center;
-      font-size: 20px;
-      box-shadow: 0 4px 16px var(--accent-primary-glow);
-    }
-
-    .logo-text {
-      font-size: clamp(18px, 4vw, 24px);
-      font-weight: 700;
-      letter-spacing: -0.5px;
-      background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent-secondary) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .header-actions {
-      display: flex;
-      gap: 8px;
-    }
-
-    .icon-btn {
-      width: 40px;
-      height: 40px;
-      border-radius: var(--radius-md);
-      border: 1px solid var(--border-subtle);
-      background: var(--bg-card);
-      color: var(--text-secondary);
-      display: grid;
-      place-items: center;
-      cursor: pointer;
-      transition: all var(--transition-fast);
-    }
-
-    .icon-btn:hover {
-      background: var(--bg-card-hover);
-      color: var(--text-primary);
-      border-color: var(--border-active);
-    }
-
-    /* ===== Main Content ===== */
-    .main-content {
-      flex: 1;
-      min-height: 0;
-      display: flex;
-      padding: 0 24px 24px;
-      gap: 24px;
-      overflow: hidden;
-    }
-
-    /* ===== Navigation Sidebar ===== */
-    .nav-sidebar {
-      flex: 0 0 auto;
-      width: clamp(180px, 20vw, 240px);
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .nav-btn {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 14px 18px;
-      border-radius: var(--radius-lg);
-      border: 1px solid transparent;
-      background: transparent;
-      color: var(--text-secondary);
-      font-size: 15px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all var(--transition-normal);
-      text-align: left;
-      min-height: var(--btn-min-touch);
-    }
-
-    .nav-btn:hover {
-      background: var(--bg-card);
-      color: var(--text-primary);
-    }
-
-    .nav-btn.active {
-      background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(6, 182, 212, 0.1) 100%);
-      border-color: var(--border-active);
-      color: var(--text-primary);
-    }
-
-    .nav-btn.active .nav-icon {
-      color: var(--accent-primary);
-    }
-
-    .nav-icon {
-      font-size: 18px;
-      width: 24px;
-      text-align: center;
-    }
-
-    .nav-btn.primary-action {
-      margin-top: auto;
-      background: linear-gradient(135deg, var(--accent-primary) 0%, #2563eb 100%);
-      color: white;
-      border: none;
-      font-weight: 600;
-      box-shadow: 0 4px 16px var(--accent-primary-glow);
-    }
-
-    .nav-btn.primary-action:hover {
-      filter: brightness(1.1);
-      transform: translateY(-1px);
-    }
-
-    /* ===== Main Panel ===== */
-    .main-panel {
-      flex: 1;
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
-      background: var(--bg-card);
-      border-radius: var(--radius-xl);
-      border: 1px solid var(--border-subtle);
-      overflow: hidden;
-      min-width: 0;
-    }
-
-    .panel-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 20px 24px;
-      border-bottom: 1px solid var(--border-subtle);
-      flex-shrink: 0;
-    }
-
-    .panel-title {
-      font-size: 20px;
-      font-weight: 600;
-      letter-spacing: -0.3px;
-    }
-
-    .panel-subtitle {
-      font-size: 13px;
-      color: var(--text-muted);
-      margin-top: 4px;
-    }
-
-    .panel-content {
-      flex: 1;
-      min-height: 0;
-      padding: 24px;
-      overflow-y: auto;
-      scrollbar-width: thin;
-      scrollbar-color: var(--text-muted) transparent;
-    }
-
-    .panel-content::-webkit-scrollbar {
-      width: 6px;
-    }
-
-    .panel-content::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    .panel-content::-webkit-scrollbar-thumb {
-      background: var(--text-muted);
-      border-radius: 3px;
-    }
-
-    /* ===== Views (shown/hidden based on nav) ===== */
-    .view {
-      display: none;
-      animation: fadeIn var(--transition-smooth);
-    }
-
-    .view.active {
-      display: block;
-    }
-
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-        transform: translateY(8px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    /* ===== Card Grid ===== */
-    .card-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 16px;
-    }
-
-    .selection-card {
-      position: relative;
-      background: var(--bg-elevated);
-      border-radius: var(--radius-lg);
-      border: 2px solid transparent;
-      padding: 16px;
-      cursor: pointer;
-      transition: all var(--transition-normal);
-      overflow: hidden;
-    }
-
-    .selection-card::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(135deg, transparent 50%, rgba(59, 130, 246, 0.05) 100%);
-      opacity: 0;
-      transition: opacity var(--transition-normal);
-    }
-
-    .selection-card:hover {
-      border-color: var(--border-subtle);
-      transform: translateY(-2px);
-    }
-
-    .selection-card:hover::before {
-      opacity: 1;
-    }
-
-    .selection-card.selected {
-      border-color: var(--accent-primary);
-      background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(6, 182, 212, 0.05) 100%);
-    }
-
-    .selection-card.selected::after {
-      content: '\2713';
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      width: 24px;
-      height: 24px;
-      background: var(--accent-primary);
-      border-radius: 50%;
-      display: grid;
-      place-items: center;
-      font-size: 12px;
-      color: white;
-    }
-
-    .card-preview {
-      height: 100px;
-      background: var(--bg-dark);
-      border-radius: var(--radius-md);
-      margin-bottom: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 36px;
-      color: var(--text-muted);
-      overflow: hidden;
-    }
-
-    .card-preview img {
-      max-width: 100%;
-      max-height: 100%;
-      object-fit: contain;
-    }
-
-    .card-name {
-      font-size: 15px;
-      font-weight: 600;
-      margin-bottom: 4px;
-    }
-
-    .card-desc {
-      font-size: 12px;
-      color: var(--text-secondary);
-    }
-
-    .card-badge {
-      display: inline-block;
-      padding: 4px 8px;
-      border-radius: 999px;
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-top: 8px;
-    }
-
-    .card-badge.speed {
-      background: rgba(244, 63, 94, 0.15);
-      color: var(--accent-hot);
-    }
-
-    .card-badge.handling {
-      background: rgba(16, 185, 129, 0.15);
-      color: var(--accent-success);
-    }
-
-    .card-badge.custom {
-      background: rgba(245, 158, 11, 0.15);
-      color: var(--accent-gold);
-    }
-
-    .card-actions {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      display: flex;
-      gap: 4px;
-      opacity: 0;
-      transition: opacity var(--transition-fast);
       z-index: 10;
     }
 
-    .selection-card:hover .card-actions {
+    .logo {
+      font-family: var(--font-display);
+      font-size: 42px;
+      font-weight: 800;
+      text-transform: uppercase;
+      font-style: italic;
+      letter-spacing: 2px;
+      text-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+    }
+
+    .logo span {
+      color: var(--accent);
+    }
+
+    /* ===== Layouts ===== */
+    .screen {
+      position: absolute;
+      inset: 0;
+      padding: 100px 40px 40px;
+      display: flex;
+      flex-direction: column;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(20px) scale(0.98);
+      transition: opacity 0.4s ease, transform 0.4s var(--ease-out);
+      z-index: 1;
+    }
+
+    .screen.active {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0) scale(1);
+      z-index: 2;
+    }
+
+    /* ===== Main Menu Grid ===== */
+    .menu-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: repeat(2, 1fr);
+      gap: 20px;
+      width: 100%;
+      max-width: 1400px;
+      margin: 0 auto;
+      height: 60%;
+    }
+
+    .menu-item {
+      position: relative;
+      background: linear-gradient(160deg, #2a2a30, #16161a);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.3s var(--ease-out);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    .menu-item::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.1), transparent 60%);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .menu-item:hover {
+      transform: translateY(-5px);
+      border-color: rgba(255, 255, 255, 0.2);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 20px var(--accent-glow);
+    }
+
+    .menu-item:hover::before {
       opacity: 1;
     }
 
-    .card-action-btn {
-      width: 32px;
-      height: 32px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border-subtle);
-      background: var(--bg-card);
-      color: var(--text-secondary);
-      font-size: 14px;
-      cursor: pointer;
-      display: grid;
-      place-items: center;
-      transition: all var(--transition-fast);
+    .menu-item:active {
+      transform: translateY(-2px);
     }
 
-    .card-action-btn:hover {
-      background: var(--accent-primary);
-      border-color: var(--accent-primary);
-      color: white;
+    .menu-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+      filter: drop-shadow(0 0 10px rgba(0, 0, 0, 0.5));
     }
 
-    /* ===== Mode Cards ===== */
-    .mode-cards {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    .menu-label {
+      font-family: var(--font-display);
+      font-size: 24px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    /* Large items span 2 columns */
+    .menu-item.large {
+      grid-column: span 2;
+    }
+
+    /* Locked items */
+    .menu-item.locked {
+      opacity: 0.5;
+      cursor: not-allowed;
+      filter: grayscale(0.8);
+    }
+
+    .menu-item.locked::after {
+      content: '🔒';
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      font-size: 16px;
+    }
+
+    /* ===== Free Play Wizard ===== */
+    .wizard-container {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .wizard-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 40px;
       gap: 20px;
     }
 
-    .mode-card {
-      position: relative;
-      background: var(--bg-elevated);
-      border-radius: var(--radius-xl);
-      border: 2px solid transparent;
+    .back-btn {
+      background: none;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 50%;
+      width: 48px;
+      height: 48px;
+      color: white;
+      font-size: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+
+    .back-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: white;
+    }
+
+    .wizard-title {
+      font-family: var(--font-display);
+      font-size: 32px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .wizard-steps {
+      display: flex;
+      gap: 8px;
+      margin-left: auto;
+    }
+
+    .step-dot {
+      width: 40px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+    }
+
+    .step-dot.active {
+      background: var(--accent);
+      box-shadow: 0 0 10px var(--accent-glow);
+    }
+
+    .step-dot.done {
+      background: white;
+    }
+
+    /* Selection Grid for Vehicles/Tracks/Classes */
+    .selection-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 24px;
+      padding-bottom: 100px;
+      overflow-y: auto;
+      padding-right: 12px;
+    }
+
+    .selection-grid::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .selection-grid::-webkit-scrollbar-thumb {
+      background: #333;
+      border-radius: 3px;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
       padding: 24px;
       cursor: pointer;
-      transition: all var(--transition-normal);
+      transition: all 0.2s;
+      position: relative;
       overflow: hidden;
     }
 
-    .mode-card:hover {
-      border-color: var(--border-subtle);
-      transform: translateY(-2px);
+    .card:hover {
+      border-color: var(--accent);
+      transform: translateY(-4px);
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
     }
 
-    .mode-card.selected {
-      border-color: var(--accent-primary);
-      background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(6, 182, 212, 0.06) 100%);
+    .card.selected {
+      background: linear-gradient(135deg, #2a1010, var(--bg-card));
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent);
     }
 
-    .mode-icon {
-      width: 56px;
-      height: 56px;
-      background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
-      border-radius: var(--radius-lg);
-      display: grid;
-      place-items: center;
+    .card-icon {
+      font-size: 48px;
+      margin-bottom: 20px;
+    }
+
+    .card-title {
+      font-family: var(--font-display);
       font-size: 24px;
-      margin-bottom: 16px;
-      box-shadow: 0 8px 24px var(--accent-primary-glow);
-    }
-
-    .mode-card.time-trial .mode-icon {
-      background: linear-gradient(135deg, var(--accent-gold) 0%, #ea580c 100%);
-      box-shadow: 0 8px 24px rgba(245, 158, 11, 0.3);
-    }
-
-    .mode-name {
-      font-size: 18px;
-      font-weight: 600;
+      font-weight: 700;
       margin-bottom: 8px;
     }
 
-    .mode-desc {
-      font-size: 13px;
-      color: var(--text-secondary);
+    .card-desc {
+      font-size: 14px;
+      color: var(--text-muted);
       line-height: 1.5;
     }
 
-    /* ===== Settings View ===== */
-    .settings-section {
-      margin-bottom: 32px;
-    }
-
-    .settings-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-bottom: 16px;
-    }
-
-    .settings-group {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .setting-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px 20px;
-      background: var(--bg-elevated);
-      border-radius: var(--radius-lg);
-      gap: 16px;
-    }
-
-    .setting-info {
-      flex: 1;
-    }
-
-    .setting-label {
-      font-size: 14px;
-      font-weight: 500;
-      margin-bottom: 4px;
-    }
-
-    .setting-desc {
-      font-size: 12px;
-      color: var(--text-muted);
-    }
-
-    .toggle-switch {
-      position: relative;
-      width: 52px;
-      height: 28px;
-      background: var(--bg-dark);
-      border-radius: 14px;
-      cursor: pointer;
-      transition: background var(--transition-fast);
-    }
-
-    .toggle-switch.on {
-      background: var(--accent-primary);
-    }
-
-    .toggle-switch::after {
-      content: '';
+    .card-badge {
       position: absolute;
-      top: 2px;
-      left: 2px;
-      width: 24px;
-      height: 24px;
-      background: white;
-      border-radius: 50%;
-      transition: transform var(--transition-fast);
+      top: 12px;
+      right: 12px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 4px 8px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
     }
 
-    .toggle-switch.on::after {
-      transform: translateX(24px);
+    /* Settings Form */
+    .settings-form {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      max-width: 900px;
+      margin: 0 auto;
     }
 
-    /* ===== Start Button Area ===== */
-    .start-section {
-      padding: 20px 24px;
-      border-top: 1px solid var(--border-subtle);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      flex-wrap: wrap;
-      flex-shrink: 0;
+    .form-group {
+      margin-bottom: 24px;
     }
 
-    .selection-summary {
-      display: flex;
-      align-items: center;
-      gap: 24px;
-      flex-wrap: wrap;
-    }
-
-    .summary-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .summary-label {
-      font-size: 12px;
-      color: var(--text-muted);
-    }
-
-    .summary-value {
+    .form-label {
+      display: block;
       font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
       font-weight: 600;
-      color: var(--accent-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .range-wrap {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    input[type=range] {
+      flex: 1;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+      appearance: none;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 15px var(--accent);
+      cursor: pointer;
+      transition: transform 0.1s;
+    }
+
+    input[type=range]::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    .range-val {
+      font-family: var(--font-display);
+      font-size: 24px;
+      font-weight: 700;
+      color: white;
+      min-width: 60px;
+      text-align: right;
+    }
+
+    /* Start Button Area */
+    .action-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 30px 40px;
+      background: linear-gradient(to top, #0a0a0c 80%, transparent);
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
     }
 
     .start-btn {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 16px 32px;
-      background: linear-gradient(135deg, var(--accent-primary) 0%, #2563eb 100%);
-      border: none;
-      border-radius: var(--radius-lg);
+      background: var(--accent);
       color: white;
-      font-size: 16px;
-      font-weight: 600;
+      border: none;
+      padding: 16px 48px;
+      font-family: var(--font-display);
+      font-size: 24px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      border-radius: 4px;
       cursor: pointer;
-      transition: all var(--transition-normal);
-      box-shadow: 0 8px 24px var(--accent-primary-glow);
-      min-height: var(--btn-min-touch);
+      clip-path: polygon(10% 0, 100% 0, 100% 100%, 0% 100%);
+      transition: all 0.2s;
+      box-shadow: 0 10px 30px rgba(239, 68, 68, 0.3);
     }
 
     .start-btn:hover {
-      filter: brightness(1.1);
-      transform: translateY(-2px);
-      box-shadow: 0 12px 32px var(--accent-primary-glow);
+      background: #ff5555;
+      transform: translateX(5px);
+      box-shadow: 0 10px 40px rgba(239, 68, 68, 0.5);
     }
 
-    .start-btn:active {
-      transform: translateY(0);
-    }
-
-    .start-btn .arrow {
-      font-size: 20px;
-      transition: transform var(--transition-fast);
-    }
-
-    .start-btn:hover .arrow {
-      transform: translateX(4px);
-    }
-
-    /* ===== Controls Info ===== */
-    .controls-info {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      padding: 12px 16px;
-      background: var(--bg-elevated);
-      border-radius: var(--radius-md);
-      font-size: 12px;
-      color: var(--text-muted);
-    }
-
-    .control-hint {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .key {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 24px;
-      height: 22px;
-      padding: 0 6px;
-      background: var(--bg-dark);
-      border: 1px solid var(--border-subtle);
-      border-radius: 4px;
-      font-size: 10px;
-      font-weight: 600;
-      color: var(--text-secondary);
-    }
-
-    /* ===== Track Builder Button ===== */
-    .add-card {
-      background: transparent;
-      border: 2px dashed var(--border-subtle);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      min-height: 160px;
-    }
-
-    .add-card:hover {
-      border-color: var(--accent-primary);
-      background: rgba(59, 130, 246, 0.05);
-    }
-
-    .add-icon {
-      font-size: 32px;
-      color: var(--text-muted);
-    }
-
-    .add-text {
-      font-size: 14px;
-      color: var(--text-secondary);
-    }
-
-    /* ===== Track Editor Overlay (kept from original) ===== */
-    .track-editor-overlay {
-      position: fixed;
-      inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 32px;
-      background: rgba(2, 8, 23, 0.86);
-      backdrop-filter: blur(16px);
-      z-index: 80;
-    }
-
-    .track-editor-overlay.hidden {
-      display: none;
-    }
-
-    .track-editor-panel {
-      width: min(1120px, 100%);
-      max-height: 100%;
-      display: flex;
-      flex-direction: column;
-      background: var(--bg-card);
-      border-radius: var(--radius-xl);
-      border: 1px solid var(--border-active);
-      box-shadow: 0 24px 64px rgba(2, 6, 23, 0.75);
-    }
-
-    .track-editor-header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 18px 20px;
-      border-bottom: 1px solid var(--border-subtle);
-    }
-
-    .track-editor-header h2 {
-      margin: 0;
-      font-size: 20px;
-      letter-spacing: 0.3px;
-    }
-
-    .track-editor-header .spacer {
-      flex: 1;
-    }
-
-    .track-editor-body {
-      flex: 1;
-      display: flex;
-      gap: 20px;
-      padding: 20px;
-      overflow: auto;
-      flex-wrap: wrap;
-    }
-
-    .track-editor-canvas-wrap {
-      flex: 1 1 620px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .track-editor-canvas {
-      width: 100%;
-      max-width: 960px;
-      background: #050914;
-      border-radius: var(--radius-lg);
-      box-shadow: 0 16px 36px rgba(3, 7, 18, 0.65);
-      touch-action: none;
-    }
-
-    .track-editor-instructions {
-      font-size: 12px;
-      opacity: 0.7;
-      text-align: center;
-      max-width: 760px;
-    }
-
-    .track-editor-controls {
-      flex: 0 0 260px;
-      min-width: 240px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .te-btn {
-      appearance: none;
-      border-radius: var(--radius-md);
-      border: 1px solid var(--border-subtle);
-      background: var(--bg-elevated);
-      color: var(--text-primary);
-      padding: 10px 14px;
-      font-size: 14px;
-      cursor: pointer;
-      transition: all var(--transition-fast);
-    }
-
-    .te-btn:hover {
-      background: var(--bg-card-hover);
-    }
-
-    .te-btn:active {
-      transform: scale(0.97);
-    }
-
-    .te-primary {
-      background: var(--accent-primary);
-      border-color: var(--accent-primary);
-      color: white;
-    }
-
-    .te-primary:hover {
-      filter: brightness(1.08);
-    }
-
-    .te-secondary {
-      background: var(--bg-dark);
-    }
-
-    .te-tool.active {
-      background: var(--accent-primary);
-      border-color: var(--accent-primary);
-      color: white;
-    }
-
-    .te-field {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      font-size: 13px;
-      color: var(--text-secondary);
-    }
-
-    .te-field.slider span {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: center;
-    }
-
-    .te-input {
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border-subtle);
-      background: var(--bg-dark);
-      padding: 10px 12px;
-      font-size: 14px;
-      color: var(--text-primary);
-    }
-
-    .te-select {
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border-subtle);
-      background: var(--bg-dark);
-      padding: 10px 12px;
-      font-size: 14px;
-      color: var(--text-primary);
-      cursor: pointer;
-    }
-
-    .te-select:hover {
-      border-color: var(--text-muted);
-    }
-
-    .te-select:focus {
-      outline: none;
-      border-color: var(--accent-primary);
-      box-shadow: 0 0 0 2px var(--accent-primary-glow);
-    }
-
-    .te-tools {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .te-status {
-      min-height: 20px;
-      font-size: 12px;
-      color: var(--text-primary);
-      opacity: 0.85;
-    }
-
-    .te-status[data-tone="error"] {
-      color: var(--accent-hot);
-    }
-
-    .te-status[data-tone="warn"] {
-      color: var(--accent-gold);
-    }
-
-    .te-status[data-tone="success"] {
-      color: var(--accent-success);
-    }
-
-    .te-status[data-tone="info"] {
-      color: var(--accent-secondary);
-    }
-
-    .te-actions {
-      display: flex;
-      gap: 10px;
-    }
-
-    .te-actions .te-btn {
-      flex: 1;
-    }
-
-    .te-test {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      font-size: 12px;
-      color: var(--text-primary);
-    }
-
-    .te-test.hidden {
-      display: none;
-    }
-
-    .te-test-buttons {
-      display: flex;
-      gap: 10px;
-    }
-
-    /* ===== Portrait Warning ===== */
-    .portrait-warning {
-      position: fixed;
-      inset: 0;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      background: rgba(10, 14, 23, 0.96);
-      color: var(--text-primary);
-      z-index: 100;
-      text-align: center;
-      padding: 24px;
-    }
-
-    .portrait-warning .box {
-      max-width: 360px;
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-xl);
-      padding: 32px 24px;
-      background: var(--bg-card);
-    }
-
-    .portrait-warning .rotate-icon {
-      font-size: 48px;
-      margin-bottom: 16px;
-    }
-
-    .portrait-warning h2 {
-      margin: 0 0 8px;
-      font-size: 20px;
-    }
-
-    .portrait-warning p {
-      margin: 0;
-      opacity: 0.8;
-      font-size: 14px;
-    }
-
-    @media (orientation: portrait) {
-      .portrait-warning {
-        display: flex;
-      }
-    }
-
-    /* ===== Responsive: Mobile Landscape (limited height) ===== */
-    @media (max-height: 500px) and (orientation: landscape) {
-      .header {
-        padding: 8px 16px;
+    /* Responsive */
+    @media (max-width: 800px) {
+      .menu-grid {
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: auto;
       }
 
-      .logo-icon {
-        width: 32px;
-        height: 32px;
-        font-size: 16px;
+      .menu-item.large {
+        grid-column: span 1;
       }
 
-      .logo-text {
-        font-size: 16px;
-      }
-
-      .main-content {
-        padding: 0 16px 12px;
-        gap: 12px;
-      }
-
-      .nav-sidebar {
-        gap: 4px;
-        width: clamp(140px, 16vw, 180px);
-      }
-
-      .nav-btn {
-        padding: 8px 12px;
-        font-size: 13px;
-        min-height: 36px;
-      }
-
-      .nav-icon {
-        font-size: 14px;
-        width: 20px;
-      }
-
-      .main-panel {
-        border-radius: var(--radius-md);
-      }
-
-      .panel-header {
-        padding: 12px 16px;
-      }
-
-      .panel-title {
-        font-size: 16px;
-      }
-
-      .panel-subtitle {
-        font-size: 11px;
-      }
-
-      .panel-content {
-        padding: 12px 16px;
-      }
-
-      .mode-cards {
-        gap: 12px;
-      }
-
-      .mode-card {
-        padding: 12px 16px;
-        border-radius: var(--radius-md);
-      }
-
-      .mode-icon {
-        width: 40px;
-        height: 40px;
-        font-size: 18px;
-        margin-bottom: 8px;
-        border-radius: var(--radius-sm);
-      }
-
-      .mode-name {
-        font-size: 14px;
-        margin-bottom: 4px;
-      }
-
-      .mode-desc {
-        font-size: 11px;
-        line-height: 1.4;
-      }
-
-      .card-grid {
-        gap: 10px;
-      }
-
-      .selection-card {
-        padding: 10px;
-        border-radius: var(--radius-md);
-      }
-
-      .card-preview {
-        height: 60px;
-        margin-bottom: 8px;
-        border-radius: var(--radius-sm);
-      }
-
-      .card-name {
-        font-size: 13px;
-      }
-
-      .card-desc {
-        font-size: 10px;
-      }
-
-      .start-section {
-        padding: 10px 16px;
-        gap: 10px;
-      }
-
-      .summary-item {
-        gap: 4px;
-      }
-
-      .summary-label {
-        font-size: 10px;
-      }
-
-      .summary-value {
-        font-size: 12px;
-      }
-
-      .start-btn {
-        padding: 10px 20px;
-        font-size: 14px;
-        min-height: 40px;
-        border-radius: var(--radius-md);
-      }
-
-      .controls-info {
-        padding: 8px 12px;
-        gap: 12px;
-        font-size: 10px;
-      }
-
-      .key {
-        min-width: 20px;
-        height: 18px;
-        font-size: 9px;
-      }
-
-      .settings-section {
-        margin-bottom: 16px;
-      }
-
-      .settings-title {
-        font-size: 12px;
-        margin-bottom: 10px;
-      }
-
-      .setting-row {
-        padding: 10px 14px;
-        border-radius: var(--radius-md);
-      }
-
-      .setting-label {
-        font-size: 12px;
-      }
-
-      .setting-desc {
-        font-size: 10px;
-      }
-
-      .toggle-switch {
-        width: 44px;
-        height: 24px;
-      }
-
-      .toggle-switch::after {
-        width: 20px;
-        height: 20px;
-      }
-
-      .toggle-switch.on::after {
-        transform: translateX(20px);
-      }
-    }
-
-    /* ===== Responsive: Tablet/Mobile ===== */
-    @media (max-width: 900px) {
-      .main-content {
-        flex-direction: column;
-        padding: 0 16px 16px;
-        gap: 16px;
-      }
-
-      .nav-sidebar {
-        flex-direction: row;
-        width: 100%;
-        overflow-x: auto;
-        gap: 8px;
-        padding-bottom: 4px;
-        scrollbar-width: none;
-        flex-shrink: 0;
-      }
-
-      .nav-sidebar::-webkit-scrollbar {
-        display: none;
-      }
-
-      .nav-btn {
-        flex: 0 0 auto;
-        padding: 12px 16px;
-        white-space: nowrap;
-      }
-
-      .nav-btn.primary-action {
-        margin-top: 0;
-        margin-left: auto;
-      }
-
-      .main-panel {
-        flex: 1;
-        min-height: 0;
-      }
-
-      .header {
-        padding: 12px 16px;
-        flex-shrink: 0;
-      }
-
-      .card-grid {
-        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-        gap: 12px;
-      }
-
-      .selection-card {
-        padding: 12px;
-      }
-
-      .card-preview {
-        height: 80px;
-      }
-
-      .start-section {
-        padding: 16px;
-        flex-direction: column;
-        align-items: stretch;
-        flex-shrink: 0;
-      }
-
-      .selection-summary {
-        justify-content: center;
-      }
-
-      .start-btn {
-        width: 100%;
-        justify-content: center;
-      }
-    }
-
-    /* ===== Responsive: Mobile Landscape Narrow (horizontal nav on small height screens) ===== */
-    @media (max-width: 900px) and (max-height: 500px) and (orientation: landscape) {
-      .main-content {
-        flex-direction: row;
-        gap: 12px;
-      }
-
-      .nav-sidebar {
-        flex-direction: column;
-        width: auto;
-        flex-shrink: 0;
-        overflow-x: visible;
-        overflow-y: auto;
-      }
-
-      .nav-btn {
-        padding: 8px 12px;
-        font-size: 12px;
-      }
-
-      .nav-btn span:not(.nav-icon) {
-        display: none;
-      }
-
-      .nav-icon {
-        margin: 0;
-      }
-
-      .start-section {
-        flex-direction: row;
-        flex-wrap: nowrap;
-        align-items: center;
-      }
-
-      .selection-summary {
-        flex: 1;
-        justify-content: flex-start;
-      }
-
-      .start-btn {
-        width: auto;
-        flex-shrink: 0;
-      }
-    }
-
-    @media (max-width: 600px) {
-      .mode-cards {
+      .selection-grid {
         grid-template-columns: 1fr;
       }
 
-      .header-actions {
-        display: none;
-      }
-
-      .controls-info {
-        display: none;
+      .settings-form {
+        grid-template-columns: 1fr;
       }
     }
 
-    @media (max-width: 1024px) {
-      .track-editor-body {
-        flex-direction: column;
-        align-items: stretch;
-      }
-
-      .track-editor-controls {
-        width: 100%;
-      }
+    /* Utility */
+    .hidden {
+      display: none !important;
     }
 
-    /* ===== New Track Builder Styles ===== */
+    /* =========================================
+       TRACK BUILDER STYLES
+       ========================================= */
     .track-builder-overlay {
       position: fixed;
-      inset: 0;
-      z-index: 100;
-      background: #0a1628;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: var(--bg-dark);
+      z-index: 2000;
+      display: flex;
+      flex-direction: column;
     }
 
     .track-builder-overlay.hidden {
@@ -1318,35 +490,37 @@
     }
 
     .track-builder-container {
-      width: 100%;
-      height: 100%;
       display: flex;
       flex-direction: column;
+      height: 100%;
       position: relative;
     }
 
     /* Header */
     .tb-header {
+      height: 64px;
+      background: rgba(10, 10, 12, 0.95);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 12px 20px;
-      background: rgba(10, 22, 40, 0.95);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-      gap: 16px;
-      flex-shrink: 0;
+      padding: 0 24px;
+      padding-right: 80px;
+      /* Space for close btn */
+      z-index: 10;
     }
 
-    .tb-header-left {
+    .tb-header-left,
+    .tb-header-right {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 16px;
     }
 
     .tb-logo {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
     }
 
     .tb-logo-icon {
@@ -1356,1127 +530,1014 @@
     .tb-logo-text {
       display: flex;
       flex-direction: column;
-      gap: 2px;
     }
 
     .tb-logo-title {
-      font-size: 14px;
+      font-family: var(--font-display);
       font-weight: 700;
-      letter-spacing: 2px;
-      color: #06b6d4;
-      text-transform: uppercase;
+      font-size: 14px;
+      letter-spacing: 1px;
+      color: var(--text-muted);
     }
 
     .tb-track-name-input {
       background: transparent;
       border: none;
-      color: var(--text-secondary);
-      font-size: 12px;
+      color: white;
+      font-family: var(--font-display);
+      font-size: 18px;
+      font-weight: 700;
+      width: 200px;
       padding: 0;
-      width: 150px;
     }
 
     .tb-track-name-input:focus {
       outline: none;
-      color: var(--text-primary);
+      border-bottom: 1px solid var(--accent);
     }
 
-    .tb-header-right {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
+    /* Header Buttons */
     .tb-icon-btn {
-      width: 36px;
-      height: 36px;
-      border-radius: 8px;
+      background: transparent;
       border: 1px solid rgba(255, 255, 255, 0.1);
-      background: rgba(255, 255, 255, 0.05);
-      color: var(--text-secondary);
+      color: var(--text-muted);
+      width: 40px;
+      height: 40px;
+      border-radius: 6px;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      transition: all 0.15s ease;
+      transition: all 0.2s;
     }
 
     .tb-icon-btn:hover {
-      background: rgba(255, 255, 255, 0.1);
-      color: var(--text-primary);
+      background: rgba(255, 255, 255, 0.05);
+      color: white;
       border-color: rgba(255, 255, 255, 0.2);
     }
 
     .tb-icon-btn.tb-danger:hover {
       background: rgba(239, 68, 68, 0.2);
-      border-color: rgba(239, 68, 68, 0.4);
-      color: #ef4444;
+      border-color: var(--accent);
+      color: var(--accent);
     }
 
     .tb-bake-btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      height: 40px;
+      padding: 0 20px;
+      border-radius: 4px;
+      font-family: var(--font-display);
+      font-weight: 700;
+      letter-spacing: 1px;
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 10px 20px;
-      background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
-      border: none;
-      border-radius: 8px;
-      color: white;
-      font-size: 13px;
-      font-weight: 600;
-      letter-spacing: 0.5px;
       cursor: pointer;
-      transition: all 0.2s ease;
+      clip-path: polygon(10px 0, 100% 0, 100% 100%, 0% 100%);
+      transition: all 0.2s;
     }
 
-    .tb-bake-btn:hover {
-      filter: brightness(1.1);
-      transform: translateY(-1px);
+    .tb-bake-btn:hover:not(:disabled) {
+      background: #ff5555;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+
+    .tb-bake-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      filter: grayscale(1);
     }
 
     /* Main Area */
     .tb-main {
       flex: 1;
       display: flex;
-      position: relative;
       overflow: hidden;
+      position: relative;
     }
 
     .tb-canvas-area {
       flex: 1;
+      background: #0a1628;
       position: relative;
       overflow: hidden;
     }
 
     .tb-canvas {
-      width: 100%;
-      height: 100%;
       display: block;
-      touch-action: none;
-      cursor: crosshair;
     }
 
     /* Circuit Status */
     .tb-circuit-status {
       position: absolute;
-      top: 50%;
+      top: 24px;
       left: 50%;
-      transform: translate(-50%, -50%);
-      padding: 12px 28px;
-      background: rgba(16, 185, 129, 0.15);
-      border: 2px solid #10b981;
-      border-radius: 8px;
-      pointer-events: none;
-    }
-
-    .tb-circuit-status.hidden {
-      display: none;
-    }
-
-    .tb-status-text {
-      font-size: 16px;
-      font-weight: 600;
-      letter-spacing: 2px;
+      transform: translateX(-50%);
+      background: rgba(16, 185, 129, 0.2);
+      border: 1px solid #10b981;
       color: #10b981;
-      text-transform: uppercase;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-family: var(--font-display);
+      font-weight: 700;
+      letter-spacing: 1px;
+      backdrop-filter: blur(8px);
+      pointer-events: none;
+      animation: slideDown 0.3s ease-out;
     }
 
+    /* ERROR STATE for status */
     .tb-circuit-status.error {
-      background: rgba(239, 68, 68, 0.15);
+      background: rgba(239, 68, 68, 0.2);
       border-color: #ef4444;
-    }
-
-    .tb-circuit-status.error .tb-status-text {
       color: #ef4444;
     }
 
-    /* Bottom Toolbar */
+    @keyframes slideDown {
+      from {
+        transform: translate(-50%, -20px);
+        opacity: 0;
+      }
+
+      to {
+        transform: translate(-50%, 0);
+        opacity: 1;
+      }
+    }
+
+    /* Toolbar */
     .tb-toolbar {
       position: absolute;
-      bottom: 24px;
+      bottom: 32px;
       left: 50%;
       transform: translateX(-50%);
-      display: flex;
-      gap: 4px;
-      padding: 8px;
-      background: rgba(15, 23, 42, 0.95);
+      background: rgba(19, 19, 23, 0.9);
       border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 8px;
       border-radius: 12px;
-      backdrop-filter: blur(8px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      display: flex;
+      gap: 8px;
+      backdrop-filter: blur(10px);
     }
 
     .tb-tool-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 4px;
-      padding: 12px 20px;
-      background: transparent;
-      border: 1px solid transparent;
+      padding: 8px 16px;
       border-radius: 8px;
-      color: var(--text-secondary);
-      font-size: 11px;
       cursor: pointer;
-      transition: all 0.15s ease;
+      gap: 4px;
+      min-width: 64px;
+      transition: all 0.2s;
+    }
+
+    .tb-tool-btn span {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
     }
 
     .tb-tool-btn:hover {
       background: rgba(255, 255, 255, 0.05);
-      color: var(--text-primary);
+      color: white;
     }
 
     .tb-tool-btn.active {
-      background: rgba(6, 182, 212, 0.15);
-      border-color: rgba(6, 182, 212, 0.4);
-      color: #06b6d4;
+      background: var(--accent);
+      color: white;
+      box-shadow: 0 4px 12px var(--accent-glow);
     }
 
     /* Panel Toggle */
     .tb-panel-toggle {
       position: absolute;
-      right: 300px;
+      right: 320px;
       top: 50%;
-      transform: translateY(-50%);
-      width: 24px;
-      height: 48px;
-      background: rgba(15, 23, 42, 0.9);
+      background: var(--bg-panel);
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-right: none;
-      border-radius: 8px 0 0 8px;
-      color: var(--text-secondary);
+      width: 24px;
+      height: 48px;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      transition: all 0.2s ease;
-      z-index: 10;
-    }
-
-    .tb-panel-toggle:hover {
-      background: rgba(15, 23, 42, 1);
-      color: var(--text-primary);
+      border-radius: 8px 0 0 8px;
+      z-index: 20;
+      transition: right 0.3s ease;
+      color: var(--text-muted);
     }
 
     .tb-panel-toggle.collapsed {
       right: 0;
     }
 
-    .tb-panel-toggle.collapsed svg {
-      transform: rotate(180deg);
-    }
-
     /* Properties Panel */
     .tb-properties-panel {
-      width: 300px;
-      background: rgba(15, 23, 42, 0.95);
-      border-left: 1px solid rgba(255, 255, 255, 0.08);
+      width: 320px;
+      background: var(--bg-panel);
+      border-left: 1px solid rgba(255, 255, 255, 0.05);
       display: flex;
       flex-direction: column;
-      overflow-y: auto;
-      transition: margin-right 0.3s ease;
+      z-index: 15;
+      transition: transform 0.3s ease;
     }
 
     .tb-properties-panel.collapsed {
-      margin-right: -300px;
+      transform: translateX(100%);
+      display: none;
     }
 
     .tb-panel-header {
+      padding: 20px;
+      font-family: var(--font-display);
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: white;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 16px 20px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-      color: var(--text-secondary);
-      font-size: 12px;
-      font-weight: 600;
-      letter-spacing: 1px;
+      gap: 12px;
+      background: rgba(255, 255, 255, 0.02);
     }
 
-    /* Stats */
     .tb-stats {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 1px;
-      background: rgba(255, 255, 255, 0.08);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 20px;
+      gap: 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     }
 
     .tb-stat {
-      background: rgba(15, 23, 42, 0.95);
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
+      background: rgba(0, 0, 0, 0.2);
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
     }
 
     .tb-stat-label {
+      display: block;
       font-size: 10px;
       color: var(--text-muted);
-      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+      font-weight: 700;
     }
 
     .tb-stat-value {
-      font-size: 24px;
+      font-family: var(--font-display);
+      font-size: 20px;
       font-weight: 700;
-      color: var(--text-primary);
+      color: var(--accent);
     }
 
     .tb-stat-value small {
       font-size: 12px;
       color: var(--text-muted);
+      font-weight: 400;
       margin-left: 2px;
     }
 
-    /* Sections */
     .tb-section {
-      padding: 16px 20px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     }
 
     .tb-section-header {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 16px;
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 12px;
-      color: var(--text-secondary);
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.5px;
+      letter-spacing: 1px;
     }
 
-    /* Surface Grid */
     .tb-surface-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 10px;
     }
 
     .tb-surface-btn {
-      padding: 10px 12px;
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      padding: 12px;
       border-radius: 6px;
-      color: var(--text-secondary);
-      font-size: 12px;
       cursor: pointer;
-      transition: all 0.15s ease;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.2s;
       text-align: left;
     }
 
     .tb-surface-btn:hover {
-      background: rgba(255, 255, 255, 0.08);
-      border-color: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
     }
 
     .tb-surface-btn.active {
-      background: rgba(6, 182, 212, 0.15);
-      border-color: #06b6d4;
-      color: #06b6d4;
+      background: rgba(239, 68, 68, 0.15);
+      border-color: var(--accent);
+      color: white;
     }
 
     /* Sliders */
     .tb-slider-header {
       display: flex;
       align-items: center;
-      gap: 8px;
+      justify-content: space-between;
       margin-bottom: 12px;
-      color: var(--text-secondary);
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.5px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-muted);
     }
 
     .tb-slider-value {
-      margin-left: auto;
-      color: #06b6d4;
+      color: var(--accent);
+      font-family: var(--font-display);
+      font-size: 16px;
     }
 
     .tb-slider {
       width: 100%;
-      height: 6px;
       -webkit-appearance: none;
-      appearance: none;
       background: rgba(255, 255, 255, 0.1);
+      height: 6px;
       border-radius: 3px;
       outline: none;
     }
 
     .tb-slider::-webkit-slider-thumb {
       -webkit-appearance: none;
-      width: 16px;
-      height: 16px;
-      background: #06b6d4;
+      width: 18px;
+      height: 18px;
+      background: var(--accent);
       border-radius: 50%;
       cursor: pointer;
-      transition: transform 0.15s ease;
+      transition: transform 0.1s;
     }
 
     .tb-slider::-webkit-slider-thumb:hover {
       transform: scale(1.2);
     }
 
-    .tb-slider::-moz-range-thumb {
-      width: 16px;
-      height: 16px;
-      background: #06b6d4;
-      border-radius: 50%;
-      border: none;
-      cursor: pointer;
-    }
-
-    /* Tips */
     .tb-tips {
-      padding: 16px 20px;
+      padding: 24px;
+      font-size: 13px;
+      line-height: 1.5;
       color: var(--text-muted);
-      font-size: 11px;
-      line-height: 1.6;
+      opacity: 0.7;
     }
 
     /* Close Button */
     .tb-close-btn {
       position: absolute;
       top: 12px;
-      left: 12px;
+      right: 12px;
       width: 40px;
       height: 40px;
-      background: rgba(0, 0, 0, 0.5);
+      background: #0a0a0c;
       border: 1px solid rgba(255, 255, 255, 0.1);
+      color: var(--text-muted);
       border-radius: 50%;
-      color: var(--text-secondary);
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      transition: all 0.15s ease;
-      z-index: 20;
+      z-index: 50;
+      transition: all 0.2s;
     }
 
     .tb-close-btn:hover {
-      background: rgba(239, 68, 68, 0.3);
-      border-color: rgba(239, 68, 68, 0.5);
-      color: #ef4444;
-    }
-
-    /* Responsive */
-    @media (max-width: 768px) {
-      .tb-properties-panel {
-        position: absolute;
-        right: 0;
-        top: 0;
-        bottom: 0;
-        z-index: 15;
-      }
-
-      .tb-panel-toggle {
-        right: 0;
-      }
-
-      .tb-properties-panel:not(.collapsed)+.tb-panel-toggle {
-        right: 300px;
-      }
-
-      .tb-toolbar {
-        padding: 6px;
-      }
-
-      .tb-tool-btn {
-        padding: 10px 14px;
-      }
-
-      .tb-tool-btn span {
-        display: none;
-      }
-
-      .tb-header {
-        padding: 10px 16px;
-      }
-
-      .tb-logo-title {
-        font-size: 12px;
-      }
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+      transform: rotate(90deg);
     }
   </style>
+
 </head>
 
 <body>
-  <!-- Portrait Warning -->
-  <div class="portrait-warning" aria-live="polite">
-    <div class="box">
-      <div class="rotate-icon" aria-hidden="true">📱</div>
-      <h2>Rotate Device</h2>
-      <p>RacingVibes is best experienced in landscape mode. Please rotate your device.</p>
-    </div>
-  </div>
-
-  <div class="app-container">
-    <!-- Header -->
-    <header class="header">
-      <div class="logo-section">
-        <div class="logo-icon" aria-hidden="true">🏎️</div>
-        <span class="logo-text">RacingVibes</span>
-      </div>
-      <div class="header-actions">
-        <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Open settings">⚙️</button>
+  <div class="racing-flag-bg"></div>
+  <div id="app">
+    <header>
+      <div class="logo">Racing<span>Vibes</span></div>
+      <div class="user-profile" style="display:flex; gap:10px; align-items:center;"><span
+          style="font-weight:600; color:#fff;">Player 1</span>
+        <div style="width:32px; height:32px; background:#333; border-radius:50%;"></div>
       </div>
     </header>
-
-    <!-- Main Content Area -->
-    <main class="main-content">
-      <!-- Navigation Sidebar -->
-      <nav class="nav-sidebar">
-        <button class="nav-btn active" data-view="mode">
-          <span class="nav-icon">🎮</span>
-          <span>Game Mode</span>
-        </button>
-        <button class="nav-btn" data-view="vehicle">
-          <span class="nav-icon">🚗</span>
-          <span>Vehicle</span>
-        </button>
-        <button class="nav-btn" data-view="track">
-          <span class="nav-icon">🏁</span>
-          <span>Track</span>
-        </button>
-        <button class="nav-btn" data-view="settings">
-          <span class="nav-icon">⚙️</span>
-          <span>Settings</span>
-        </button>
-        <button class="nav-btn" id="trackBuilderBtn">
-          <span class="nav-icon">🛠️</span>
-          <span>Track Builder</span>
-        </button>
-      </nav>
-
-      <!-- Main Panel -->
-      <section class="main-panel">
-        <div class="panel-header">
-          <div>
-            <h1 class="panel-title" id="panelTitle">Select Game Mode</h1>
-            <p class="panel-subtitle" id="panelSubtitle">Choose how you want to race</p>
+    <!-- SCREEN: MAIN MENU -->
+    <div id="mainMenu" class="screen active">
+      <div class="menu-grid">
+        <div class="menu-item large" onclick="startWizard()">
+          <div class="menu-icon">🏎️</div>
+          <div class="menu-label">Free Play</div>
+        </div>
+        <div class="menu-item locked">
+          <div class="menu-icon">🏆</div>
+          <div class="menu-label">Career Mode</div>
+        </div>
+        <div class="menu-item" onclick="switchToTimeTrial()">
+          <div class="menu-icon">⏱️</div>
+          <div class="menu-label">Time-Trial</div>
+        </div>
+        <div class="menu-item locked">
+          <div class="menu-icon">🌍</div>
+          <div class="menu-label">Online Multiplayer</div>
+        </div>
+        <div class="menu-item" onclick="openOptions()">
+          <div class="menu-icon">🔧</div>
+          <div class="menu-label">Options</div>
+        </div>
+        <div class="menu-item locked">
+          <div class="menu-icon">💰</div>
+          <div class="menu-label">Shop</div>
+        </div>
+        <div class="menu-item locked">
+          <div class="menu-icon">📊</div>
+          <div class="menu-label">Achievements</div>
+        </div>
+        <div class="menu-item locked">
+          <div class="menu-icon">👍</div>
+          <div class="menu-label">Rate</div>
+        </div>
+      </div>
+    </div>
+    <!-- SCREEN: FREE PLAY WIZARD -->
+    <div id="wizard" class="screen">
+      <div class="wizard-container">
+        <div class="wizard-header"><button class="back-btn" onclick="wizardBack()">←</button>
+          <div class="wizard-title" id="wizardTitle">Select Class</div>
+          <div class="wizard-steps">
+            <div class="step-dot active" id="dot1"></div>
+            <div class="step-dot" id="dot2"></div>
+            <div class="step-dot" id="dot3"></div>
+            <div class="step-dot" id="dot4"></div>
           </div>
-          <div class="controls-info">
-            <div class="control-hint">
-              <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span>
-              <span>Drive</span>
+        </div>
+        <!-- Step 1: Class -->
+        <div id="step1" class="wizard-step">
+          <div class="selection-grid">
+            <div class="card selected" onclick="selectClass('grip', this)">
+              <div class="card-icon">🏆</div>
+              <div class="card-title">Grip Class</div>
+              <div class="card-desc">Standard mixed racing. Features a balance of speed and handling. Perfect for
+                beginners.</div>
             </div>
-            <div class="control-hint">
-              <span class="key">R</span>
-              <span>Restart</span>
+            <div class="card" onclick="selectClass('gt', this)">
+              <div class="card-icon">🚗</div>
+              <div class="card-title">GT Class</div>
+              <div class="card-desc">High performance touring cars. Excellent grip and acceleration.</div>
             </div>
-            <div class="control-hint">
-              <span class="key">Space</span>
-              <span>Pause</span>
+            <div class="card" onclick="selectClass('openwheel', this)">
+              <div class="card-icon">🏎️</div>
+              <div class="card-title">Formula Class</div>
+              <div class="card-desc">The pinnacle of speed. Extreme downforce and lightning fast reactions
+                required. </div>
+            </div>
+            <div class="card" onclick="selectClass('rally', this)">
+              <div class="card-icon">🚙</div>
+              <div class="card-title">Rally Class</div>
+              <div class="card-desc">Loose surface specialists. Slide into corners and master the drift.</div>
+            </div>
+            <div class="card" onclick="selectClass('truck', this)">
+              <div class="card-icon">🚚</div>
+              <div class="card-title">Truck Class</div>
+              <div class="card-desc">Heavy metal behemoths. High torque and intimidation factor.</div>
             </div>
           </div>
         </div>
-
-        <div class="panel-content">
-          <!-- Game Mode View -->
-          <div class="view active" id="modeView">
-            <div class="mode-cards">
-              <div class="mode-card selected" data-mode="grip">
-                <div class="mode-icon">🏆</div>
-                <div class="mode-name">Grip</div>
-                <div class="mode-desc">Classic mixed vehicle racing. 9 AI opponents in different vehicle types compete
-                  on the track.</div>
-              </div>
-              <div class="mode-card" data-mode="gt">
-                <div class="mode-icon">🚗</div>
-                <div class="mode-name">GT</div>
-                <div class="mode-desc">GT-only race. 7 AI opponents in GT cars compete for victory.</div>
-              </div>
-              <div class="mode-card" data-mode="openwheel">
-                <div class="mode-icon">🏎️</div>
-                <div class="mode-name">Open Wheel</div>
-                <div class="mode-desc">Formula racing. 7 AI opponents in F1 cars battle at high speed.</div>
-              </div>
-              <div class="mode-card" data-mode="rally">
-                <div class="mode-icon">🚙</div>
-                <div class="mode-name">Rally</div>
-                <div class="mode-desc">Rally racing. 7 AI opponents in rally cars tackle any surface.</div>
-              </div>
-              <div class="mode-card" data-mode="truck">
-                <div class="mode-icon">🚚</div>
-                <div class="mode-name">Truck</div>
-                <div class="mode-desc">Truck racing. 7 AI opponents in heavy trucks compete for supremacy.</div>
-              </div>
-              <div class="mode-card" data-mode="bubble">
-                <div class="mode-icon">🫧</div>
-                <div class="mode-name">Bubble</div>
-                <div class="mode-desc">Bubble racing. 7 AI opponents in bubble cars compete for fun and bouncy action.
-                </div>
-              </div>
-              <div class="mode-card time-trial" data-mode="time-trial">
-                <div class="mode-icon">⏱️</div>
-                <div class="mode-name">Time Trial</div>
-                <div class="mode-desc">Race against the clock. Set your best lap time and beat your personal records on
-                  any track.</div>
-              </div>
-            </div>
+        <!-- Step 2: Vehicle -->
+        <div id="step2" class="wizard-step hidden">
+          <div class="selection-grid" id="vehicleGrid">
+            <!-- Populated by JS -->
           </div>
-
-          <!-- Vehicle View -->
-          <div class="view" id="vehicleView">
-            <div class="card-grid" id="vehicleGrid">
-              <!-- Vehicles populated by JS -->
-            </div>
+        </div>
+        <!-- Step 3: Track -->
+        <div id="step3" class="wizard-step hidden">
+          <div class="selection-grid" id="trackGrid">
+            <!-- Populated by JS -->
           </div>
-
-          <!-- Track View -->
-          <div class="view" id="trackView">
-            <div class="card-grid" id="trackGrid">
-              <!-- Tracks populated by JS -->
-            </div>
-          </div>
-
-          <!-- Settings View -->
-          <div class="view" id="settingsView">
-            <div class="settings-section">
-              <h3 class="settings-title">Controls</h3>
-              <div class="settings-group">
-                <div class="setting-row">
-                  <div class="setting-info">
-                    <div class="setting-label">Touch Steering</div>
-                    <div class="setting-desc">Use on-screen buttons for steering on mobile devices</div>
-                  </div>
-                  <div class="toggle-switch on" id="touchSteeringToggle"></div>
-                </div>
-                <div class="setting-row">
-                  <div class="setting-info">
-                    <div class="setting-label">Gyro Steering</div>
-                    <div class="setting-desc">Tilt your device to steer (mobile only)</div>
-                  </div>
-                  <div class="toggle-switch" id="gyroToggle"></div>
-                </div>
+        </div>
+        <!-- Step 4: Settings -->
+        <div id="step4" class="wizard-step hidden">
+          <div class="settings-form">
+            <div class="form-group"><label class="form-label">AI Difficulty</label>
+              <div class="range-wrap"><input type="range" min="0" max="3" step="1" value="1" id="difficultyInp"
+                  oninput="updateDiff(this.value)">
+                <div class="range-val" id="difficultyVal">Normal</div>
               </div>
             </div>
-
-            <div class="settings-section">
-              <h3 class="settings-title">Audio</h3>
-              <div class="settings-group">
-                <div class="setting-row">
-                  <div class="setting-info">
-                    <div class="setting-label">Sound Effects</div>
-                    <div class="setting-desc">Engine sounds, skids, and collisions</div>
-                  </div>
-                  <div class="toggle-switch on" id="sfxToggle"></div>
-                </div>
-                <div class="setting-row">
-                  <div class="setting-info">
-                    <div class="setting-label">Master Volume</div>
-                    <div class="setting-desc">Overall sound level</div>
-                  </div>
-                  <div class="setting-control" style="display:flex;align-items:center;gap:8px;">
-                    <input type="range" id="masterVolume" min="0" max="100" step="1" style="width:160px;">
-                    <div class="val" id="masterVolumeVal">90</div>
-                  </div>
-                </div>
+            <div class="form-group"><label class="form-label">Number of Laps</label>
+              <div class="range-wrap"><input type="range" min="1" max="50" step="1" value="3" id="lapsInp"
+                  oninput="updateVal('lapsVal', this.value)">
+                <div class="range-val" id="lapsVal">3</div>
               </div>
             </div>
-
-            <div class="settings-section">
-              <h3 class="settings-title">About</h3>
-              <div class="settings-group">
-                <div class="setting-row">
-                  <div class="setting-info">
-                    <div class="setting-label">RacingVibes</div>
-                    <div class="setting-desc">Top-down racing game with physics-based handling</div>
-                  </div>
-                </div>
+            <div class="form-group"><label class="form-label">Number of Vehicles</label>
+              <div class="range-wrap"><input type="range" min="1" max="20" step="1" value="8" id="botsInp"
+                  oninput="updateVal('botsVal', this.value)">
+                <div class="range-val" id="botsVal">8</div>
               </div>
+            </div>
+            <div class="form-group"><label class="form-label">Grid Position</label>
+              <div class="range-wrap"><input type="range" min="1" max="20" step="1" value="8" id="gridInp"
+                  oninput="updateVal('gridVal', this.value)">
+                <div class="range-val" id="gridVal">8</div>
+              </div>
+            </div>
+            <!-- Other toggles -->
+            <div class="form-group"><label class="form-label">Game Options</label>
+              <div style="display:flex; gap:20px;"><label
+                  style="display:flex; align-items:center; gap:8px; cursor:pointer;"><input type="checkbox"
+                    id="sfxToggle" checked style="width:20px; height:20px;">Sound Effects
+                </label></div>
             </div>
           </div>
         </div>
-
-        <!-- Start Section -->
-        <div class="start-section">
-          <div class="selection-summary">
-            <div class="summary-item">
-              <span class="summary-label">Mode:</span>
-              <span class="summary-value" id="summaryMode">Grip</span>
-            </div>
-            <div class="summary-item">
-              <span class="summary-label">Vehicle:</span>
-              <span class="summary-value" id="summaryVehicle">GT</span>
-            </div>
-            <div class="summary-item">
-              <span class="summary-label">Track:</span>
-              <span class="summary-value" id="summaryTrack">Test</span>
+        <!-- Action Bar -->
+        <div class="action-bar hidden" id="actionBar"><button class="start-btn" onclick="wizardNext()" id="nextBtn">Next
+            Steps &rarr;
+          </button></div>
+      </div>
+    </div>
+    <!-- SCREEN: OPTIONS -->
+    <div id="optionsScreen" class="screen">
+      <div class="wizard-container">
+        <div class="wizard-header"><button class="back-btn" onclick="closeOptions()">←</button>
+          <div class="wizard-title">Global Settings</div>
+        </div>
+        <div class="settings-form" style="max-width:800px; margin:0 auto; width:100%;">
+          <!-- Master Volume -->
+          <div class="form-group"><label class="form-label">Master Volume</label>
+            <div class="range-wrap"><input type="range" min="0" max="100" step="1" id="optVolume"
+                oninput="updateOptVol(this.value)">
+              <div class="range-val" id="optVolumeVal">100%</div>
             </div>
           </div>
-          <button class="start-btn" id="startBtn">
-            <span>Start Race</span>
-            <span class="arrow">→</span>
-          </button>
+          <!-- Controls -->
+          <div class="form-group"><label class="form-label">Control Mode</label>
+            <div style="display:flex; gap:20px;">
+              <div class="menu-item" id="btnTouchOpt" onclick="setOptMode('touch')" style="height:120px; flex:1;">
+                <div class="menu-icon" style="font-size:32px; margin-bottom:10px;">📱</div>
+                <div class="menu-label" style="font-size:18px;">Touch</div>
+              </div>
+              <div class="menu-item" id="btnTiltOpt" onclick="setOptMode('tilt')" style="height:120px; flex:1;">
+                <div class="menu-icon" style="font-size:32px; margin-bottom:10px;">🔄</div>
+                <div class="menu-label" style="font-size:18px;">Tilt</div>
+              </div>
+            </div>
+            <div style="margin-top:10px; font-size:14px; opacity:0.6; text-align:center;">"Touch" enables
+              on-screen buttons (also supports Keyboard).<br>"Tilt" enables gyroscope steering. </div>
+          </div>
+          <!-- Toggles -->
+          <div class="form-group"><label class="form-label">Game Settings</label>
+            <div
+              style="background:var(--bg-card); padding:20px; border-radius:12px; border:1px solid rgba(255,255,255,0.1);">
+              <label
+                style="display:flex; align-items:center; justify-content:space-between; cursor:pointer; padding:10px 0;"><span
+                  style="font-size:18px; font-weight:600;">Sound Effects</span><input type="checkbox" id="optSfx"
+                  onchange="setOptSfx(this.checked)"
+                  style="width:24px; height:24px; accent-color:var(--accent);"></label>
+            </div>
+          </div>
         </div>
-      </section>
-    </main>
+      </div>
+    </div>
   </div>
+  </div>
+  <script> // ===== STATE =====
 
-  <script>
-    window.addEventListener('DOMContentLoaded', function () {
-      (function () {
-        // ===== DOM Helpers =====
-        function $(id) { return document.getElementById(id); }
-        function $$(sel) { return document.querySelectorAll(sel); }
+    const state = {
 
-        // ===== State =====
-        const state = {
-          mode: 'grip',
-          vehicle: 'GT',
-          track: 'Test',
-          currentView: 'mode'
-        };
+      step: 0,
+      mode: 'grip',
+      vehicle: 'GT',
+      track: 'Test',
+      config: {
+        laps: 3,
+        difficulty: 1, // 0=Easy, 1=Normal, 2=Hard, 3=Pro
+        botCount: 8,
+        gridPos: 8
+      }
+    }
 
-        // ===== Vehicle Data =====
-        const vehicles = [
-          { id: 'GT', name: 'GT', desc: 'Balanced all-rounder', badge: 'handling', icon: '🚗' },
-          { id: 'F1', name: 'F1', desc: 'Maximum speed & precision', badge: 'speed', icon: '🏎️' },
-          { id: 'Rally', name: 'Rally', desc: 'Built for any surface', badge: 'handling', icon: '🚙' },
-          { id: 'Truck', name: 'Truck', desc: 'Heavy but powerful', badge: 'speed', icon: '🚚' },
-          { id: 'Bubble', name: 'Bubble', desc: 'Fun and bouncy racer', badge: 'handling', icon: '🫧' }
-        ];
+      ;
 
-        // ===== Track Data =====
-        // Built-in tracks can be added here. Use "Make Built-in" button to export custom tracks.
-        const tracks = [
-          { id: 'Test', name: 'Test', desc: 'Flowing circuit with sweeping corners' },
-          { id: 'Sharp_Corners', name: 'Sharp Corners', desc: 'Technical track with very sharp turns' }
-        ];
+    // ===== DATA =====
+    const VEHICLES = [{
+      id: 'GT', name: 'GT Spec', class: 'gt', icon: '🚗'
+    }
 
-        // ===== Panel Titles =====
-        const viewConfig = {
-          mode: { title: 'Select Game Mode', subtitle: 'Choose how you want to race' },
-          vehicle: { title: 'Select Vehicle', subtitle: 'Pick your racing machine' },
-          track: { title: 'Select Track', subtitle: 'Choose where to race' },
-          settings: { title: 'Settings', subtitle: 'Configure your experience' }
-        };
+      ,
+    {
+      id: 'F1', name: 'Formula X', class: 'openwheel', icon: '🏎️'
+    }
 
-        // ===== UI Elements =====
-        const navBtns = $$('.nav-btn[data-view]');
-        const views = $$('.view');
-        const panelTitle = $('panelTitle');
-        const panelSubtitle = $('panelSubtitle');
-        const vehicleGrid = $('vehicleGrid');
-        const trackGrid = $('trackGrid');
-        const startBtn = $('startBtn');
-        const settingsHeaderBtn = $('settingsBtn');
-        const summaryMode = $('summaryMode');
-        const summaryVehicle = $('summaryVehicle');
-        const summaryTrack = $('summaryTrack');
+      ,
+    {
+      id: 'Rally', name: 'Rally Cross', class: 'rally', icon: '🚙'
+    }
 
-        // ===== Navigation =====
-        function switchView(viewId) {
-          state.currentView = viewId;
+      ,
+    {
+      id: 'Truck', name: 'Super Truck', class: 'truck', icon: '🚚'
+    }
 
-          navBtns.forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.view === viewId);
-          });
+      ,
+    {
+      id: 'Bubble', name: 'Bubble Car', class: 'bubble', icon: '🫧'
+    }
 
-          views.forEach(view => {
-            view.classList.toggle('active', view.id === viewId + 'View');
-          });
+    ];
 
-          const config = viewConfig[viewId];
-          if (config) {
-            panelTitle.textContent = config.title;
-            panelSubtitle.textContent = config.subtitle;
-          }
-        }
+    // Default tracks
+    const BUILTIN_TRACKS = [{
+      id: 'Test', name: 'Test Circuit', desc: 'Perfect for shakedowns and learning.'
+    }
 
-        navBtns.forEach(btn => {
-          btn.addEventListener('click', () => switchView(btn.dataset.view));
-        });
+      ,
+    {
+      id: 'Sharp_Corners', name: 'Sharp Corners', desc: 'Technical hairpin madness.'
+    }
 
-        if (settingsHeaderBtn) {
-          settingsHeaderBtn.addEventListener('click', () => switchView('settings'));
-        }
+    ];
 
-        // ===== Mode Selection =====
-        const modeCards = $$('.mode-card');
-        modeCards.forEach(card => {
-          card.addEventListener('click', () => {
-            modeCards.forEach(c => c.classList.remove('selected'));
-            card.classList.add('selected');
-            state.mode = card.dataset.mode;
-            const modeName = card.querySelector('.mode-name').textContent;
-            summaryMode.textContent = modeName;
-          });
-        });
+    // ===== UI NAVIGATION =====
 
-        // ===== Render Vehicle Cards =====
-        function renderVehicles() {
-          vehicleGrid.innerHTML = vehicles.map(v => `
-            <div class="selection-card ${v.id === state.vehicle ? 'selected' : ''}" data-vehicle="${v.id}">
-              <div class="card-preview">${v.icon}</div>
-              <div class="card-name">${v.name}</div>
-              <div class="card-desc">${v.desc}</div>
-              <span class="card-badge ${v.badge}">${v.badge}</span>
-            </div>
-          `).join('');
+    function startWizard() {
+      switchScreen('wizard');
+      setStep(1);
+    }
 
-          vehicleGrid.querySelectorAll('.selection-card').forEach(card => {
-            card.addEventListener('click', () => {
-              vehicleGrid.querySelectorAll('.selection-card').forEach(c => c.classList.remove('selected'));
-              card.classList.add('selected');
-              state.vehicle = card.dataset.vehicle;
-              summaryVehicle.textContent = card.dataset.vehicle;
-            });
-          });
-        }
+    function switchToTimeTrial() {
+      // Preset for time trial loop
+      state.config.laps = 100;
+      state.config.botCount = 0;
+      state.mode = 'time-trial';
+      startWizard(); // Reuse wizard but maybe skip vehicle selection or auto-set?
+      // For now, simpler to just use the wizard flow but pre-set things
+    }
 
-        // ===== Render Track Cards =====
-        function renderTracks(customTracks = []) {
-          let html = tracks.map(t => `
-            <div class="selection-card ${t.id === state.track ? 'selected' : ''}" data-track="${t.id}">
-              <div class="card-preview">🏁</div>
-              <div class="card-name">${t.name}</div>
-              <div class="card-desc">${t.desc}</div>
-            </div>
-          `).join('');
+    function switchScreen(id) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+    }
 
-          // Add custom tracks
-          customTracks.forEach(t => {
-            const trackId = 'custom:' + t.id;
-            html += `
-              <div class="selection-card ${trackId === state.track ? 'selected' : ''}" data-track="${trackId}">
-                <div class="card-actions">
-                  <button class="card-action-btn card-edit-btn" data-edit-id="${t.id}" title="Rename track">✏️</button>
-                  <button class="card-action-btn card-export-btn" data-export-id="${t.id}" title="Export track as JSON">💾</button>
-                  <button class="card-action-btn card-builtin-btn" data-builtin-id="${t.id}" title="Export as built-in track code">📦</button>
-                  <button class="card-action-btn card-delete-btn" data-delete-id="${t.id}" title="Delete track">🗑️</button>
-                </div>
-                <div class="card-preview">⭐</div>
-                <div class="card-name">${t.name}</div>
-                <div class="card-desc">Custom track</div>
-                <span class="card-badge custom">custom</span>
-              </div>
-            `;
-          });
+    function setStep(n) {
+      state.step = n;
 
-          // Add track builder card
-          html += `
-            <div class="selection-card add-card" id="createTrackCard">
-              <span class="add-icon">+</span>
-              <span class="add-text">Create Track</span>
-            </div>
-          `;
+      // Update dots
+      for (let i = 1; i <= 4; i++) {
+        const d = document.getElementById('dot' + i);
+        d.className = 'step-dot ' + (i === n ? 'active' : (i < n ? 'done' : ''));
+      }
 
-          trackGrid.innerHTML = html;
+      // Hide all steps
+      document.querySelectorAll('.wizard-step').forEach(s => s.classList.add('hidden'));
 
-          trackGrid.querySelectorAll('.selection-card:not(.add-card)').forEach(card => {
-            card.addEventListener('click', (e) => {
-              // Ignore clicks on action buttons
-              if (e.target.closest('.card-action-btn')) return;
-              trackGrid.querySelectorAll('.selection-card').forEach(c => c.classList.remove('selected'));
-              card.classList.add('selected');
-              state.track = card.dataset.track;
-              const trackName = card.querySelector('.card-name').textContent;
-              summaryTrack.textContent = trackName;
-            });
-          });
+      // Show current
+      document.getElementById('step' + n).classList.remove('hidden');
 
-          // Edit/rename button handlers for custom tracks
-          trackGrid.querySelectorAll('.card-edit-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-              e.stopPropagation();
-              const trackId = btn.dataset.editId;
-              if (!trackId || !window.TrackStore) return;
-              try {
-                const track = await TrackStore.getTrack(trackId);
-                if (!track) return;
-                const newName = prompt('Enter new track name:', track.name);
-                if (newName && newName.trim() && newName.trim() !== track.name) {
-                  track.name = newName.trim();
-                  await TrackStore.saveTrack(track);
-                  await refreshCustomTracks();
-                }
-              } catch (err) {
-                console.error('Failed to rename track:', err);
-              }
-            });
-          });
+      // Update Title and Next Button
+      const title = document.getElementById('wizardTitle');
+      const nextBtn = document.getElementById('nextBtn');
+      const bar = document.getElementById('actionBar');
 
-          // Export button handlers for custom tracks
-          trackGrid.querySelectorAll('.card-export-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-              e.stopPropagation();
-              const trackId = btn.dataset.exportId;
-              if (trackId && window.TrackStore && TrackStore.exportTrack) {
-                try {
-                  await TrackStore.exportTrack(trackId);
-                } catch (err) {
-                  console.error('Failed to export track:', err);
-                }
-              }
-            });
-          });
+      bar.classList.remove('hidden');
 
-          // Make Built-in button handlers for custom tracks
-          trackGrid.querySelectorAll('.card-builtin-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-              e.stopPropagation();
-              const trackId = btn.dataset.builtinId;
-              if (trackId && window.TrackStore && TrackStore.exportAsBuiltin) {
-                try {
-                  await TrackStore.exportAsBuiltin(trackId);
-                } catch (err) {
-                  console.error('Failed to export track as built-in:', err);
-                }
-              }
-            });
-          });
+      if (n === 1) {
+        title.textContent = "Select Class";
+        nextBtn.innerHTML = "Select Vehicle &rarr;";
+      }
 
-          // Delete button handlers for custom tracks
-          trackGrid.querySelectorAll('.card-delete-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-              e.stopPropagation();
-              const trackId = btn.dataset.deleteId;
-              if (!trackId || !window.TrackStore) return;
-              try {
-                const track = await TrackStore.getTrack(trackId);
-                if (!track) return;
-                const confirmed = confirm(`Delete track "${track.name}"?\n\nThis cannot be undone.`);
-                if (confirmed) {
-                  await TrackStore.deleteTrack(trackId);
-                  // Clear selection if deleted track was selected
-                  if (state.track === 'custom:' + trackId) {
-                    state.track = '';
-                    summaryTrack.textContent = 'None';
-                  }
-                  await refreshCustomTracks();
-                }
-              } catch (err) {
-                console.error('Failed to delete track:', err);
-              }
-            });
-          });
-
-          // Track builder button - prefer new TrackBuilder over old TrackEditor
-          const createTrackCard = $('createTrackCard');
-          if (createTrackCard && (trackBuilder || trackEditor)) {
-            createTrackCard.addEventListener('click', () => {
-              if (trackBuilder) {
-                trackBuilder.reset();
-                trackBuilder.open();
-              } else if (trackEditor) {
-                trackEditor.reset();
-                trackEditor.open();
-              }
-            });
-          } else if (createTrackCard) {
-            createTrackCard.style.opacity = '0.5';
-            createTrackCard.style.cursor = 'not-allowed';
-          }
-        }
-
-        // ===== Settings Toggles =====
-        const toggles = $$('.toggle-switch');
-        toggles.forEach(toggle => {
-          toggle.addEventListener('click', () => {
-            toggle.classList.toggle('on');
-
-            // Save settings
-            if (toggle.id === 'touchSteeringToggle') {
-              const mode = toggle.classList.contains('on') ? 'touch' : 'manual';
-              try { localStorage.setItem('steeringMode', mode); } catch (_) { }
-            }
-            if (toggle.id === 'sfxToggle') {
-              const enabled = toggle.classList.contains('on');
-              try { localStorage.setItem('sfxEnabled', enabled ? 'true' : 'false'); } catch (_) { }
-            }
-            if (toggle.id === 'gyroToggle') {
-              const enabled = toggle.classList.contains('on');
-              try { localStorage.setItem('gyroEnabled', enabled ? 'true' : 'false'); } catch (_) { }
-            }
-          });
-        });
-
-        // Master volume slider
-        const masterSlider = $('masterVolume');
-        const masterVolumeVal = $('masterVolumeVal');
-        if (masterSlider) {
-          masterSlider.addEventListener('input', () => {
-            const v = Number(masterSlider.value || 90);
-            if (masterVolumeVal) masterVolumeVal.textContent = `${v}`;
-            try { localStorage.setItem('masterVolume', (v / 100).toString()); } catch (_) { }
-          });
-        }
-
-        // Load saved settings
-        function loadSettings() {
-          try {
-            const steeringMode = localStorage.getItem('steeringMode');
-            const touchToggle = $('touchSteeringToggle');
-            if (touchToggle) {
-              touchToggle.classList.toggle('on', steeringMode !== 'manual');
-            }
-
-            const sfxEnabled = localStorage.getItem('sfxEnabled');
-            const sfxToggle = $('sfxToggle');
-            if (sfxToggle) {
-              sfxToggle.classList.toggle('on', sfxEnabled !== 'false');
-            }
-
-            const gyroEnabled = localStorage.getItem('gyroEnabled');
-            const gyroToggle = $('gyroToggle');
-            if (gyroToggle) {
-              gyroToggle.classList.toggle('on', gyroEnabled === 'true');
-            }
-            // Load master volume (0.0 - 1.0 stored)
-            try {
-              const mvRaw = localStorage.getItem('masterVolume');
-              const mv = mvRaw === null ? 0.9 : Number(mvRaw);
-              const mvEl = $('masterVolume');
-              const mvValEl = $('masterVolumeVal');
-              const display = Math.round((isNaN(mv) ? 0.9 : mv) * 100);
-              if (mvEl) mvEl.value = display;
-              if (mvValEl) mvValEl.textContent = `${display}`;
-            } catch (_) { }
-          } catch (_) { }
-        }
-
-        // ===== Fullscreen =====
-        function requestFullscreen(el) {
-          if (!el) return;
-          try {
-            if (el.requestFullscreen) return el.requestFullscreen();
-            if (el.webkitRequestFullscreen) return el.webkitRequestFullscreen();
-            if (el.msRequestFullscreen) return el.msRequestFullscreen();
-          } catch (e) { /* ignore */ }
-        }
-
-        const fsOnce = function () {
-          requestFullscreen(document.documentElement);
-        };
-        window.addEventListener('pointerdown', fsOnce, { once: true, passive: true });
-        window.addEventListener('click', fsOnce, { once: true, passive: true });
-        window.addEventListener('touchstart', fsOnce, { once: true, passive: true });
-
-        // ===== Start Payload =====
-        const START_PAYLOAD_KEY = 'RacingVibesStartPayload';
-        const START_PAYLOAD_NAME_PREFIX = 'RacingVibesStart:';
-
-        function saveStartPayload(payload) {
-          if (!payload) return;
-          let json;
-          try {
-            json = JSON.stringify(payload);
-          } catch (_) { return; }
-          try {
-            sessionStorage.setItem(START_PAYLOAD_KEY, json);
-          } catch (_) { }
-          try {
-            window.name = START_PAYLOAD_NAME_PREFIX + json;
-          } catch (_) { }
-        }
-
-        // ===== Custom Tracks =====
-        let trackEditor = null;
-        let trackBuilder = null;
-
-        async function refreshCustomTracks(selectId) {
-          if (!window.TrackStore || typeof TrackStore.listTracks !== 'function') {
-            renderTracks([]);
-            return;
-          }
-          try {
-            const customTracks = await TrackStore.listTracks();
-            renderTracks(customTracks);
-            if (selectId) {
-              state.track = 'custom:' + selectId;
-              const trackName = customTracks.find(t => t.id === selectId)?.name || selectId;
-              summaryTrack.textContent = trackName;
-            }
-          } catch (err) {
-            console.warn('Failed to load custom tracks', err);
-            renderTracks([]);
-          }
-        }
-
-        // Old track editor (kept for backward compatibility)
-        if (window.TrackEditor && window.TrackStore) {
-          trackEditor = TrackEditor.create({
-            onSaved: async (entry) => {
-              await refreshCustomTracks(entry && entry.id);
-            },
-            onTestDrive: (_mode, entry) => {
-              if (!entry || !entry.id) return;
-              state.track = 'custom:' + entry.id;
-              saveStartPayload({ track: state.track, car: state.vehicle, mode: state.mode });
-              window.location.href = 'racer.html';
-            }
-          });
-        }
-
-        // New fullscreen Track Builder
-        if (window.TrackBuilder && window.TrackStore) {
-          trackBuilder = TrackBuilder.create({
-            onSaved: async (entry) => {
-              await refreshCustomTracks(entry && entry.id);
-            },
-            onTestDrive: (_mode, entry) => {
-              if (!entry || !entry.id) return;
-              state.track = 'custom:' + entry.id;
-              saveStartPayload({ track: state.track, car: state.vehicle, mode: state.mode });
-              window.location.href = 'racer.html';
-            },
-            onClose: () => {
-              // Nothing special needed on close
-            }
-          });
-        }
-
-        // Track Builder button in sidebar
-        const trackBuilderBtn = $('trackBuilderBtn');
-        if (trackBuilderBtn) {
-          trackBuilderBtn.addEventListener('click', () => {
-            if (trackBuilder) {
-              trackBuilder.reset();
-              trackBuilder.open();
-            } else if (trackEditor) {
-              // Fallback to old editor if new builder not available
-              trackEditor.reset();
-              trackEditor.open();
-            }
-          });
-        }
-
-        // ===== Start Button =====
-        if (startBtn) {
-          startBtn.addEventListener('click', () => {
-            saveStartPayload({
-              track: state.track,
-              car: state.vehicle,
-              mode: state.mode
-            });
-            window.location.href = 'racer.html';
-          });
-        }
-
-        // ===== Service Worker =====
-        if ('serviceWorker' in navigator && /^https?:$/i.test(location.protocol)) {
-          window.addEventListener('load', () => {
-            navigator.serviceWorker.register('service-worker.js').catch(e => {
-              console.warn('SW reg failed', e);
-            });
-          });
-        }
-
-        // ===== Initialize =====
+      else if (n === 2) {
+        title.textContent = "Select Vehicle";
+        nextBtn.innerHTML = "Select Track &rarr;";
         renderVehicles();
-        refreshCustomTracks();
-        loadSettings();
+      }
 
-        // Ensure default steering mode is set
-        try {
-          const stored = localStorage.getItem('steeringMode');
-          if (!stored || !['manual', 'touch'].includes(stored)) {
-            localStorage.setItem('steeringMode', 'touch');
+      else if (n === 3) {
+        title.textContent = "Select Track";
+        nextBtn.innerHTML = "Race Settings &rarr;";
+        renderTracks();
+      }
+
+      else if (n === 4) {
+        title.textContent = "Race Settings";
+        nextBtn.innerHTML = "START RACE 🏁";
+
+        // Sync toggles with global settings
+        const sfx = localStorage.getItem('sfxEnabled') !== 'false';
+        document.getElementById('sfxToggle').checked = sfx;
+
+
+      }
+    }
+
+    function wizardNext() {
+      if (state.step < 4) {
+        setStep(state.step + 1);
+      }
+
+      else {
+        launchGame();
+      }
+    }
+
+    function wizardBack() {
+      if (state.step > 1) {
+        setStep(state.step - 1);
+      }
+
+      else {
+        switchScreen('mainMenu');
+      }
+    }
+
+    // ===== SELECTION LOGIC =====
+
+    function selectClass(cls, el) {
+      state.mode = cls;
+      highlightCard(el);
+    }
+
+    function selectVehicle(vid, el) {
+      state.vehicle = vid;
+      highlightCard(el);
+    }
+
+    function selectTrack(tid, el) {
+      state.track = tid;
+      highlightCard(el);
+    }
+
+    function highlightCard(el) {
+      // clear siblings
+      const sibling = el.parentNode.querySelectorAll('.card');
+      sibling.forEach(c => c.classList.remove('selected'));
+      el.classList.add('selected');
+    }
+
+    // ===== RENDERING =====
+
+    function renderVehicles() {
+      const grid = document.getElementById('vehicleGrid');
+      grid.innerHTML = '';
+
+      // Filter vehicles? Or just show all? The prompt implies 
+      // "Select class -> Select vehicle", so maybe only show vehicles in that class?
+      // For now, let's just show relevant ones or generic if the mode is 'grip'.
+
+      // If mode is specific (e.g. truck), maybe only show trucks?
+      // The game structure seems to pair mode=truck with vehicle=Truck mostly.
+      // But let's show all for 'grip' mode, and lock others?
+
+      // Simpler approach: Show all, but highlight recommended.
+
+      VEHICLES.forEach(v => {
+        const div = document.createElement('div');
+
+        div.className = `card ${state.vehicle === v.id ? 'selected' : ''
           }
-        } catch (_) { }
 
-      })();
-    });
+          `;
+        div.onclick = () => selectVehicle(v.id, div);
+
+        div.innerHTML = ` <div class="card-icon" >${v.icon
+          }
+
+          </div> <div class="card-title" >${v.name
+          }
+
+          </div> <div class="card-desc" >Class: ${v.class.toUpperCase()
+          }
+
+          </div> `;
+        grid.appendChild(div);
+      });
+    }
+
+    async function renderTracks() {
+      const grid = document.getElementById('trackGrid');
+      grid.innerHTML = '';
+
+      // Built-ins
+      BUILTIN_TRACKS.forEach(t => {
+        const div = document.createElement('div');
+
+        div.className = `card ${state.track === t.id ? 'selected' : ''
+          }
+
+          `;
+        div.onclick = () => selectTrack(t.id, div);
+
+        div.innerHTML = ` <div class="card-icon" >🏁</div> <div class="card-title" >${t.name
+          }
+
+          </div> <div class="card-desc" >${t.desc
+          }
+
+          </div> `;
+        grid.appendChild(div);
+      });
+
+      // Custom tracks (from storage)
+      if (window.TrackStore) {
+        try {
+          const customs = await TrackStore.listTracks();
+
+          customs.forEach(t => {
+            const tid = 'custom:' + t.id;
+            const div = document.createElement('div');
+
+            div.className = `card ${state.track === tid ? 'selected' : ''
+              }
+
+              `;
+            div.onclick = () => selectTrack(tid, div);
+
+            div.innerHTML = ` <span class="card-badge" >Custom</span> <div class="card-icon" >⭐</div> <div class="card-title" >${t.name
+              }
+
+              </div> <div class="card-desc" >User created track</div> `;
+            grid.appendChild(div);
+          });
+        }
+
+        catch (e) {
+          console.error(e);
+        }
+      }
+
+      // Builder Button
+      const buildDiv = document.createElement('div');
+      buildDiv.className = 'card';
+      buildDiv.style.borderStyle = 'dashed';
+      buildDiv.onclick = openTrackBuilder;
+      buildDiv.innerHTML = ` <div class="card-icon">🛠️</div><div class="card-title">Track Builder</div><div class="card-desc">Create your own circuit</div>`;
+      grid.appendChild(buildDiv);
+    }
+
+    // ===== SETTINGS UTILS =====
+
+    function updateVal(id, val) {
+      document.getElementById(id).textContent = val;
+      if (id === 'lapsVal') state.config.laps = parseInt(val);
+      if (id === 'botsVal') state.config.botCount = parseInt(val);
+      if (id === 'gridVal') state.config.gridPos = parseInt(val);
+    }
+
+    function updateDiff(val) {
+      const v = parseInt(val);
+      state.config.difficulty = v;
+      const labels = ['Easy',
+        'Normal',
+        'Hard',
+        'Pro'];
+      document.getElementById('difficultyVal').textContent = labels[v] || 'Normal';
+    }
+
+    function openTrackBuilder() {
+      if (window.TrackBuilder) {
+        TrackBuilder.create({
+
+          onSaved: () => renderTracks(),
+          onTestDrive: (_m, entry) => {
+            state.track = 'custom:' + entry.id;
+            launchGame();
+          }
+
+          ,
+          onClose: () => { }
+        }).open();
+      }
+    }
+
+    // ===== LAUNCH =====
+
+    function launchGame() {
+
+      // Save Config to Session
+      const payload = {
+        mode: state.mode,
+        car: state.vehicle,
+        track: state.track,
+        laps: state.config.laps,
+        difficulty: state.config.difficulty, // 0-3
+        botCount: state.config.botCount,
+        gridPos: state.config.gridPos
+      }
+
+        ;
+
+      // Also save settings to localStorage
+      const sfx = document.getElementById('sfxToggle').checked;
+      localStorage.setItem('sfxEnabled', sfx);
+
+
+
+      // Helper to save payload
+      saveStartPayload(payload);
+
+      // Go!
+      window.location.href = 'racer.html';
+    }
+
+    // Copy of original helper
+    function saveStartPayload(payload) {
+      if (!payload) return;
+      let json = JSON.stringify(payload);
+
+      try {
+        sessionStorage.setItem('RacingVibesStartPayload', json);
+        window.name = 'RacingVibesStart:' + json;
+      }
+
+      catch (_) { }
+    }
+
+    // ===== OPTIONS MENU LOGIC =====
+
+    function openOptions() {
+      switchScreen('optionsScreen');
+
+      // Load Volume
+      const vol = localStorage.getItem('masterVolume');
+      const vVal = vol === null ? 70 : Math.round(parseFloat(vol) * 100);
+      document.getElementById('optVolume').value = vVal;
+      document.getElementById('optVolumeVal').textContent = vVal + '%';
+
+      // Load Controls (Touch vs Tilt)
+      // "Touch" = steeringMode:touch, gyro:false
+      // "Tilt" = steeringMode:touch, gyro:true
+      const gyro = localStorage.getItem('gyroSteeringEnabled') === 'true';
+      setOptModeUI(gyro ? 'tilt' : 'touch');
+
+      // Load SFX (default to true if null)
+      const sfx = localStorage.getItem('sfxEnabled') !== 'false';
+      document.getElementById('optSfx').checked = sfx;
+    }
+
+    function closeOptions() {
+      switchScreen('mainMenu');
+    }
+
+    function updateOptVol(val) {
+      document.getElementById('optVolumeVal').textContent = val + '%';
+      localStorage.setItem('masterVolume', (parseInt(val) / 100).toFixed(2));
+    }
+
+    function setOptMode(mode) {
+      if (mode === 'touch') {
+        localStorage.setItem('steeringMode', 'touch');
+        localStorage.setItem('gyroSteeringEnabled', 'false');
+      }
+
+      else if (mode === 'tilt') {
+        localStorage.setItem('steeringMode', 'touch');
+        localStorage.setItem('gyroSteeringEnabled', 'true');
+      }
+
+      setOptModeUI(mode);
+    }
+
+    function setOptModeUI(mode) {
+      const btnTouch = document.getElementById('btnTouchOpt');
+      const btnTilt = document.getElementById('btnTiltOpt');
+
+      const setStyle = (btn, active) => {
+        btn.style.borderColor = active ? 'var(--accent)' : 'rgba(255,255,255,0.05)';
+        btn.style.background = active ? 'rgba(239,68,68,0.1)' : 'linear-gradient(160deg, #2a2a30, #16161a)';
+      }
+
+        ;
+
+      setStyle(btnTouch, mode === 'touch');
+      setStyle(btnTilt, mode === 'tilt');
+    }
+
+    function setOptSfx(checked) {
+      localStorage.setItem('sfxEnabled', checked);
+    }
+
+
+
   </script>
 </body>
 
