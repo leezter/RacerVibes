@@ -1295,8 +1295,9 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // Background
+    // Match start menu theme (dark)
     const surface = SURFACE_TYPES.find(s => s.id === this.state.surfaceType) || SURFACE_TYPES[0];
-    ctx.fillStyle = '#0a1628';
+    ctx.fillStyle = '#0a0a0c';
     ctx.fillRect(0, 0, this.displayWidth, this.displayHeight);
 
     // Apply view transform to fit fixed world in screen
@@ -1304,8 +1305,8 @@
     ctx.scale(this.viewScale, this.viewScale);
 
     // Draw world boundary
-    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-    ctx.lineWidth = 2 / this.viewScale;
+    ctx.strokeStyle = 'rgba(239, 68, 68, 0.2)'; // Red accent, faint
+    ctx.lineWidth = 4 / this.viewScale;
     ctx.strokeRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
     // Draw grid
@@ -1320,7 +1321,7 @@
   TrackBuilder.prototype.drawGrid = function (ctx) {
     const gridSize = 100;
 
-    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)'; // Subtle white grid like the menu bg pattern
     ctx.lineWidth = 1 / this.viewScale;
 
     // Draw grid within fixed world bounds
