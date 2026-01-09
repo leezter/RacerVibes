@@ -993,16 +993,15 @@
         <!-- Step 1: Class -->
         <div id="step1" class="wizard-step">
           <div class="selection-grid">
-            <div class="card selected" onclick="selectClass('grip', this)">
-              <div class="card-icon">🏆</div>
-              <div class="card-title">Mixed (for development)</div>
-              <div class="card-desc">Standard mixed racing. Features a balance of speed and handling. Perfect for
-                development.</div>
-            </div>
-            <div class="card" onclick="selectClass('gt', this)">
+            <div class="card selected" onclick="selectClass('gt', this)">
               <div class="card-icon">🚗</div>
               <div class="card-title">GT Class</div>
               <div class="card-desc">High performance touring cars. Excellent grip and acceleration.</div>
+            </div>
+            <div class="card" onclick="selectClass('truck', this)">
+              <div class="card-icon">🚚</div>
+              <div class="card-title">Truck Class</div>
+              <div class="card-desc">Heavy metal behemoths. High torque and intimidation factor.</div>
             </div>
             <div class="card" onclick="selectClass('openwheel', this)">
               <div class="card-icon">🏎️</div>
@@ -1015,15 +1014,16 @@
               <div class="card-title">Rally Class</div>
               <div class="card-desc">Loose surface specialists. Slide into corners and master the drift.</div>
             </div>
-            <div class="card" onclick="selectClass('truck', this)">
-              <div class="card-icon">🚚</div>
-              <div class="card-title">Truck Class</div>
-              <div class="card-desc">Heavy metal behemoths. High torque and intimidation factor.</div>
-            </div>
             <div class="card" onclick="selectClass('bubble', this)">
               <div class="card-icon">🫧</div>
               <div class="card-title">Bubble Class</div>
               <div class="card-desc">Fun bubbly racing. Physics that bounce and float.</div>
+            </div>
+            <div class="card" onclick="selectClass('grip', this)">
+              <div class="card-icon">🏆</div>
+              <div class="card-title">Mixed (for development)</div>
+              <div class="card-desc">Standard mixed racing. Features a balance of speed and handling. Perfect for
+                development.</div>
             </div>
           </div>
         </div>
@@ -1131,7 +1131,7 @@
     const state = {
 
       step: 0,
-      mode: 'grip',
+      mode: 'gt',
       vehicle: 'GT',
       track: 'Test',
       config: {
