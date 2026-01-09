@@ -1045,7 +1045,7 @@
             <div class="form-group"><label class="form-label">AI Difficulty</label>
               <div class="range-wrap"><input type="range" min="0" max="3" step="1" value="1" id="difficultyInp"
                   oninput="updateDiff(this.value)">
-                <div class="range-val" id="difficultyVal">Normal</div>
+                <div class="range-val" id="difficultyVal">Casual</div>
               </div>
             </div>
             <div class="form-group"><label class="form-label">Number of Laps</label>
@@ -1400,10 +1400,10 @@
     function updateDiff(val) {
       const v = parseInt(val);
       state.config.difficulty = v;
-      const labels = ['Easy',
-        'Normal',
-        'Hard',
-        'Pro'];
+      const labels = ['Walk in the park',
+        'Casual',
+        'Pro',
+        'Realistic'];
       document.getElementById('difficultyVal').textContent = labels[v] || 'Normal';
     }
 
