@@ -451,11 +451,153 @@
       box-shadow: 0 10px 40px rgba(239, 68, 68, 0.5);
     }
 
-    /* Responsive */
-    @media (max-width: 800px) {
+    /* ===== COMPREHENSIVE RESPONSIVE DESIGN ===== */
+
+    /* Base fluid sizing using clamp for smooth scaling */
+    :root {
+      --header-padding: clamp(12px, 3vw, 40px);
+      --screen-padding: clamp(16px, 4vw, 40px);
+      --gap-size: clamp(8px, 2vw, 20px);
+      --logo-size: clamp(24px, 5vw, 42px);
+      --title-size: clamp(18px, 4vw, 32px);
+      --card-padding: clamp(12px, 3vw, 24px);
+      --icon-size: clamp(28px, 6vw, 48px);
+      --label-size: clamp(14px, 3vw, 24px);
+    }
+
+    /* Override base styles with fluid values */
+    header {
+      padding: var(--header-padding);
+    }
+
+    .logo {
+      font-size: var(--logo-size);
+    }
+
+    .screen {
+      padding: clamp(60px, 10vh, 100px) var(--screen-padding) var(--screen-padding);
+      overflow: hidden;
+    }
+
+    .menu-grid {
+      height: auto;
+      max-height: calc(100vh - clamp(100px, 15vh, 150px));
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: repeat(2, minmax(0, 1fr));
+      gap: var(--gap-size);
+    }
+
+    .menu-icon {
+      font-size: var(--icon-size);
+      margin-bottom: clamp(8px, 2vw, 16px);
+    }
+
+    .menu-label {
+      font-size: var(--label-size);
+    }
+
+    .wizard-container {
+      max-height: calc(100vh - clamp(80px, 12vh, 120px));
+      overflow: hidden;
+    }
+
+    .wizard-header {
+      margin-bottom: clamp(16px, 3vh, 40px);
+      flex-wrap: wrap;
+    }
+
+    .wizard-title {
+      font-size: var(--title-size);
+    }
+
+    .back-btn {
+      width: clamp(36px, 6vw, 48px);
+      height: clamp(36px, 6vw, 48px);
+      font-size: clamp(16px, 3vw, 20px);
+    }
+
+    .step-dot {
+      width: clamp(24px, 5vw, 40px);
+      height: clamp(2px, 0.5vh, 4px);
+    }
+
+    .selection-grid {
+      padding-bottom: clamp(60px, 10vh, 100px);
+      max-height: calc(100vh - clamp(180px, 25vh, 250px));
+      gap: var(--gap-size);
+    }
+
+    .card {
+      padding: var(--card-padding);
+    }
+
+    .card-icon {
+      font-size: var(--icon-size);
+      margin-bottom: clamp(10px, 2vw, 20px);
+    }
+
+    .card-title {
+      font-size: clamp(16px, 3vw, 24px);
+      margin-bottom: clamp(4px, 1vw, 8px);
+    }
+
+    .card-desc {
+      font-size: clamp(11px, 2vw, 14px);
+    }
+
+    .action-bar {
+      padding: clamp(16px, 3vh, 30px) var(--screen-padding);
+    }
+
+    .start-btn {
+      padding: clamp(10px, 2vh, 16px) clamp(24px, 5vw, 48px);
+      font-size: clamp(16px, 3vw, 24px);
+    }
+
+    .settings-form {
+      gap: clamp(16px, 4vw, 40px);
+    }
+
+    .form-group {
+      margin-bottom: clamp(12px, 3vw, 24px);
+    }
+
+    .range-val {
+      font-size: clamp(16px, 3vw, 24px);
+      min-width: clamp(40px, 8vw, 60px);
+    }
+
+    /* ===== RESPONSIVE BREAKPOINTS ===== */
+
+    /* Desktop (1440px+) - Full layout */
+    @media (min-width: 1440px) {
       .menu-grid {
-        grid-template-columns: 1fr 1fr;
-        grid-template-rows: auto;
+        grid-template-columns: repeat(4, 1fr);
+        max-width: 1400px;
+      }
+
+      .selection-grid {
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      }
+    }
+
+    /* Laptop (1025px - 1439px) */
+    @media (max-width: 1439px) and (min-width: 1025px) {
+      .menu-grid {
+        grid-template-columns: repeat(4, 1fr);
+        max-width: 1200px;
+      }
+
+      .selection-grid {
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      }
+    }
+
+    /* Tablet (769px - 1024px) */
+    @media (max-width: 1024px) and (min-width: 769px) {
+      .menu-grid {
+        grid-template-columns: repeat(4, 1fr);
+        grid-template-rows: repeat(2, minmax(0, 1fr));
       }
 
       .menu-item.large {
@@ -463,11 +605,329 @@
       }
 
       .selection-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .settings-form {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    /* Small Tablet / Large Phone (481px - 768px) */
+    @media (max-width: 768px) and (min-width: 481px) {
+      .screen {
+        padding-top: clamp(50px, 8vh, 70px);
+        padding-left: 12px;
+        padding-right: 12px;
+      }
+
+      .menu-grid {
+        grid-template-columns: repeat(2, 1fr);
+        grid-template-rows: repeat(4, minmax(0, 1fr));
+        max-height: calc(100vh - clamp(70px, 10vh, 100px));
+        gap: 8px;
+      }
+
+      .menu-item.large {
+        grid-column: span 1;
+      }
+
+      .menu-item {
+        min-height: 0;
+        padding: clamp(8px, 2vw, 14px);
+      }
+
+      /* Compact wizard for small tablets */
+      .wizard-container {
+        max-height: calc(100vh - clamp(60px, 9vh, 80px));
+      }
+
+      .wizard-header {
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .wizard-title {
+        font-size: 22px;
+      }
+
+      .back-btn {
+        width: 38px;
+        height: 38px;
+        font-size: 16px;
+      }
+
+      .step-dot {
+        width: 28px;
+        height: 3px;
+      }
+
+      /* Compact selection grid to fit all 6 cards */
+      .selection-grid {
+        grid-template-columns: repeat(2, 1fr);
+        max-height: calc(100vh - 120px);
+        gap: 8px;
+        padding-bottom: 60px;
+        overflow: hidden;
+      }
+
+      /* Compact cards with hidden descriptions */
+      .card {
+        min-height: 0;
+        max-height: calc((100vh - 220px) / 3);
+        padding: 8px 10px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+      }
+
+      .card-icon {
+        font-size: 22px;
+        margin-bottom: 4px;
+      }
+
+      .card-title {
+        font-size: 13px;
+        margin-bottom: 0;
+      }
+
+      /* Hide descriptions to save space */
+      .card-desc {
+        display: none;
       }
 
       .settings-form {
         grid-template-columns: 1fr;
+      }
+    }
+
+    /* Mobile (480px and below) */
+    @media (max-width: 480px) {
+      .screen {
+        padding-top: clamp(45px, 7vh, 60px);
+        padding-left: 8px;
+        padding-right: 8px;
+        padding-bottom: 8px;
+      }
+
+      .menu-grid {
+        grid-template-columns: repeat(2, 1fr);
+        grid-template-rows: repeat(4, minmax(0, 1fr));
+        max-height: calc(100vh - clamp(60px, 8vh, 80px));
+        gap: 6px;
+      }
+
+      .menu-item.large {
+        grid-column: span 1;
+      }
+
+      .menu-item {
+        min-height: 0;
+        padding: clamp(6px, 1.5vw, 12px);
+      }
+
+      /* Compact wizard container */
+      .wizard-container {
+        max-height: calc(100vh - clamp(45px, 7vh, 60px));
+      }
+
+      /* Very compact wizard header */
+      .wizard-header {
+        gap: 6px;
+        margin-bottom: 8px;
+        flex-wrap: wrap;
+      }
+
+      .wizard-title {
+        font-size: 18px;
+      }
+
+      .back-btn {
+        width: 32px;
+        height: 32px;
+        font-size: 14px;
+      }
+
+      .wizard-steps {
+        margin-left: auto;
+      }
+
+      .step-dot {
+        width: 20px;
+        height: 3px;
+      }
+
+      /* Selection grid for wizard steps - 2 columns with very compact cards */
+      .selection-grid {
+        grid-template-columns: repeat(2, 1fr);
+        max-height: calc(100vh - 100px);
+        gap: 5px;
+        padding-bottom: 50px;
+        overflow: hidden;
+      }
+
+      /* Very compact cards for mobile - hide descriptions to fit 6 in view */
+      .card {
+        min-height: 0;
+        max-height: calc((100vh - 180px) / 3);
+        padding: 5px 6px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+      }
+
+      .card-icon {
+        font-size: 16px;
+        margin-bottom: 2px;
+      }
+
+      .card-title {
+        font-size: 10px;
+        margin-bottom: 0;
+      }
+
+      /* Hide descriptions on mobile to save space */
+      .card-desc {
+        display: none;
+      }
+
+      .card-badge {
+        font-size: 7px;
+        padding: 2px 3px;
+        top: 2px;
+        right: 2px;
+      }
+
+      .settings-form {
+        grid-template-columns: 1fr;
+        overflow-y: auto;
+        max-height: calc(100vh - clamp(100px, 15vh, 140px));
+      }
+
+      .action-bar {
+        padding: 8px;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+      }
+
+      .start-btn {
+        width: 100%;
+        text-align: center;
+        padding: 10px 20px;
+        font-size: 14px;
+      }
+
+      /* Player info in header */
+      header {
+        padding: 8px 12px;
+      }
+
+      .logo {
+        font-size: 22px;
+      }
+    }
+
+    /* Very small screens (360px and below) - common on older devices */
+    @media (max-width: 360px) {
+      .menu-grid {
+        gap: 4px;
+      }
+
+      .menu-icon {
+        margin-bottom: 4px;
+      }
+
+      .selection-grid {
+        gap: 4px;
+      }
+
+      .card-icon {
+        margin-bottom: 8px;
+      }
+
+      .card-desc {
+        display: none;
+        /* Hide descriptions on very small screens */
+      }
+    }
+
+    /* Landscape mobile - important for phones rotated horizontal */
+    @media (max-height: 500px) and (orientation: landscape) {
+      header {
+        padding: 8px var(--header-padding);
+      }
+
+      .logo {
+        font-size: clamp(20px, 4vw, 32px);
+      }
+
+      .screen {
+        padding-top: clamp(40px, 8vh, 60px);
+      }
+
+      .menu-grid {
+        grid-template-columns: repeat(4, 1fr);
+        grid-template-rows: repeat(2, minmax(0, 1fr));
+        max-height: calc(100vh - 60px);
+        gap: 6px;
+      }
+
+      .menu-icon {
+        font-size: clamp(20px, 5vw, 32px);
+        margin-bottom: 4px;
+      }
+
+      .menu-label {
+        font-size: clamp(10px, 2vw, 16px);
+      }
+
+      .wizard-container {
+        max-height: calc(100vh - 50px);
+      }
+
+      .wizard-header {
+        margin-bottom: 8px;
+      }
+
+      .selection-grid {
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        max-height: calc(100vh - 100px);
+        padding-bottom: 50px;
+        gap: 8px;
+      }
+
+      .card {
+        padding: 10px;
+      }
+
+      .card-icon {
+        font-size: 24px;
+        margin-bottom: 6px;
+      }
+
+      .card-title {
+        font-size: 14px;
+        margin-bottom: 4px;
+      }
+
+      .card-desc {
+        font-size: 10px;
+        line-height: 1.2;
+      }
+
+      .action-bar {
+        padding: 10px var(--screen-padding);
+      }
+
+      .start-btn {
+        padding: 8px 24px;
+        font-size: 14px;
       }
     }
 
