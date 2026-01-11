@@ -827,19 +827,41 @@
         max-height: calc(100vh - clamp(100px, 15vh, 140px));
       }
 
+      /* Smaller sliders on mobile */
+      input[type=range] {
+        height: 4px;
+      }
+
+      input[type=range]::-webkit-slider-thumb {
+        width: 18px;
+        height: 18px;
+        margin-top: -7px;
+      }
+
       .action-bar {
-        padding: 8px;
+        padding: 16px;
         position: fixed;
         bottom: 0;
         left: 0;
         right: 0;
+        justify-content: center;
+        /* Center the button */
+        background: linear-gradient(to top, #0a0a0c 90%, transparent);
+        /* Ensure visibility over content */
       }
 
       .start-btn {
-        width: 100%;
+        width: auto;
+        min-width: 200px;
         text-align: center;
-        padding: 10px 20px;
-        font-size: 14px;
+        padding: 16px 32px;
+        /* Bigger padding */
+        font-size: 18px;
+        /* Bigger font */
+        border-radius: 50px;
+        /* Rounded pill style */
+        box-shadow: 0 4px 15px rgba(239, 68, 68, 0.5);
+        /* Make it pop */
       }
 
       /* Player info in header */
@@ -924,6 +946,17 @@
         margin-top: 2px;
         -webkit-line-clamp: 2;
         line-clamp: 2;
+      }
+
+      /* Compact sliders for landscape mobile */
+      input[type=range] {
+        height: 4px;
+      }
+
+      input[type=range]::-webkit-slider-thumb {
+        width: 18px;
+        height: 18px;
+        margin-top: -7px;
       }
 
       /* Use 2 columns for settings in landscape to avoid scrolling */
