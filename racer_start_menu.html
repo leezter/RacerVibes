@@ -1023,8 +1023,8 @@
         margin-bottom: 10px;
         display: flex;
         flex-direction: column;
-        align-items: center;
-        /* Center labels and inputs */
+        align-items: flex-start;
+        /* Left-align labels and inputs for consistency */
       }
 
       .form-label {
@@ -1036,6 +1036,11 @@
         text-align: left;
         /* Left align to setting */
         transform: none;
+      }
+
+      /* Ensure range-wrap matches label width for alignment */
+      .form-group .range-wrap {
+        width: 260px;
       }
 
       /* Game Options below left sliders */
@@ -1051,8 +1056,22 @@
         padding: 0 !important;
         /* Remove excessive padding */
         background: none !important;
-        /* Remove card style for clean integration */
         border: none !important;
+      }
+
+      /* Force Sound Effects layout: Text Left, Checkbox Right */
+      /* Exclude #ghostToggleLbl to respect its JavaScript-controlled display */
+      .form-group:last-child>div label:not(#ghostToggleLbl) {
+        display: flex !important;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+      }
+
+      /* Style Ghost toggle when visible (Time Trial mode) */
+      #ghostToggleLbl {
+        justify-content: space-between;
+        width: 100%;
       }
 
       .action-bar {
@@ -1669,12 +1688,14 @@
             </div>
             <!-- Other toggles -->
             <div class="form-group"><label class="form-label">Game Options</label>
-              <div style="display:flex; gap:20px;">
+              <div style="display:flex; gap:20px; flex-direction: column;">
                 <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-                  <input type="checkbox" id="sfxToggle" checked style="width:20px; height:20px;">Sound Effects
+                  <span>Sound Effects</span>
+                  <input type="checkbox" id="sfxToggle" checked style="width:20px; height:20px;">
                 </label>
                 <label id="ghostToggleLbl" style="display:none; align-items:center; gap:8px; cursor:pointer;">
-                  <input type="checkbox" id="ghostToggle" checked style="width:20px; height:20px;">Ghost
+                  <span>Ghost</span>
+                  <input type="checkbox" id="ghostToggle" checked style="width:20px; height:20px;">
                 </label>
               </div>
             </div>
