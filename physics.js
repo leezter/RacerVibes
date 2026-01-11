@@ -1746,6 +1746,11 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     if (usePlanck && planckBody) {
       const pl = window.planck;
       if (pl) {
+        // Wake up the body if there's any input - sleeping bodies don't respond to forces
+        const hasInput = throttle > 0.01 || brake > 0.01 || Math.abs(steerNormTarget) > 0.01;
+        if (hasInput && typeof planckBody.setAwake === 'function') {
+          planckBody.setAwake(true);
+        }
         const cosA = Math.cos(car.angle);
         const sinA = Math.sin(car.angle);
         const toWorld = (Fx, Fy) => ({ x: Fx * cosA - Fy * sinA, y: Fx * sinA + Fy * cosA });
