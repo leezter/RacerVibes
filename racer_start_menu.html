@@ -1005,13 +1005,19 @@
       }
 
       /* Settings Form: 2 columns, centered items with toggle space */
+      /* Settings Form: Confined width for better centering */
       .settings-form {
         grid-template-columns: 1fr 1fr;
         gap: 12px;
         align-items: start;
         padding-bottom: 80px;
         /* Ensure space for overlapping Action Bar */
+        max-width: 560px;
+        /* Bring sliders closer to center */
+        margin: 0 auto;
       }
+
+
 
       .form-group {
         margin-bottom: 10px;
@@ -1023,12 +1029,13 @@
 
       .form-label {
         font-size: 10px;
-        margin-bottom: 2px;
+        margin-bottom: 4px;
         color: #aaa;
-        width: 100%;
-        text-align: center;
-        /* Visual correction to center over slider bar (ignoring value width) */
-        transform: translateX(-10px);
+        width: 260px;
+        /* Match content width */
+        text-align: left;
+        /* Left align to setting */
+        transform: none;
       }
 
       /* Game Options below left sliders */
@@ -1038,8 +1045,14 @@
       }
 
       .form-group:last-child>div {
-        justify-content: center;
-        width: auto;
+        width: 260px;
+        /* Match slider group width */
+        box-sizing: border-box;
+        padding: 0 !important;
+        /* Remove excessive padding */
+        background: none !important;
+        /* Remove card style for clean integration */
+        border: none !important;
       }
 
       .action-bar {
