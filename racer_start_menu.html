@@ -901,15 +901,17 @@
     /* Landscape mobile - important for phones rotated horizontal */
     @media (max-height: 500px) and (orientation: landscape) {
       header {
-        padding: 8px var(--header-padding);
+        padding: 4px var(--header-padding);
+        display: flex;
+        align-items: center;
       }
 
       .logo {
-        font-size: clamp(20px, 4vw, 32px);
+        font-size: clamp(16px, 4vw, 24px);
       }
 
       .screen {
-        padding-top: clamp(70px, 15vh, 90px);
+        padding-top: clamp(60px, 12vh, 80px);
       }
 
       .menu-grid {
@@ -917,13 +919,34 @@
         gap: 6px;
       }
 
-      /* Use 3 columns for wizard cards in landscape to save vertical space (2 rows instead of 3) */
-      .selection-grid {
-        grid-template-columns: repeat(3, 1fr);
-        padding-bottom: 60px;
+      .menu-icon {
+        font-size: clamp(16px, 4vw, 24px);
+        margin-bottom: 2px;
       }
 
-      /* Reset card height calculations for landscape since we use fewer rows */
+      .menu-label {
+        font-size: clamp(10px, 2vw, 14px);
+      }
+
+      /* Wizard Container - scrollable if needed */
+      .wizard-container {
+        max-height: none;
+        overflow-y: auto;
+      }
+
+      .wizard-header {
+        margin-bottom: 4px;
+      }
+
+      /* Selection Grid: 3 columns to save vertical space */
+      .selection-grid {
+        grid-template-columns: repeat(3, 1fr);
+        max-height: calc(100vh - 90px);
+        padding-bottom: 50px;
+        gap: 6px;
+      }
+
+      /* Cards: Compact */
       .card {
         max-height: none;
         height: auto;
@@ -931,7 +954,7 @@
       }
 
       .card-icon {
-        font-size: 18px;
+        font-size: 16px;
         margin-bottom: 2px;
       }
 
@@ -948,72 +971,79 @@
         line-clamp: 2;
       }
 
-      /* Compact sliders for landscape mobile */
+      /* Connected, centered and compact slider layout */
+      .range-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin-top: 4px;
+        width: 100%;
+      }
+
       input[type=range] {
         height: 4px;
+        flex: 0 0 120px;
+        /* Fixed length */
+        width: 120px;
       }
 
       input[type=range]::-webkit-slider-thumb {
-        width: 18px;
-        height: 18px;
+        width: 16px;
+        height: 16px;
         margin-top: -7px;
       }
 
-      /* Use 2 columns for settings in landscape to avoid scrolling */
+      .range-val {
+        font-size: 13px;
+        color: var(--accent);
+        /* Highlight value */
+        width: 130px;
+        /* Fixed space for long labels */
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      /* Settings Form: 2 columns, centered items with toggle space */
       .settings-form {
         grid-template-columns: 1fr 1fr;
-        gap: 20px;
+        gap: 12px;
+        align-items: start;
+        padding-bottom: 80px;
+        /* Ensure space for overlapping Action Bar */
       }
 
-      .wizard-container {
-        max-height: calc(100vh - 40px);
+      .form-group {
+        margin-bottom: 10px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        /* Center labels and inputs */
       }
 
-      .menu-icon {
-        font-size: clamp(20px, 5vw, 32px);
-        margin-bottom: 4px;
-      }
-
-      .menu-label {
-        font-size: clamp(10px, 2vw, 16px);
-      }
-
-      .wizard-container {
-        max-height: calc(100vh - 50px);
-      }
-
-      .wizard-header {
-        margin-bottom: 8px;
-      }
-
-      .selection-grid {
-        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-        max-height: calc(100vh - 100px);
-        padding-bottom: 50px;
-        gap: 8px;
-      }
-
-      .card {
-        padding: 10px;
-      }
-
-      .card-icon {
-        font-size: 24px;
-        margin-bottom: 6px;
-      }
-
-      .card-title {
-        font-size: 14px;
-        margin-bottom: 4px;
-      }
-
-      .card-desc {
+      .form-label {
         font-size: 10px;
-        line-height: 1.2;
+        margin-bottom: 2px;
+        color: #aaa;
+        width: 100%;
+        text-align: center;
+        /* Visual correction to center over slider bar (ignoring value width) */
+        transform: translateX(-10px);
+      }
+
+      /* Game Options below left sliders */
+      .form-group:last-child {
+        grid-column: auto;
+        margin-top: 10px;
+      }
+
+      .form-group:last-child>div {
+        justify-content: center;
+        width: auto;
       }
 
       .action-bar {
-        padding: 10px var(--screen-padding);
+        padding: 8px var(--screen-padding);
       }
 
       .start-btn {
