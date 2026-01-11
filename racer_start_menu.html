@@ -1552,6 +1552,31 @@
 </head>
 
 <body>
+  <!-- Fullscreen Overlay (for mobile) -->
+  <div id="fullscreenOverlay" style="
+    position: fixed; inset: 0; z-index: 9999;
+    background: linear-gradient(135deg, #0a0a0c 0%, #1a1a20 50%, #0f0f14 100%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-family: 'Rajdhani', sans-serif; color: #fff;
+  ">
+    <div style="font-size: 64px; margin-bottom: 24px;">🏎️</div>
+    <div
+      style="font-size: 28px; font-weight: 700; text-transform: uppercase; letter-spacing: 4px; margin-bottom: 16px;">
+      Racing<span style="color: #ef4444;">Vibes</span>
+    </div>
+    <button id="enterFullscreenBtn" style="
+      background: #ef4444; color: white; border: none;
+      padding: 16px 48px; font-family: 'Rajdhani', sans-serif;
+      font-size: 20px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 2px; border-radius: 8px; cursor: pointer;
+      box-shadow: 0 0 30px rgba(239, 68, 68, 0.5);
+      margin-top: 24px;
+    ">
+      TAP TO START
+    </button>
+    <div style="color: #94a3b8; font-size: 14px; margin-top: 16px;">Best experienced in fullscreen</div>
+  </div>
+
   <div class="racing-flag-bg"></div>
   <div id="app">
     <header>
@@ -2232,6 +2257,45 @@
 
     function setOptSfx(checked) {
       localStorage.setItem('sfxEnabled', checked);
+    }
+
+    // ===== FULLSCREEN UTILITY =====
+    // Request fullscreen politely (same as racer.html)
+    function requestFullscreen(el) {
+      if (!el) return;
+      const anyEl = el;
+      try {
+        if (anyEl.requestFullscreen) return anyEl.requestFullscreen();
+        if (anyEl.webkitRequestFullscreen) return anyEl.webkitRequestFullscreen();
+        if (anyEl.msRequestFullscreen) return anyEl.msRequestFullscreen();
+      } catch (e) { /* ignore */ }
+    }
+
+    // Attempt fullscreen upon first user interaction via the overlay button
+    // Chrome Android requires a direct button click for fullscreen to work reliably
+    const overlay = document.getElementById('fullscreenOverlay');
+    const fsBtn = document.getElementById('enterFullscreenBtn');
+
+    function enterFullscreenAndStart() {
+      requestFullscreen(document.documentElement);
+      // Mark that fullscreen was requested so racer.html can re-request if needed
+      try { sessionStorage.setItem('RacingVibesFullscreenRequested', '1'); } catch (_) { }
+      // Hide the overlay
+      if (overlay) overlay.style.display = 'none';
+    }
+
+    // Handle button click
+    if (fsBtn) {
+      fsBtn.addEventListener('click', enterFullscreenAndStart);
+    }
+
+    // On desktop, also allow clicking anywhere on the overlay
+    if (overlay) {
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+          enterFullscreenAndStart();
+        }
+      });
     }
 
 
