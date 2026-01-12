@@ -636,7 +636,7 @@
       align-items: center;
       justify-content: center;
       font-family: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
-      transition: opacity 0.5s ease-out, visibility 0.5s;
+      transition: opacity 0.3s ease-out, visibility 0.3s;
     }
 
     .loading-screen.fade-out {
@@ -2491,15 +2491,15 @@
         // Fill progress bar to 100%
         updateLoadingProgress(100);
 
-        // Short delay then fade out
+        // Quick fade out - game is already stable so minimize delay
         setTimeout(() => {
           screen.classList.add('fade-out');
           // After fade animation completes, fully hide and call callback
           setTimeout(() => {
             screen.classList.add('hidden');
             if (callback) callback();
-          }, 500);
-        }, 300);
+          }, 300); // Reduced from 500ms
+        }, 100); // Reduced from 300ms
       }
 
 
@@ -2819,6 +2819,9 @@
         const fsOverlay = document.getElementById('fullscreenOverlay');
         const fsBtn = document.getElementById('enterFullscreenBtn');
 
+        // Global callback for deferred track loading (set later)
+        window.__racerDeferredLoad = null;
+
         function enterFullscreenAndContinue() {
           if (!isFullscreen()) {
             requestFullscreen(document.documentElement);
@@ -2826,6 +2829,16 @@
           adjustCanvasSize();
           // Hide the overlay
           if (fsOverlay) fsOverlay.style.display = 'none';
+          // Defer the heavy track loading to avoid UI freeze
+          // Use requestAnimationFrame + setTimeout to ensure overlay is fully hidden first
+          requestAnimationFrame(() => {
+            setTimeout(() => {
+              if (typeof window.__racerDeferredLoad === 'function') {
+                window.__racerDeferredLoad();
+                window.__racerDeferredLoad = null; // Only call once
+              }
+            }, 50); // Small delay to ensure UI has updated
+          });
         }
 
         // Handle button click
@@ -4417,13 +4430,33 @@
             }
           } catch (_) { }
 
-          // Wait a moment for assets to settle, then hide loading screen and start countdown
+          // Wait for assets to fully settle and frames to stabilize before starting race
+          // Use multiple requestAnimationFrame calls to ensure smooth frame delivery
           updateLoadingProgress(95);
+
+          // Wait longer to allow all assets (track surface, decorations) to fully render
           setTimeout(() => {
-            hideLoadingScreen(() => {
-              startRaceCountdown();
-            });
-          }, 200);
+            updateLoadingProgress(100);
+            // Wait for a few animation frames to stabilize before hiding loading screen
+            let frameCount = 0;
+            const STABLE_FRAME_COUNT = 10; // Render 10 frames to ensure stability
+
+            function waitForStableFrames() {
+              frameCount++;
+              if (frameCount < STABLE_FRAME_COUNT) {
+                requestAnimationFrame(waitForStableFrames);
+              } else {
+                // Frames are now stable, hide loading screen and start countdown
+                hideLoadingScreen(() => {
+                  // Additional short delay to ensure screen is fully visible
+                  requestAnimationFrame(() => {
+                    startRaceCountdown();
+                  });
+                });
+              }
+            }
+            requestAnimationFrame(waitForStableFrames);
+          }, 600);
         }
 
         // Build n AI cars in a staggered grid behind base position, aligned to angle
@@ -5730,9 +5763,13 @@
           drawHUD();
           requestAnimationFrame(frame);
         }
-        // initial track first, then start animation to ensure camera is centered
-        loadTrack(trackName);
-        camInitRef.current = true; // ensure camera is initialized
+        // Defer track loading until fullscreen overlay is dismissed
+        // Register a callback that will be called when the overlay button is clicked
+        window.__racerDeferredLoad = () => {
+          loadTrack(trackName);
+          camInitRef.current = true; // ensure camera is initialized
+        };
+        // Start animation loop immediately (will show empty until track loads)
         requestAnimationFrame(frame);
         try {
           if (window.RacerPhysics) {
