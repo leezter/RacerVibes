@@ -2112,15 +2112,15 @@
               </div>
             </div>
             <div class="form-group" id="grpBots"><label class="form-label">Number of Vehicles</label>
-              <div class="range-wrap"><input type="range" min="1" max="20" step="1" value="8" id="botsInp"
+              <div class="range-wrap"><input type="range" min="1" max="20" step="1" value="4" id="botsInp"
                   oninput="updateVal('botsVal', this.value)">
-                <div class="range-val" id="botsVal">8</div>
+                <div class="range-val" id="botsVal">4</div>
               </div>
             </div>
             <div class="form-group" id="grpGrid"><label class="form-label">Grid Position</label>
-              <div class="range-wrap"><input type="range" min="1" max="20" step="1" value="8" id="gridInp"
+              <div class="range-wrap"><input type="range" min="1" max="20" step="1" value="4" id="gridInp"
                   oninput="updateVal('gridVal', this.value)">
-                <div class="range-val" id="gridVal">8</div>
+                <div class="range-val" id="gridVal">4</div>
               </div>
             </div>
             <!-- Other toggles -->
@@ -2206,8 +2206,8 @@
       config: {
         laps: 3,
         difficulty: 2, // 0=Easy, 1=Normal, 2=Hard, 3=Pro
-        botCount: 8,
-        gridPos: 8
+        botCount: 4,
+        gridPos: 4
       }
     }
 
@@ -2258,8 +2258,8 @@
       if (el) highlightMenu(el);
       setTimeout(() => {
         state.gameMode = 'race';
-        state.config.botCount = 8;
-        state.config.gridPos = 8;
+        state.config.botCount = 4;
+        state.config.gridPos = 4;
         state.config.laps = 3;
 
         const setVal = (id, val, logicId) => {
@@ -2268,8 +2268,8 @@
           updateVal(logicId, val);
         };
 
-        setVal('botsInp', 8, 'botsVal');
-        setVal('gridInp', 8, 'gridVal');
+        setVal('botsInp', 4, 'botsVal');
+        setVal('gridInp', 4, 'gridVal');
         setVal('lapsInp', 3, 'lapsVal');
 
         startWizard();
