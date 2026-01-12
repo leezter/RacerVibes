@@ -728,6 +728,7 @@
       roadWidth: DEFAULT_ROAD_WIDTH,
       surfaceType: 'tarmac-pro',
       isDrawing: false,
+      isErasing: false,
       pointerId: null,
       history: [],
       historyIndex: -1,
@@ -1080,6 +1081,7 @@
       this.state.isDrawing = true;
       this.addPoint(pos, true);
     } else if (this.state.tool === 'erase') {
+      this.state.isErasing = true;
       this.eraseAt(pos);
       this.pushHistory();
     }
@@ -1087,6 +1089,7 @@
   };
 
   TrackBuilder.prototype.onPointerMove = function (e) {
+    e.preventDefault();
     if (this.state.pointerId !== e.pointerId) return;
     const pos = this.getCanvasPos(e);
 
@@ -1097,7 +1100,7 @@
       }
       this.addPoint(pos, false);
       this.render();
-    } else if (this.state.tool === 'erase' && e.buttons) {
+    } else if (this.state.tool === 'erase' && this.state.isErasing) {
       this.eraseAt(pos);
       this.render();
     }
@@ -1130,6 +1133,10 @@
       this.updateCircuitStatus();
       this.pushHistory();
       this.render();
+    }
+
+    if (this.state.tool === 'erase' && this.state.isErasing) {
+      this.state.isErasing = false;
     }
 
     this.state.pointerId = null;
