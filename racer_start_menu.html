@@ -2487,16 +2487,7 @@
       const grid = document.getElementById('trackGrid');
       grid.innerHTML = '';
 
-      // ==> Track Builder Button
-      const builderDiv = document.createElement('div');
-      builderDiv.className = 'card card-builder';
-      builderDiv.onclick = openTrackBuilder;
-      builderDiv.innerHTML = `
-        <div class="card-icon">✏️</div>
-        <div class="card-title">Draw your Experience</div>
-        <div class="card-desc">Use your imagination to draw your own racing track.</div>
-      `;
-      grid.appendChild(builderDiv);
+
 
       // Built-ins
       BUILTIN_TRACKS.forEach(t => {
@@ -2546,7 +2537,16 @@
         }
       }
 
-
+      // ==> Track Builder Button
+      const builderDiv = document.createElement('div');
+      builderDiv.className = 'card card-builder';
+      builderDiv.onclick = openTrackBuilder;
+      builderDiv.innerHTML = `
+        <div class="card-icon">✏️</div>
+        <div class="card-title">Draw your Experience</div>
+        <div class="card-desc">Use your imagination to draw your own racing track.</div>
+      `;
+      grid.appendChild(builderDiv);
     }
 
     // ===== SETTINGS UTILS =====
