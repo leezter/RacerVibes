@@ -1547,6 +1547,29 @@
       border-color: var(--accent);
       transform: rotate(90deg);
     }
+
+    @keyframes pulse-green-glow {
+      0% {
+        box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.4);
+        border-color: rgba(74, 222, 128, 0.5);
+      }
+
+      50% {
+        box-shadow: 0 0 20px 4px rgba(74, 222, 128, 0.3);
+        border-color: rgba(74, 222, 128, 1);
+        transform: translateY(-2px);
+      }
+
+      100% {
+        box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.4);
+        border-color: rgba(74, 222, 128, 0.5);
+      }
+    }
+
+    .card.recommended {
+      animation: pulse-green-glow 3s infinite ease-in-out;
+      border-color: rgba(74, 222, 128, 0.6);
+    }
   </style>
 
 </head>
@@ -1638,33 +1661,51 @@
         <!-- Step 1: Class -->
         <div id="step1" class="wizard-step">
           <div class="selection-grid">
-            <div class="card" onclick="selectClass('gt', this)">
+            <div class="card recommended" onclick="selectClass('gt', this)">
+              <div class="card-badge"
+                style="color:#4ade80; border:1px solid rgba(74,222,128,0.3); background:rgba(74,222,128,0.1);">Optimized
+                ✅</div>
               <div class="card-icon">🚗</div>
               <div class="card-title">GT Class</div>
               <div class="card-desc">High performance touring cars. Excellent grip and acceleration.</div>
             </div>
             <div class="card" onclick="selectClass('truck', this)">
+              <div class="card-badge"
+                style="color:#facc15; border:1px solid rgba(250,204,21,0.3); background:rgba(250,204,21,0.1);">Needs
+                finalizing ⚠️</div>
               <div class="card-icon">🚚</div>
               <div class="card-title">Truck Class</div>
               <div class="card-desc">Heavy metal behemoths. High torque and intimidation factor.</div>
             </div>
             <div class="card" onclick="selectClass('openwheel', this)">
+              <div class="card-badge"
+                style="color:#fb923c; border:1px solid rgba(251,146,60,0.3); background:rgba(251,146,60,0.1);">WIP ⚠️
+              </div>
               <div class="card-icon">🏎️</div>
               <div class="card-title">Formula Class</div>
               <div class="card-desc">The pinnacle of speed. Extreme downforce and lightning fast reactions
                 required. </div>
             </div>
             <div class="card" onclick="selectClass('rally', this)">
+              <div class="card-badge"
+                style="color:#fb923c; border:1px solid rgba(251,146,60,0.3); background:rgba(251,146,60,0.1);">WIP ⚠️
+              </div>
               <div class="card-icon">🚙</div>
               <div class="card-title">Rally Class</div>
               <div class="card-desc">Loose surface specialists. Slide into corners and master the drift.</div>
             </div>
             <div class="card" onclick="selectClass('bubble', this)">
+              <div class="card-badge"
+                style="color:#fb923c; border:1px solid rgba(251,146,60,0.3); background:rgba(251,146,60,0.1);">WIP ⚠️
+              </div>
               <div class="card-icon">🫧</div>
               <div class="card-title">Bubble Class</div>
               <div class="card-desc">Fun bubbly racing. Physics that bounce and float.</div>
             </div>
             <div class="card" onclick="selectClass('grip', this)">
+              <div class="card-badge"
+                style="color:#ef4444; border:1px solid rgba(239,68,68,0.3); background:rgba(239,68,68,0.1);">Not
+                Optimised &#9888;&#xFE0E;</div>
               <div class="card-icon">🏆</div>
               <div class="card-title">Mixed (for development)</div>
               <div class="card-desc">Standard mixed racing. Features a balance of speed and handling. Perfect for
