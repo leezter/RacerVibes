@@ -1271,6 +1271,158 @@
     }
 
     /* =========================================
+       TRACK SUCCESS CELEBRATION SCREEN
+       ========================================= */
+    .track-success-overlay {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(135deg, #0a0a0c 0%, #1a1a20 50%, #0f0f14 100%);
+      z-index: 4000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      animation: success-fade-in 0.5s ease forwards;
+    }
+
+    @keyframes success-fade-in {
+      to {
+        opacity: 1;
+      }
+    }
+
+    .track-success-content {
+      text-align: center;
+      transform: scale(0.8) translateY(30px);
+      animation: success-slide-in 0.6s ease 0.2s forwards;
+      opacity: 0;
+    }
+
+    @keyframes success-slide-in {
+      to {
+        transform: scale(1) translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .track-success-icon {
+      font-size: 80px;
+      margin-bottom: 24px;
+      animation: success-bounce 1s ease 0.5s;
+    }
+
+    @keyframes success-bounce {
+
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+
+      30% {
+        transform: translateY(-20px);
+      }
+
+      50% {
+        transform: translateY(0);
+      }
+
+      70% {
+        transform: translateY(-10px);
+      }
+    }
+
+    .track-success-title {
+      font-family: var(--font-display);
+      font-size: 42px;
+      font-weight: 700;
+      color: white;
+      margin: 0 0 8px 0;
+      text-transform: uppercase;
+      letter-spacing: 4px;
+    }
+
+    .track-success-subtitle {
+      font-size: 18px;
+      color: var(--text-muted);
+      margin: 0 0 40px 0;
+    }
+
+    /* Horizontal row for bottom-aligned elements */
+    .track-success-row {
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 32px;
+    }
+
+    .track-success-name {
+      font-family: var(--font-display);
+      font-size: 28px;
+      font-weight: 700;
+      color: #8b5cf6;
+      margin: 0;
+      padding: 12px 24px;
+      background: rgba(139, 92, 246, 0.1);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      border-radius: 8px;
+      display: inline-block;
+    }
+
+    .track-success-thumbnail {
+      width: 280px;
+      height: auto;
+      border-radius: 12px;
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      margin: 0;
+    }
+
+    .track-success-btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 16px 48px;
+      font-family: var(--font-display);
+      font-size: 18px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      border-radius: 8px;
+      cursor: pointer;
+      box-shadow: 0 4px 20px var(--accent-glow);
+      transition: all 0.3s ease;
+    }
+
+    .track-success-btn:hover {
+      background: #ff5555;
+      transform: translateY(-3px) scale(1.05);
+      box-shadow: 0 8px 30px var(--accent-glow);
+    }
+
+    /* Confetti particles */
+    .track-success-confetti {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      animation: confetti-fall 3s ease forwards;
+      pointer-events: none;
+    }
+
+    @keyframes confetti-fall {
+      0% {
+        transform: translateY(-100vh) rotate(0deg);
+        opacity: 1;
+      }
+
+      100% {
+        transform: translateY(100vh) rotate(720deg);
+        opacity: 0;
+      }
+    }
+
+    /* =========================================
        TRACK BUILDER STYLES
        ========================================= */
     .track-builder-overlay {

@@ -1723,13 +1723,83 @@
     await TrackStore.saveTrack(entry);
     this.state.lastBakeResult = entry;
 
-    const msg = intersections.length
-      ? `${name} saved with ${intersections.length} warning${intersections.length > 1 ? 's' : ''}.`
-      : `${name} saved and ready to race!`;
-    alert(msg);
+    // Show fullscreen celebration instead of alert
+    await this.showSuccessCelebration(entry, intersections.length);
 
     this.onSaved(entry);
     this.close();
+  };
+
+  // Show fullscreen success celebration
+  TrackBuilder.prototype.showSuccessCelebration = function (entry, warningCount) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'track-success-overlay';
+
+      // Create confetti particles
+      const confettiColors = ['#ef4444', '#8b5cf6', '#10b981', '#f59e0b', '#3b82f6', '#ec4899'];
+      let confettiHtml = '';
+      for (let i = 0; i < 50; i++) {
+        const color = confettiColors[Math.floor(Math.random() * confettiColors.length)];
+        const left = Math.random() * 100;
+        const delay = Math.random() * 2;
+        const size = 6 + Math.random() * 8;
+        confettiHtml += `<div class="track-success-confetti" style="left: ${left}%; background: ${color}; width: ${size}px; height: ${size}px; animation-delay: ${delay}s;"></div>`;
+      }
+
+      // Get thumbnail URL if available
+      const thumbnailSrc = entry.thumbnail?.pngData || '';
+      const thumbnailHtml = thumbnailSrc
+        ? `<img src="${thumbnailSrc}" alt="Track Preview" class="track-success-thumbnail" />`
+        : '';
+
+      const subtitle = warningCount
+        ? `Created with ${warningCount} warning${warningCount > 1 ? 's' : ''}`
+        : 'Your track is ready to race!';
+
+      overlay.innerHTML = `
+        ${confettiHtml}
+        <div class="track-success-content">
+          <div class="track-success-icon">🏁</div>
+          <h1 class="track-success-title">Track Created!</h1>
+          <p class="track-success-subtitle">${subtitle}</p>
+          <div class="track-success-row">
+            <div class="track-success-name">${entry.name}</div>
+            ${thumbnailHtml}
+            <button class="track-success-btn">Continue</button>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(overlay);
+
+      const continueBtn = overlay.querySelector('.track-success-btn');
+
+      const cleanup = () => {
+        overlay.style.opacity = '0';
+        overlay.style.transition = 'opacity 0.3s ease';
+        setTimeout(() => {
+          overlay.remove();
+          resolve();
+        }, 300);
+      };
+
+      continueBtn.onclick = cleanup;
+
+      // Also allow clicking overlay background to continue
+      overlay.onclick = (e) => {
+        if (e.target === overlay) cleanup();
+      };
+
+      // Allow Enter or Escape to continue
+      const keyHandler = (e) => {
+        if (e.key === 'Enter' || e.key === 'Escape') {
+          window.removeEventListener('keydown', keyHandler);
+          cleanup();
+        }
+      };
+      window.addEventListener('keydown', keyHandler);
+    });
   };
 
   // ===== Factory =====
