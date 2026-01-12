@@ -1089,6 +1089,187 @@
       display: none !important;
     }
 
+    /* NEW badge for custom tracks */
+    .card-badge-new {
+      position: absolute;
+      top: 40px;
+      /* Position below the Custom badge */
+      right: 8px;
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      animation: badge-pulse 1.5s ease-in-out infinite;
+      box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
+      z-index: 5;
+    }
+
+    @keyframes badge-pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+        box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
+      }
+
+      50% {
+        opacity: 0.8;
+        transform: scale(1.05);
+        box-shadow: 0 4px 16px rgba(16, 185, 129, 0.6);
+      }
+    }
+
+    /* Purple pulsing animation for new custom tracks (same style as GT Class green glow) */
+    @keyframes pulse-purple-glow {
+      0% {
+        box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.4);
+        border-color: rgba(139, 92, 246, 0.5);
+      }
+
+      50% {
+        box-shadow: 0 0 20px 4px rgba(139, 92, 246, 0.3);
+        border-color: rgba(139, 92, 246, 1);
+        transform: translateY(-2px);
+      }
+
+      100% {
+        box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.4);
+        border-color: rgba(139, 92, 246, 0.5);
+      }
+    }
+
+    /* New custom track card with purple pulsing outline */
+    .card.card-new-track {
+      animation: pulse-purple-glow 3s infinite ease-in-out;
+      border-color: rgba(139, 92, 246, 0.6);
+    }
+
+    /* Track Name Modal */
+    .track-name-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 3000;
+      opacity: 0;
+      animation: modal-fade-in 0.3s ease forwards;
+    }
+
+    @keyframes modal-fade-in {
+      to {
+        opacity: 1;
+      }
+    }
+
+    .track-name-modal {
+      background: linear-gradient(135deg, #1a1a20 0%, #0f0f14 100%);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 32px;
+      max-width: 400px;
+      width: 90%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+      transform: scale(0.9) translateY(20px);
+      animation: modal-slide-in 0.3s ease forwards;
+    }
+
+    @keyframes modal-slide-in {
+      to {
+        transform: scale(1) translateY(0);
+      }
+    }
+
+    .track-name-modal h2 {
+      font-family: var(--font-display);
+      font-size: 24px;
+      font-weight: 700;
+      color: white;
+      margin: 0 0 8px 0;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+
+    .track-name-modal p {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin: 0 0 24px 0;
+    }
+
+    .track-name-modal input {
+      width: 100%;
+      padding: 14px 16px;
+      font-family: var(--font-display);
+      font-size: 18px;
+      font-weight: 600;
+      color: white;
+      background: rgba(255, 255, 255, 0.05);
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      box-sizing: border-box;
+    }
+
+    .track-name-modal input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.2);
+    }
+
+    .track-name-modal input::placeholder {
+      color: rgba(255, 255, 255, 0.3);
+    }
+
+    .track-name-modal-buttons {
+      display: flex;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .track-name-modal-buttons button {
+      flex: 1;
+      padding: 14px 24px;
+      font-family: var(--font-display);
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .track-name-modal-buttons .btn-cancel {
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: var(--text-muted);
+    }
+
+    .track-name-modal-buttons .btn-cancel:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: white;
+    }
+
+    .track-name-modal-buttons .btn-save {
+      background: var(--accent);
+      border: none;
+      color: white;
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+
+    .track-name-modal-buttons .btn-save:hover {
+      background: #ff5555;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+
     /* =========================================
        TRACK BUILDER STYLES
        ========================================= */
@@ -2194,16 +2375,16 @@
             const tid = 'custom:' + t.id;
             const div = document.createElement('div');
 
-            div.className = `card ${state.track === tid ? 'selected' : ''
-              }
-
-              `;
+            // Add card-new-track class for purple pulsing outline on new tracks
+            const newTrackClass = t.isNew ? 'card-new-track' : '';
+            div.className = `card ${newTrackClass} ${state.track === tid ? 'selected' : ''}`.trim();
+            div.style.position = 'relative'; // For absolute positioning of badges
             div.onclick = () => selectTrack(tid, div);
 
-            div.innerHTML = ` <span class="card-badge" >Custom</span> <div class="card-icon" >⭐</div> <div class="card-title" >${t.name
-              }
+            // Show "New" badge if track hasn't been raced yet
+            const newBadge = t.isNew ? '<span class="card-badge-new">New</span>' : '';
 
-              </div> <div class="card-desc" >User created track</div> `;
+            div.innerHTML = `${newBadge}<span class="card-badge">Custom</span><div class="card-icon">⭐</div><div class="card-title">${t.name}</div><div class="card-desc">User created track</div>`;
             grid.appendChild(div);
           });
         }
@@ -2239,7 +2420,7 @@
 
     // ===== LAUNCH =====
 
-    function launchGame() {
+    async function launchGame() {
 
       // Save Config to Session
       const ghostToggleEl = document.getElementById('ghostToggle');
@@ -2254,15 +2435,25 @@
         botCount: state.config.botCount,
         gridPos: state.config.gridPos,
         ghostEnabled: ghostEnabled
-      }
-
-        ;
+      };
 
       // Also save settings to localStorage
       const sfx = document.getElementById('sfxToggle').checked;
       localStorage.setItem('sfxEnabled', sfx);
 
-
+      // Mark custom track as raced (remove "New" badge)
+      if (state.track && state.track.startsWith('custom:') && window.TrackStore) {
+        const trackId = state.track.replace('custom:', '');
+        try {
+          const track = await TrackStore.getTrack(trackId);
+          if (track && track.isNew) {
+            track.isNew = false;
+            await TrackStore.saveTrack(track);
+          }
+        } catch (e) {
+          console.error('Failed to mark track as raced:', e);
+        }
+      }
 
       // Helper to save payload
       saveStartPayload(payload);

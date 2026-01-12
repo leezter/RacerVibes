@@ -1570,6 +1570,70 @@
     this.render();
   };
 
+  // Show a modal to prompt for track name
+  TrackBuilder.prototype.showTrackNameModal = function (defaultName) {
+    return new Promise((resolve) => {
+      // Create overlay
+      const overlay = document.createElement('div');
+      overlay.className = 'track-name-modal-overlay';
+      overlay.innerHTML = `
+        <div class="track-name-modal">
+          <h2>🏁 Name Your Track</h2>
+          <p>Give your creation a memorable name</p>
+          <input type="text" id="trackNameInput" placeholder="Enter track name..." maxlength="32" value="${defaultName || ''}" />
+          <div class="track-name-modal-buttons">
+            <button class="btn-cancel">Cancel</button>
+            <button class="btn-save">Save Track</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const input = overlay.querySelector('#trackNameInput');
+      const cancelBtn = overlay.querySelector('.btn-cancel');
+      const saveBtn = overlay.querySelector('.btn-save');
+
+      // Focus input and select all
+      setTimeout(() => {
+        input.focus();
+        input.select();
+      }, 100);
+
+      const cleanup = (result) => {
+        overlay.style.animation = 'modal-fade-in 0.2s ease reverse forwards';
+        setTimeout(() => {
+          overlay.remove();
+          resolve(result);
+        }, 200);
+      };
+
+      cancelBtn.onclick = () => cleanup(null);
+      saveBtn.onclick = () => {
+        const name = input.value.trim();
+        if (name) {
+          cleanup(name);
+        } else {
+          input.style.borderColor = '#ef4444';
+          input.placeholder = 'Please enter a name...';
+        }
+      };
+
+      input.onkeydown = (e) => {
+        if (e.key === 'Enter') {
+          const name = input.value.trim();
+          if (name) cleanup(name);
+        } else if (e.key === 'Escape') {
+          cleanup(null);
+        }
+      };
+
+      // Close on overlay click (not modal content)
+      overlay.onclick = (e) => {
+        if (e.target === overlay) cleanup(null);
+      };
+    });
+  };
+
   TrackBuilder.prototype.bake = async function () {
     if (!this.state.isClosed) {
       alert('Please close the circuit loop before baking.');
@@ -1581,7 +1645,19 @@
       return;
     }
 
-    const name = this.state.trackName || 'Custom Circuit';
+    // Show modal for track name input
+    const name = await this.showTrackNameModal(this.state.trackName || 'My Track');
+    if (!name) {
+      // User cancelled
+      return;
+    }
+
+    // Update the state with the chosen name
+    this.state.trackName = name;
+    if (this.trackNameInput) {
+      this.trackNameInput.value = name;
+    }
+
     const closedRaw = ensureClosed(copyPoints(this.state.points));
     const roadWidth = this.state.roadWidth;
 
@@ -1637,6 +1713,7 @@
       data,
       mask,
       thumbnail,
+      isNew: true, // Mark as new track - badge will show until raced
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
