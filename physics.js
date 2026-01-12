@@ -2152,6 +2152,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
             <select id="rv-steerMode">
               <option value="manual">Manual</option>
               <option value="touch">Touch</option>
+              <option value="smooth">Smooth</option>
             </select>
           </div>
           <div class="rv-row" data-no-ai-clone><label for="rv-touchMaxLow"><span class="rv-name"${tipAttr('touchMaxLow')}>Touch max (low)</span><span class="rv-caution" title="This setting does not sync to AI vehicles">⚠️</span></label><input id="rv-touchMaxLow" type="range" min="0.30" max="0.90" step="0.01"><div class="val" id="rv-touchMaxLow-v"></div></div>
@@ -2293,7 +2294,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
 
     const controlHandlers = {};
     const CONTROL_META = {};
-    const STEERING_MODES = new Set(['manual', 'touch']);
+    const STEERING_MODES = new Set(['manual', 'touch', 'smooth']);
     const getStoredSteeringMode = () => {
       try {
         const stored = (typeof localStorage !== 'undefined') ? localStorage.getItem('steeringMode') : null;
@@ -2473,7 +2474,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       ['rv-brk', { kind: 'vehicle', valueEl: els.brkV, format: fmtInt, getDefault: vehicleDefault('brakeForce') }],
       ['rv-steer', { kind: 'vehicle', valueEl: els.steerV, format: fmtTwo, getDefault: vehicleDefault('maxSteer') }],
       ['rv-steers', { kind: 'vehicle', valueEl: els.steersV, format: fmtOne, getDefault: vehicleDefault('steerSpeed') }],
-      ['rv-steerMode', { kind: 'global', type: 'select', getDefault: () => 'touch', format: (value) => value === 'manual' ? 'Manual' : 'Touch', afterSet: (value) => applySteeringModeSelection(value) }],
+      ['rv-steerMode', { kind: 'global', type: 'select', getDefault: getStoredSteeringMode, format: (value) => value === 'manual' ? 'Manual' : (value === 'smooth' ? 'Smooth' : 'Touch'), afterSet: (value) => applySteeringModeSelection(value) }],
       ['rv-touchMaxLow', { kind: 'vehicle', valueEl: els.touchMaxLowV, format: fmtTwo, getDefault: vehicleTouchDefault('maxSteerLowSpeed', (defaults) => (defaults.maxSteer != null ? defaults.maxSteer : 0.60)) }],
       ['rv-touchMaxHigh', {
         kind: 'vehicle', valueEl: els.touchMaxHighV, format: fmtTwo, getDefault: vehicleTouchDefault('maxSteerHighSpeed', (defaults) => {

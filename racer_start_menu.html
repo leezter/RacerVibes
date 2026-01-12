@@ -1757,10 +1757,15 @@
                 <div class="menu-icon" style="font-size:32px; margin-bottom:10px;">🔄</div>
                 <div class="menu-label" style="font-size:18px;">Tilt</div>
               </div>
+              <div class="menu-item" id="btnSmoothOpt" onclick="setOptMode('smooth')" style="height:120px; flex:1;">
+                <div class="menu-icon" style="font-size:32px; margin-bottom:10px;">🎚️</div>
+                <div class="menu-label" style="font-size:18px;">Smooth</div>
+              </div>
             </div>
             <div style="margin-top:10px; font-size:14px; opacity:0.6; text-align:center;">"Touch" enables
-              on-screen buttons (also supports Keyboard).<br>"Tilt" enables gyroscope steering. </div>
+              on-screen buttons.<br>"Tilt" enables gyroscope steering.<br>"Smooth" enables analog slider controls.</div>
           </div>
+
           <!-- Toggles -->
           <div class="form-group"><label class="form-label">Game Settings</label>
             <div
@@ -2205,11 +2210,17 @@
         document.getElementById('optVolume').value = vVal;
         document.getElementById('optVolumeVal').textContent = vVal + '%';
 
-        // Load Controls (Touch vs Tilt)
+        // Load Controls (Touch vs Tilt vs Smooth)
         // "Touch" = steeringMode:touch, gyro:false
         // "Tilt" = steeringMode:touch, gyro:true
+        // "Smooth" = steeringMode:smooth
+        const steeringMode = localStorage.getItem('steeringMode');
         const gyro = localStorage.getItem('gyroSteeringEnabled') === 'true';
-        setOptModeUI(gyro ? 'tilt' : 'touch');
+        if (steeringMode === 'smooth') {
+          setOptModeUI('smooth');
+        } else {
+          setOptModeUI(gyro ? 'tilt' : 'touch');
+        }
 
         // Load SFX (default to true if null)
         const sfx = localStorage.getItem('sfxEnabled') !== 'false';
@@ -2230,29 +2241,30 @@
       if (mode === 'touch') {
         localStorage.setItem('steeringMode', 'touch');
         localStorage.setItem('gyroSteeringEnabled', 'false');
-      }
-
-      else if (mode === 'tilt') {
+      } else if (mode === 'tilt') {
         localStorage.setItem('steeringMode', 'touch');
         localStorage.setItem('gyroSteeringEnabled', 'true');
+      } else if (mode === 'smooth') {
+        localStorage.setItem('steeringMode', 'smooth');
+        localStorage.setItem('gyroSteeringEnabled', 'false');
       }
-
       setOptModeUI(mode);
     }
 
     function setOptModeUI(mode) {
       const btnTouch = document.getElementById('btnTouchOpt');
       const btnTilt = document.getElementById('btnTiltOpt');
+      const btnSmooth = document.getElementById('btnSmoothOpt');
 
       const setStyle = (btn, active) => {
+        if (!btn) return;
         btn.style.borderColor = active ? 'var(--accent)' : 'rgba(255,255,255,0.05)';
         btn.style.background = active ? 'rgba(239,68,68,0.1)' : 'linear-gradient(160deg, #2a2a30, #16161a)';
-      }
-
-        ;
+      };
 
       setStyle(btnTouch, mode === 'touch');
       setStyle(btnTilt, mode === 'tilt');
+      setStyle(btnSmooth, mode === 'smooth');
     }
 
     function setOptSfx(checked) {

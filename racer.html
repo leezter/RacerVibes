@@ -135,6 +135,150 @@
       }
     }
 
+    /* Smooth control sliders */
+    .smooth-controls {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      pointer-events: none;
+      display: none;
+    }
+
+    .smooth-controls.active {
+      display: block;
+    }
+
+    @media (min-width: 900px) {
+      .smooth-controls {
+        display: none !important;
+      }
+    }
+
+    .smooth-slider {
+      position: absolute;
+      pointer-events: auto;
+      touch-action: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Steering slider - horizontal at bottom left */
+    .smooth-slider.steering {
+      left: 12px;
+      bottom: 24px;
+      width: clamp(160px, 35vw, 240px);
+      height: clamp(72px, 15vw, 108px);
+      background: rgba(31, 41, 55, 0.65);
+      border-radius: clamp(36px, 7.5vw, 54px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .smooth-slider.steering .slider-track {
+      width: calc(100% - 24px);
+      height: 8px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+      position: relative;
+    }
+
+    .smooth-slider.steering .slider-thumb {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: clamp(48px, 10vw, 64px);
+      height: clamp(48px, 10vw, 64px);
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      border-radius: 50%;
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+      display: grid;
+      place-items: center;
+      font-size: clamp(16px, 4vw, 20px);
+      color: #fff;
+      transition: box-shadow 0.15s;
+    }
+
+    .smooth-slider.steering .slider-thumb.active {
+      box-shadow: 0 4px 20px rgba(239, 68, 68, 0.7);
+    }
+
+    /* Throttle/Brake slider - vertical on right side */
+    .smooth-slider.throttle {
+      right: 12px;
+      bottom: 24px;
+      width: clamp(72px, 15vw, 108px);
+      height: clamp(180px, 40vh, 280px);
+      background: rgba(31, 41, 55, 0.65);
+      border-radius: clamp(36px, 7.5vw, 54px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .smooth-slider.throttle .slider-track {
+      width: 8px;
+      height: calc(100% - 24px);
+      background: linear-gradient(180deg, rgba(34, 197, 94, 0.4) 0%, rgba(255, 255, 255, 0.2) 50%, rgba(239, 68, 68, 0.4) 100%);
+      border-radius: 4px;
+      position: relative;
+    }
+
+    .smooth-slider.throttle .slider-thumb {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: clamp(48px, 10vw, 64px);
+      height: clamp(48px, 10vw, 64px);
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      border-radius: 50%;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+      display: grid;
+      place-items: center;
+      font-size: clamp(16px, 4vw, 20px);
+      color: #fff;
+      transition: box-shadow 0.15s;
+    }
+
+    .smooth-slider.throttle .slider-thumb.active {
+      box-shadow: 0 4px 20px rgba(59, 130, 246, 0.7);
+    }
+
+    /* Labels for slider zones */
+    .smooth-slider .slider-label {
+      position: absolute;
+      font-size: 10px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.5);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .smooth-slider.throttle .slider-label.top {
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .smooth-slider.throttle .slider-label.bottom {
+      bottom: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .smooth-slider.steering .slider-label.left {
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+
+    .smooth-slider.steering .slider-label.right {
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+
 
 
     /* Pause button (top-right) */
@@ -923,6 +1067,24 @@
     <div class="btn gyro" title="Toggle Gyro">GY</div>
   </div>
 
+  <!-- Smooth control sliders -->
+  <div class="smooth-controls" aria-hidden="true">
+    <div class="smooth-slider steering">
+      <div class="slider-label left">L</div>
+      <div class="slider-track">
+        <div class="slider-thumb">◀▶</div>
+      </div>
+      <div class="slider-label right">R</div>
+    </div>
+    <div class="smooth-slider throttle">
+      <div class="slider-label top">▲</div>
+      <div class="slider-track">
+        <div class="slider-thumb">●</div>
+      </div>
+      <div class="slider-label bottom">▼</div>
+    </div>
+  </div>
+
 
 
   <script src="modes/registry.js"></script>
@@ -1247,7 +1409,13 @@
     function getSteeringModeSetting() {
       try {
         const value = localStorage.getItem("steeringMode");
-        return value === "manual" ? "manual" : "touch";
+        const result = (value === "smooth") ? "smooth" : (value === "manual" ? "manual" : "touch");
+        // Debug: log first call to verify setting is correctly read
+        if (!window._steeringModeLogged) {
+          window._steeringModeLogged = true;
+          console.log('[Debug] steeringMode from localStorage:', value, '=> result:', result);
+        }
+        return result;
       } catch (_) {
         return "touch";
       }
@@ -2387,7 +2555,7 @@
         setCountdownOverlay(null);
       }
 
-      function startRaceCountdown() {
+      function startRaceCountdown(player) {
         cancelCountdown();
         countdownActiveRef.current = true;
         runningRef.current = false;
@@ -3197,7 +3365,7 @@
           api.listDifficulties = () => AVAILABLE_AI_DIFFICULTIES.slice();
         })();
 
-        const keys = { w: false, s: false, a: false, d: false };
+        const keys = { w: false, s: false, a: false, d: false, smoothSteer: 0, smoothThrottle: 0 };
         const gamepadShiftPrev = { up: false, down: false };
 
         // Normalized handling constants (reduced from earlier boosted values for mobile stability)
@@ -4450,7 +4618,7 @@
                 hideLoadingScreen(() => {
                   // Additional short delay to ensure screen is fully visible
                   requestAnimationFrame(() => {
-                    startRaceCountdown();
+                    startRaceCountdown(player);
                   });
                 });
               }
@@ -5478,7 +5646,29 @@
 
         function updatePlayer(dt) {
           // Blend keyboard with motion steering
-          const control = { throttle: keys.w, brake: keys.s, left: keys.a, right: keys.d };
+          let control;
+          const steeringMode = getSteeringModeSetting();
+
+          if (steeringMode === 'smooth') {
+            // Smooth mode: use analog slider values
+            const steer = keys.smoothSteer; // -1 to 1
+            const throttleVal = keys.smoothThrottle; // -1 (brake) to 1 (throttle)
+            control = {
+              steer: steer,
+              throttle: throttleVal > 0 ? throttleVal : 0,
+              brake: throttleVal < 0 ? -throttleVal : 0
+            };
+            // Debug: log every second to show current values
+            if (!window._smoothDebugCounter) window._smoothDebugCounter = 0;
+            window._smoothDebugCounter++;
+            if (window._smoothDebugCounter % 60 === 0) {
+              console.log('[Smooth] keys.smoothSteer:', keys.smoothSteer.toFixed(3), 'keys.smoothThrottle:', keys.smoothThrottle.toFixed(3));
+            }
+          } else {
+            // Touch/Tilt/Keyboard mode: use boolean key states
+            control = { throttle: keys.w, brake: keys.s, left: keys.a, right: keys.d };
+          }
+
           const pads = navigator.getGamepads ? navigator.getGamepads() : null;
           const pad = pads ? pads[0] : null;
           if (pad && pad.buttons) {
@@ -5620,6 +5810,191 @@
           // Gyro button removed
         }
 
+        // Smooth slider controls bindings
+        const smoothControls = document.querySelector('.smooth-controls');
+        if (smoothControls) {
+          // Setup smooth slider control mode visibility
+          const steeringMode = getSteeringModeSetting();
+          if (steeringMode === 'smooth') {
+            smoothControls.classList.add('active');
+            if (hud) hud.style.display = 'none';
+          }
+
+          // Steering slider - horizontal (with multi-touch support)
+          const steeringSlider = smoothControls.querySelector('.smooth-slider.steering');
+          if (steeringSlider) {
+            const track = steeringSlider.querySelector('.slider-track');
+            const thumb = steeringSlider.querySelector('.slider-thumb');
+            let steeringTouchId = null; // Track specific touch for this slider
+
+            const updateSteerValue = (clientX) => {
+              const rect = track.getBoundingClientRect();
+              const centerX = rect.left + rect.width / 2;
+              const maxOffset = rect.width / 2 - 20;
+              const offset = Math.max(-maxOffset, Math.min(maxOffset, clientX - centerX));
+              const value = offset / maxOffset;
+              keys.smoothSteer = value;
+              const thumbPercent = 50 + (value * 40);
+              thumb.style.left = thumbPercent + '%';
+            };
+
+            const resetSteer = () => {
+              steeringTouchId = null;
+              thumb.classList.remove('active');
+              keys.smoothSteer = 0;
+              thumb.style.left = '50%';
+            };
+
+            steeringSlider.addEventListener('touchstart', (e) => {
+              e.preventDefault();
+              if (steeringTouchId !== null) return; // Already tracking a touch
+              primeAudio();
+              const touch = e.changedTouches[0];
+              steeringTouchId = touch.identifier;
+              thumb.classList.add('active');
+              updateSteerValue(touch.clientX);
+            }, { passive: false });
+
+            steeringSlider.addEventListener('touchmove', (e) => {
+              if (steeringTouchId === null) return;
+              e.preventDefault();
+              for (let i = 0; i < e.touches.length; i++) {
+                if (e.touches[i].identifier === steeringTouchId) {
+                  updateSteerValue(e.touches[i].clientX);
+                  break;
+                }
+              }
+            }, { passive: false });
+
+            steeringSlider.addEventListener('touchend', (e) => {
+              for (let i = 0; i < e.changedTouches.length; i++) {
+                if (e.changedTouches[i].identifier === steeringTouchId) {
+                  resetSteer();
+                  break;
+                }
+              }
+            }, { passive: false });
+
+            steeringSlider.addEventListener('touchcancel', (e) => {
+              for (let i = 0; i < e.changedTouches.length; i++) {
+                if (e.changedTouches[i].identifier === steeringTouchId) {
+                  resetSteer();
+                  break;
+                }
+              }
+            }, { passive: false });
+
+            // Mouse support (single pointer)
+            let steeringMouseDown = false;
+            steeringSlider.addEventListener('mousedown', (e) => {
+              e.preventDefault();
+              primeAudio();
+              steeringMouseDown = true;
+              thumb.classList.add('active');
+              updateSteerValue(e.clientX);
+            });
+            window.addEventListener('mousemove', (e) => {
+              if (!steeringMouseDown) return;
+              updateSteerValue(e.clientX);
+            });
+            window.addEventListener('mouseup', () => {
+              if (steeringMouseDown) {
+                steeringMouseDown = false;
+                thumb.classList.remove('active');
+                keys.smoothSteer = 0;
+                thumb.style.left = '50%';
+              }
+            });
+          }
+
+          // Throttle/Brake slider - vertical (with multi-touch support)
+          const throttleSlider = smoothControls.querySelector('.smooth-slider.throttle');
+          if (throttleSlider) {
+            const track = throttleSlider.querySelector('.slider-track');
+            const thumb = throttleSlider.querySelector('.slider-thumb');
+            let throttleTouchId = null; // Track specific touch for this slider
+
+            const updateThrottleValue = (clientY) => {
+              const rect = track.getBoundingClientRect();
+              const centerY = rect.top + rect.height / 2;
+              const maxOffset = rect.height / 2 - 20;
+              const offset = Math.max(-maxOffset, Math.min(maxOffset, centerY - clientY));
+              const value = offset / maxOffset;
+              keys.smoothThrottle = value;
+              const thumbPercent = 50 - (value * 40);
+              thumb.style.top = thumbPercent + '%';
+            };
+
+            const resetThrottle = () => {
+              throttleTouchId = null;
+              thumb.classList.remove('active');
+              keys.smoothThrottle = 0;
+              thumb.style.top = '50%';
+            };
+
+            throttleSlider.addEventListener('touchstart', (e) => {
+              e.preventDefault();
+              if (throttleTouchId !== null) return; // Already tracking a touch
+              primeAudio();
+              const touch = e.changedTouches[0];
+              throttleTouchId = touch.identifier;
+              thumb.classList.add('active');
+              updateThrottleValue(touch.clientY);
+            }, { passive: false });
+
+            throttleSlider.addEventListener('touchmove', (e) => {
+              if (throttleTouchId === null) return;
+              e.preventDefault();
+              for (let i = 0; i < e.touches.length; i++) {
+                if (e.touches[i].identifier === throttleTouchId) {
+                  updateThrottleValue(e.touches[i].clientY);
+                  break;
+                }
+              }
+            }, { passive: false });
+
+            throttleSlider.addEventListener('touchend', (e) => {
+              for (let i = 0; i < e.changedTouches.length; i++) {
+                if (e.changedTouches[i].identifier === throttleTouchId) {
+                  resetThrottle();
+                  break;
+                }
+              }
+            }, { passive: false });
+
+            throttleSlider.addEventListener('touchcancel', (e) => {
+              for (let i = 0; i < e.changedTouches.length; i++) {
+                if (e.changedTouches[i].identifier === throttleTouchId) {
+                  resetThrottle();
+                  break;
+                }
+              }
+            }, { passive: false });
+
+            // Mouse support (single pointer)
+            let throttleMouseDown = false;
+            throttleSlider.addEventListener('mousedown', (e) => {
+              e.preventDefault();
+              primeAudio();
+              throttleMouseDown = true;
+              thumb.classList.add('active');
+              updateThrottleValue(e.clientY);
+            });
+            window.addEventListener('mousemove', (e) => {
+              if (!throttleMouseDown) return;
+              updateThrottleValue(e.clientY);
+            });
+            window.addEventListener('mouseup', () => {
+              if (throttleMouseDown) {
+                throttleMouseDown = false;
+                thumb.classList.remove('active');
+                keys.smoothThrottle = 0;
+                thumb.style.top = '50%';
+              }
+            });
+          }
+        }
+
         // Motion steering after first user gesture
         // Gyro handlers removed
         // Optional: keep the screen awake during play (Android Chrome)
@@ -5669,6 +6044,13 @@
           const physicsAPI = window.RacerPhysics;
           const carsForPlanck = planckCars();
           const isRunning = runningRef.current;
+          // Debug: log once per second to check game loop state
+          if (!window._frameDebug) window._frameDebug = { count: 0, lastLog: 0 };
+          window._frameDebug.count++;
+          if (t - window._frameDebug.lastLog > 1000) {
+            console.log('[Frame] isRunning:', isRunning, 'steeringMode:', getSteeringModeSetting());
+            window._frameDebug.lastLog = t;
+          }
           if (planckNeedsSync && physicsAPI && typeof physicsAPI.configureTrackCollision === 'function') {
             syncPlanckWorld();
           }
