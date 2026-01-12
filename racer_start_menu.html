@@ -1570,6 +1570,40 @@
       animation: pulse-green-glow 3s infinite ease-in-out;
       border-color: rgba(74, 222, 128, 0.6);
     }
+
+    /* Track Builder Card */
+    .card-builder {
+      background: linear-gradient(135deg, rgba(124, 58, 237, 0.15), rgba(139, 92, 246, 0.1));
+      border-color: #8b5cf6;
+      box-shadow: 0 0 15px rgba(139, 92, 246, 0.15);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card-builder:hover {
+      background: linear-gradient(135deg, rgba(124, 58, 237, 0.25), rgba(139, 92, 246, 0.2));
+      border-color: #a78bfa;
+      box-shadow: 0 0 30px rgba(139, 92, 246, 0.4);
+      transform: translateY(-5px) scale(1.02);
+      z-index: 10;
+    }
+
+    .card-builder .card-icon {
+      filter: drop-shadow(0 0 10px rgba(139, 92, 246, 0.6));
+      animation: float-icon 3s ease-in-out infinite;
+    }
+
+    @keyframes float-icon {
+
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+
+      50% {
+        transform: translateY(-4px);
+      }
+    }
   </style>
 
 </head>
@@ -2095,9 +2129,37 @@
       });
     }
 
+    function openTrackBuilder() {
+      if (typeof TrackBuilder === 'undefined' || !TrackBuilder.create) {
+        console.warn('TrackBuilder not available');
+        return;
+      }
+      TrackBuilder.create({
+        onSaved: (track) => {
+          renderTracks();
+        },
+        onTestDrive: (_m, entry) => {
+          state.track = 'custom:' + entry.id;
+          launchGame();
+        },
+        onClose: () => { }
+      }).open();
+    }
+
     async function renderTracks() {
       const grid = document.getElementById('trackGrid');
       grid.innerHTML = '';
+
+      // ==> Track Builder Button
+      const builderDiv = document.createElement('div');
+      builderDiv.className = 'card card-builder';
+      builderDiv.onclick = openTrackBuilder;
+      builderDiv.innerHTML = `
+        <div class="card-icon">✏️</div>
+        <div class="card-title">Draw your Experience</div>
+        <div class="card-desc">Use your imagination to draw your own racing track.</div>
+      `;
+      grid.appendChild(builderDiv);
 
       // Built-ins
       BUILTIN_TRACKS.forEach(t => {
@@ -2147,13 +2209,7 @@
         }
       }
 
-      // Builder Button
-      const buildDiv = document.createElement('div');
-      buildDiv.className = 'card';
-      buildDiv.style.borderStyle = 'dashed';
-      buildDiv.onclick = openTrackBuilder;
-      buildDiv.innerHTML = ` <div class="card-icon">🛠️</div><div class="card-title">Track Builder</div><div class="card-desc">Create your own circuit</div>`;
-      grid.appendChild(buildDiv);
+
     }
 
     // ===== SETTINGS UTILS =====
@@ -2175,21 +2231,7 @@
       document.getElementById('difficultyVal').textContent = labels[v] || 'Normal';
     }
 
-    function openTrackBuilder() {
-      if (window.TrackBuilder) {
-        TrackBuilder.create({
 
-          onSaved: () => renderTracks(),
-          onTestDrive: (_m, entry) => {
-            state.track = 'custom:' + entry.id;
-            launchGame();
-          }
-
-          ,
-          onClose: () => { }
-        }).open();
-      }
-    }
 
     // ===== LAUNCH =====
 
