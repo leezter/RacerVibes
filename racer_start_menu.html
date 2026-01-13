@@ -2462,9 +2462,15 @@
         const div = document.createElement('div');
 
         div.className = `card ${state.vehicle === v.id ? 'selected' : ''}`;
+        if (v.id === 'GT') {
+          div.className += ' recommended';
+        }
         div.onclick = () => selectVehicle(v.id, div);
 
+        const badge = v.id === 'GT' ? `<div class="card-badge" style="color:#4ade80; border:1px solid rgba(74,222,128,0.3); background:rgba(74,222,128,0.1);">Optimized ✅</div>` : '';
+
         div.innerHTML = ` 
+          ${badge}
           <div class="card-icon">${v.icon}</div> 
           <div class="card-title">${v.name}</div> 
           <div class="card-desc">Class: ${v.class.toUpperCase()}</div> 
@@ -2497,22 +2503,28 @@
 
 
       // Built-ins
+      // Built-ins
       BUILTIN_TRACKS.forEach(t => {
         const div = document.createElement('div');
 
-        div.className = `card ${state.track === t.id ? 'selected' : ''
-          }
+        div.className = `card ${state.track === t.id ? 'selected' : ''}`;
+        if (t.id === 'Test') {
+          div.className += ' recommended';
+        }
 
-          `;
         div.onclick = () => selectTrack(t.id, div);
 
-        div.innerHTML = ` <div class="card-icon" >🏁</div> <div class="card-title" >${t.name
-          }
+        let badge = '';
+        if (t.id === 'Test') {
+          badge = `<div class="card-badge" style="color:#4ade80; border:1px solid rgba(74,222,128,0.3); background:rgba(74,222,128,0.1);">Optimized ✅</div>`;
+        } else if (t.id === 'Sharp_Corners') {
+          badge = `<div class="card-badge" style="color:#ef4444; border:1px solid rgba(239,68,68,0.3); background:rgba(239,68,68,0.1);">Difficult ⚠️</div>`;
+        }
 
-          </div> <div class="card-desc" >${t.desc
-          }
-
-          </div> `;
+        div.innerHTML = ` 
+          ${badge}
+          <div class="card-icon" >🏁</div> <div class="card-title" >${t.name}</div> <div class="card-desc" >${t.desc}</div> 
+          `;
         grid.appendChild(div);
       });
 
