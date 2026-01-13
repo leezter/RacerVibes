@@ -1452,6 +1452,12 @@
     // Camera intro zoom during countdown
     const CAMERA_INTRO_ZOOM_MULTIPLIER = 6.0; // How much closer to start (car fills screen)
     const CAMERA_INTRO_DURATION = 3500; // Duration in ms (matches countdown: 320ms base + 3*900ms gaps + 900ms GO)
+    // Camera look-ahead offset settings
+    const LOOKAHEAD_MIN_OFFSET = 0;        // No offset at idle (pixels)
+    const LOOKAHEAD_MAX_OFFSET = 120;      // Maximum pixels ahead at full speed
+    const LOOKAHEAD_START_SPEED = 10;      // mph where offset begins
+    const LOOKAHEAD_FULL_SPEED = 80;       // mph where offset reaches maximum
+    const LOOKAHEAD_RESPONSE = 3.0;        // Interpolation speed (higher = snappier)
     function clampScale(value) {
       return Math.min(SCALE_MAX, Math.max(SCALE_MIN, value));
     }
@@ -2687,6 +2693,8 @@
       // Gyroscope removed: simplifying to keyboard / touch buttons only
       // camera state
       const camRef = useRef({ x: 0, y: 0, scale: CAM_BASE_ZOOM, targetScale: CAM_BASE_ZOOM });
+      // Look-ahead camera offset (smooth interpolated values)
+      const camOffsetRef = useRef({ x: 0, y: 0, targetX: 0, targetY: 0 });
       const displayScaleRef = useRef(1);
       const baseDisplayScaleRef = useRef(1);
       const camInitRef = useRef(false);
@@ -2887,6 +2895,28 @@
         const maxZoom = rawMax * zoomBase;
         const targetZoom = Math.max(minZoom, Math.min(maxZoom, rawTarget * zoomBase));
         return { minZoom, maxZoom, targetZoom };
+      }
+
+      function computeLookaheadOffset(speed, angle) {
+        // Convert speed from pixels/s to mph for comparison with thresholds
+        const ppm = (window.PlanckWorld && window.PlanckWorld.PPM_DEFAULT) || 30;
+        const mph = (speed / ppm) * 2.23694;
+
+        // Calculate normalized speed factor (0 at start speed, 1 at full speed)
+        const startMph = LOOKAHEAD_START_SPEED;
+        const fullMph = LOOKAHEAD_FULL_SPEED;
+        const range = Math.max(1, fullMph - startMph);
+        const normalized = mph <= startMph ? 0 : Math.min(1, (mph - startMph) / range);
+
+        // Calculate offset distance
+        const offsetDistance = LOOKAHEAD_MIN_OFFSET + normalized * (LOOKAHEAD_MAX_OFFSET - LOOKAHEAD_MIN_OFFSET);
+
+        // Calculate offset in X and Y based on car's angle
+        // angle is in radians, 0 = right (east), PI/2 = down (south)
+        const offsetX = Math.cos(angle) * offsetDistance;
+        const offsetY = Math.sin(angle) * offsetDistance;
+
+        return { offsetX, offsetY };
       }
 
       useEffect(() => {
@@ -6100,11 +6130,20 @@
             }
           }
           const cam = camRef.current;
-          if (cam && player && typeof player.x === 'number' && typeof player.y === 'number') {
-            cam.targetX = player.x;
-            cam.targetY = player.y;
-          }
+          const camOffset = camOffsetRef.current;
           const spd = Math.abs(player.speed || 0);
+
+          // Compute look-ahead offset based on direction and speed
+          if (player && typeof player.angle === 'number') {
+            const { offsetX, offsetY } = computeLookaheadOffset(spd, player.angle);
+            camOffset.targetX = offsetX;
+            camOffset.targetY = offsetY;
+          }
+
+          if (cam && player && typeof player.x === 'number' && typeof player.y === 'number') {
+            cam.targetX = player.x + camOffset.x;
+            cam.targetY = player.y + camOffset.y;
+          }
           if (cam) {
             const { minZoom, maxZoom, targetZoom } = computeCameraZoom(spd);
 
@@ -6134,6 +6173,12 @@
             cam.targetScale = Math.max(minZoom, Math.min(maxZoom * CAMERA_INTRO_ZOOM_MULTIPLIER, effectiveTargetZoom));
             const zoomEase = clampZoomResponse(zoomResponseRate);
             cam.scale += (cam.targetScale - cam.scale) * Math.min(1, dt * zoomEase);
+
+            // Smooth interpolation of camera look-ahead offset
+            const lookaheadEase = Math.min(1, dt * LOOKAHEAD_RESPONSE);
+            camOffset.x += (camOffset.targetX - camOffset.x) * lookaheadEase;
+            camOffset.y += (camOffset.targetY - camOffset.y) * lookaheadEase;
+
             if (typeof cam.targetX === "number" && typeof cam.targetY === "number") {
               cam.x = cam.targetX;
               cam.y = cam.targetY;
