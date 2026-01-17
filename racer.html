@@ -4632,12 +4632,61 @@
           // Use multiple requestAnimationFrame calls to ensure smooth frame delivery
           updateLoadingProgress(95);
 
-          // Wait longer to allow all assets (track surface, decorations) to fully render
-          setTimeout(() => {
+          // === PERFORMANCE: Warmup phase to reduce early-race stuttering ===
+          // This runs physics and rendering code to trigger JIT compilation during loading
+
+          function warmupPhase() {
+            // 1. Check if decor generation is complete
+            const decorReady = !!(decorLayerRef.current && decorLayerRef.current.decorCanvas);
+
+            // 2. Check if critical sprites are loaded
+            const spritesReady = [clipperSprite, truckSprite, bubbleSprite].every(
+              img => !img || (img.complete && img.naturalWidth > 0)
+            );
+
+            // 3. Run warmup physics steps (invisible, just to JIT compile)
+            const physicsAPI = window.RacerPhysics;
+            if (physicsAPI && typeof physicsAPI.planckBeginStep === 'function') {
+              try {
+                // Run a few tiny physics steps to warm up the JIT compiler
+                const warmupCars = planckCars();
+                for (let i = 0; i < 3; i++) {
+                  physicsAPI.planckBeginStep(0.001, warmupCars);
+                  physicsAPI.planckStep();
+                }
+              } catch (_) { /* ignore warmup errors */ }
+            }
+
+            // 4. Pre-draw sprites to force GPU texture upload
+            if (ctx && spritesReady) {
+              ctx.save();
+              ctx.globalAlpha = 0; // Invisible
+              [clipperSprite, truckSprite, bubbleSprite].forEach(img => {
+                if (img && img.complete && img.naturalWidth) {
+                  try { ctx.drawImage(img, -1000, -1000, 1, 1); } catch (_) { }
+                }
+              });
+              ctx.restore();
+            }
+
             updateLoadingProgress(100);
-            // Wait for a few animation frames to stabilize before hiding loading screen
+
+            // If everything is ready, proceed to frame stability check
+            // Otherwise wait a bit more for decor
+            if (decorReady && spritesReady) {
+              startFrameStabilityCheck();
+            } else {
+              // Give decor more time, check again
+              setTimeout(() => {
+                // After more time, proceed anyway (don't block forever)
+                startFrameStabilityCheck();
+              }, 400);
+            }
+          }
+
+          function startFrameStabilityCheck() {
             let frameCount = 0;
-            const STABLE_FRAME_COUNT = 10; // Render 10 frames to ensure stability
+            const STABLE_FRAME_COUNT = 15; // Slightly more frames for better warmup
 
             function waitForStableFrames() {
               frameCount++;
@@ -4654,7 +4703,10 @@
               }
             }
             requestAnimationFrame(waitForStableFrames);
-          }, 600);
+          }
+
+          // Start warmup after initial asset loading delay
+          setTimeout(warmupPhase, 500);
         }
 
         // Build n AI cars in a staggered grid behind base position, aligned to angle
