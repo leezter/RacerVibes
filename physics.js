@@ -38,6 +38,13 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     planckDoSleep: true
   };
 
+  // === PERFORMANCE: Mobile-aware physics quality ===
+  const isMobilePhysics = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  const MOBILE_PHYSICS_QUALITY = {
+    velIters: isMobilePhysics ? 12 : PLANCK_DEFAULTS.velIters,
+    posIters: isMobilePhysics ? 6 : PLANCK_DEFAULTS.posIters
+  };
+
   const VEHICLE_DEFAULTS = {
     F1: {
       ...PLANCK_DEFAULTS,

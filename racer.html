@@ -5521,6 +5521,22 @@
 
         // ===== Simulation =====
         let last = performance.now();
+        let smoothedDt = 1 / 60; // Initial smoothed delta time (target 60fps)
+        let frameCount = 0; // Frame counter for LOD timing
+
+        // === PERFORMANCE: Mobile detection and optimization settings ===
+        const isMobileDevice = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        const PERF_SETTINGS = {
+          maxDPR: isMobileDevice ? 2.0 : 3.0,
+          aiLodEnabled: false, // DISABLED: causes AI cars to drift off course when updates skipped
+          aiLodNearDistSq: 200000, // Within this distance^2: update every frame
+          aiLodMidDistSq: 500000,  // Within this distance^2: update every 2 frames
+          // Beyond aiLodMidDistSq: update every 3 frames
+          dtSmoothingFactor: 0.85 // Higher = smoother but slower response
+        };
+
+        // Pre-allocated control object to reduce GC pressure
+        const playerControl = { throttle: 0, brake: 0, left: false, right: false, steer: 0 };
 
         function updateCar(car, dt, control) {
           const steerInput = (control && typeof control.steer === "number")
@@ -5635,7 +5651,27 @@
         function updateAI(dt) {
           const controllersReady = racingLine.length && window.RacerAI;
           const throttleScale = mapMaxThrottleToSpeedScale(getCurrentMaxThrottle());
-          for (const car of aiCars) {
+          const playerX = player ? player.x : 0;
+          const playerY = player ? player.y : 0;
+
+          for (let i = 0; i < aiCars.length; i++) {
+            const car = aiCars[i];
+
+            // === PERFORMANCE: AI LOD - distant cars update less frequently ===
+            if (PERF_SETTINGS.aiLodEnabled) {
+              const dx = car.x - playerX;
+              const dy = car.y - playerY;
+              const distSq = dx * dx + dy * dy;
+              let frameSkip = 1;
+              if (distSq > PERF_SETTINGS.aiLodMidDistSq) {
+                frameSkip = 3; // Far cars: update every 3 frames
+              } else if (distSq > PERF_SETTINGS.aiLodNearDistSq) {
+                frameSkip = 2; // Mid-range cars: update every 2 frames
+              }
+              // Stagger updates across frames to spread load
+              if (frameCount % frameSkip !== i % frameSkip) continue;
+            }
+
             const controller = controllersReady ? car.aiController : null;
             let control;
             let fallbackDelta = null;
@@ -6070,15 +6106,22 @@
         if (canvasEl) canvasEl.addEventListener('click', handleFinishClick);
 
         function frame(t) {
-          const dt = Math.min(0.05, (t - last) / 1000); last = t;
+          // === PERFORMANCE: Delta time smoothing to reduce physics jitter ===
+          const rawDt = (t - last) / 1000;
+          last = t;
+          const clampedDt = Math.min(0.05, rawDt); // Cap at 50ms (20fps minimum)
+          smoothedDt = smoothedDt * PERF_SETTINGS.dtSmoothingFactor + clampedDt * (1 - PERF_SETTINGS.dtSmoothingFactor);
+          const dt = smoothedDt;
+          frameCount++; // Increment for AI LOD timing
+
           const physicsAPI = window.RacerPhysics;
           const carsForPlanck = planckCars();
           const isRunning = runningRef.current;
-          // Debug: log once per second to check game loop state
+          // Debug: log once per 5 seconds (reduced from 1 second to lower console spam)
           if (!window._frameDebug) window._frameDebug = { count: 0, lastLog: 0 };
           window._frameDebug.count++;
-          if (t - window._frameDebug.lastLog > 1000) {
-            console.log('[Frame] isRunning:', isRunning, 'steeringMode:', getSteeringModeSetting());
+          if (t - window._frameDebug.lastLog > 5000) {
+            console.log('[Frame] isRunning:', isRunning, 'fps:', Math.round(1 / dt));
             window._frameDebug.lastLog = t;
           }
           if (planckNeedsSync && physicsAPI && typeof physicsAPI.configureTrackCollision === 'function') {
