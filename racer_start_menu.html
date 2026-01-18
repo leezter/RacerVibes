@@ -2196,6 +2196,21 @@
                   style="width:24px; height:24px; accent-color:var(--accent);"></label>
             </div>
           </div>
+          <!-- Graphics Quality -->
+          <div class="form-group"><label class="form-label">Graphics Quality</label>
+            <div style="display:flex; gap:20px;">
+              <div class="menu-item" id="btnQualityHigh" onclick="setGraphicsQuality('high')" style="height:80px; flex:1;">
+                <div class="menu-label" style="font-size:18px;">High</div>
+              </div>
+              <div class="menu-item" id="btnQualityMedium" onclick="setGraphicsQuality('medium')" style="height:80px; flex:1;">
+                <div class="menu-label" style="font-size:18px;">Medium</div>
+              </div>
+              <div class="menu-item" id="btnQualityLow" onclick="setGraphicsQuality('low')" style="height:80px; flex:1;">
+                <div class="menu-label" style="font-size:18px;">Low</div>
+              </div>
+            </div>
+            <div style="margin-top:10px; font-size:14px; opacity:0.6; text-align:center;">Lower quality improves performance on mobile devices.</div>
+          </div>
         </div>
       </div>
     </div>
@@ -2674,6 +2689,10 @@
         // Load SFX (default to true if null)
         const sfx = localStorage.getItem('sfxEnabled') !== 'false';
         document.getElementById('optSfx').checked = sfx;
+
+        // Load Graphics Quality (default to 'high')
+        const graphicsQuality = localStorage.getItem('graphicsQuality') || 'high';
+        updateGraphicsQualityUI(graphicsQuality);
       }, 200);
     }
 
@@ -2718,6 +2737,27 @@
 
     function setOptSfx(checked) {
       localStorage.setItem('sfxEnabled', checked);
+    }
+
+    function setGraphicsQuality(quality) {
+      localStorage.setItem('graphicsQuality', quality);
+      updateGraphicsQualityUI(quality);
+    }
+
+    function updateGraphicsQualityUI(quality) {
+      const btnHigh = document.getElementById('btnQualityHigh');
+      const btnMedium = document.getElementById('btnQualityMedium');
+      const btnLow = document.getElementById('btnQualityLow');
+
+      const setStyle = (btn, active) => {
+        if (!btn) return;
+        btn.style.borderColor = active ? 'var(--accent)' : 'rgba(255,255,255,0.05)';
+        btn.style.background = active ? 'rgba(239,68,68,0.1)' : 'linear-gradient(160deg, #2a2a30, #16161a)';
+      };
+
+      setStyle(btnHigh, quality === 'high');
+      setStyle(btnMedium, quality === 'medium');
+      setStyle(btnLow, quality === 'low');
     }
 
     // ===== FULLSCREEN UTILITY =====

@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Resolution Settings Test</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: #1a1a1a;
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .controls {
+      padding: 20px;
+      background: #2a2a2a;
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .controls label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .controls button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    .controls button.active {
+      background: #ef4444;
+      color: #fff;
+    }
+    .controls button:not(.active) {
+      background: #444;
+      color: #fff;
+    }
+    .controls button:hover {
+      opacity: 0.8;
+    }
+    .info {
+      padding: 10px 20px;
+      background: #222;
+      font-family: monospace;
+      font-size: 12px;
+      display: flex;
+      gap: 30px;
+      flex-wrap: wrap;
+    }
+    .info span {
+      color: #888;
+    }
+    .info strong {
+      color: #4ade80;
+    }
+    .canvas-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: #111;
+    }
+    canvas {
+      border: 2px solid #333;
+    }
+    .test-result {
+      padding: 15px 20px;
+      background: #1e3a1e;
+      border-left: 4px solid #4ade80;
+      margin: 10px 20px;
+    }
+    .test-result.fail {
+      background: #3a1e1e;
+      border-left-color: #ef4444;
+    }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <label>Graphics Quality:</label>
+    <button id="btnHigh" class="active" onclick="setQuality('high')">High</button>
+    <button id="btnMedium" onclick="setQuality('medium')">Medium</button>
+    <button id="btnLow" onclick="setQuality('low')">Low</button>
+    <button style="margin-left:auto; background:#3b82f6;" onclick="runTest()">Run Camera Test</button>
+  </div>
+  <div class="info" id="infoPanel">
+    <div><span>Quality:</span> <strong id="infoQuality">high</strong></div>
+    <div><span>Canvas:</span> <strong id="infoCanvas">-</strong></div>
+    <div><span>CSS Size:</span> <strong id="infoCss">-</strong></div>
+    <div><span>DPR:</span> <strong id="infoDpr">-</strong></div>
+    <div><span>Pixel Ratio:</span> <strong id="infoPixelRatio">-</strong></div>
+    <div><span>Base Display Scale:</span> <strong id="infoBaseScale">-</strong></div>
+    <div><span>Zoom:</span> <strong id="infoZoom">-</strong></div>
+    <div><span>Visible Region:</span> <strong id="infoRegion">-</strong></div>
+  </div>
+  <div id="testResult"></div>
+  <div class="canvas-container">
+    <canvas id="gameCanvas"></canvas>
+  </div>
+
+  <script>
+    // Constants (matching racer.html)
+    const QUALITY_HIGH = 1.0;
+    const QUALITY_MEDIUM = 0.75;
+    const QUALITY_LOW = 0.5;
+    const BASE_WORLD_W = 1000;
+    const BASE_WORLD_H = 700;
+    const CAM_BASE_ZOOM = 1.1 * 2.5; // 2.75
+    const CAMERA_DEFAULT = 1.20;
+    const MAXW = 1920;
+    const MAXH = 1080;
+
+    let currentQuality = 'high';
+    let displayScale = 1;
+    let baseDisplayScale = 1;
+    let pixelRatio = 1;
+    let currentZoom = 1;
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    function getQualityMultiplier() {
+      switch (currentQuality) {
+        case 'low': return QUALITY_LOW;
+        case 'medium': return QUALITY_MEDIUM;
+        case 'high':
+        default: return QUALITY_HIGH;
+      }
+    }
+
+    function sizeCanvas() {
+      const vpW = window.innerWidth - 40;
+      const vpH = window.innerHeight - 200;
+      const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+      const qualityMult = getQualityMultiplier();
+
+      const TARGET_ASPECT = 16 / 9;
+      const viewportAspect = vpW / vpH;
+
+      let scaledW, scaledH;
+      if (viewportAspect > 2.0) {
+        scaledH = Math.max(240, Math.round(vpH));
+        scaledW = Math.max(320, Math.round(scaledH * TARGET_ASPECT));
+      } else {
+        scaledW = Math.max(320, Math.round(vpW));
+        scaledH = Math.max(240, Math.round(vpH));
+      }
+
+      // Apply quality multiplier to canvas dimensions
+      canvas.width = Math.min(Math.round(scaledW * dpr * qualityMult), MAXW);
+      canvas.height = Math.min(Math.round(scaledH * dpr * qualityMult), MAXH);
+      canvas.style.width = scaledW + 'px';
+      canvas.style.height = scaledH + 'px';
+
+      // Calculate scales (matching racer.html logic)
+      displayScale = canvas.width / BASE_WORLD_W;
+      // Use full-quality canvas width (scaledW * dpr, excluding qualityMult) for camera calculations
+      const fullQualityWidth = scaledW * dpr;
+      baseDisplayScale = fullQualityWidth / BASE_WORLD_W;
+      // pixelRatio = qualityMult (ratio of actual canvas to full-quality canvas)
+      pixelRatio = canvas.width / fullQualityWidth;
+
+      // Calculate zoom (simplified version of computeCameraZoom)
+      const zoomFactor = CAMERA_DEFAULT;
+      const zoomBase = (CAM_BASE_ZOOM * zoomFactor) / baseDisplayScale;
+      currentZoom = zoomBase * pixelRatio;
+
+      // Update info panel
+      document.getElementById('infoQuality').textContent = currentQuality;
+      document.getElementById('infoCanvas').textContent = `${canvas.width} x ${canvas.height}`;
+      document.getElementById('infoCss').textContent = `${scaledW} x ${scaledH}`;
+      document.getElementById('infoDpr').textContent = dpr.toFixed(2);
+      document.getElementById('infoPixelRatio').textContent = pixelRatio.toFixed(3);
+      document.getElementById('infoBaseScale').textContent = baseDisplayScale.toFixed(3);
+      document.getElementById('infoZoom').textContent = currentZoom.toFixed(3);
+
+      const regionW = canvas.width / currentZoom;
+      const regionH = canvas.height / currentZoom;
+      document.getElementById('infoRegion').textContent = `${regionW.toFixed(1)} x ${regionH.toFixed(1)} world units`;
+
+      draw();
+    }
+
+    function draw() {
+      const cw = canvas.width;
+      const ch = canvas.height;
+
+      // Clear
+      ctx.fillStyle = '#1a1a2e';
+      ctx.fillRect(0, 0, cw, ch);
+
+      // Simulate camera centered at world origin
+      const camX = BASE_WORLD_W / 2;
+      const camY = BASE_WORLD_H / 2;
+
+      ctx.save();
+      ctx.translate(cw / 2, ch / 2);
+      ctx.scale(currentZoom, currentZoom);
+      ctx.translate(-camX, -camY);
+
+      // Draw world grid (every 100 world units)
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 1 / currentZoom;
+      for (let x = 0; x <= BASE_WORLD_W; x += 100) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, BASE_WORLD_H);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= BASE_WORLD_H; y += 100) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(BASE_WORLD_W, y);
+        ctx.stroke();
+      }
+
+      // Draw world boundary
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 3 / currentZoom;
+      ctx.strokeRect(0, 0, BASE_WORLD_W, BASE_WORLD_H);
+
+      // Draw center cross
+      ctx.strokeStyle = '#4ade80';
+      ctx.lineWidth = 2 / currentZoom;
+      ctx.beginPath();
+      ctx.moveTo(camX - 50, camY);
+      ctx.lineTo(camX + 50, camY);
+      ctx.moveTo(camX, camY - 50);
+      ctx.lineTo(camX, camY + 50);
+      ctx.stroke();
+
+      // Draw reference rectangles at fixed world positions
+      ctx.fillStyle = '#3b82f6';
+      ctx.fillRect(100, 100, 50, 50); // Top-left marker
+      ctx.fillRect(BASE_WORLD_W - 150, 100, 50, 50); // Top-right marker
+      ctx.fillRect(100, BASE_WORLD_H - 150, 50, 50); // Bottom-left marker
+      ctx.fillRect(BASE_WORLD_W - 150, BASE_WORLD_H - 150, 50, 50); // Bottom-right marker
+
+      // Draw "car" at center
+      ctx.fillStyle = '#fbbf24';
+      ctx.fillRect(camX - 10, camY - 20, 20, 40);
+
+      // Draw coordinate labels
+      ctx.fillStyle = '#fff';
+      ctx.font = `${14 / currentZoom}px monospace`;
+      ctx.fillText('(100, 100)', 100, 90);
+      ctx.fillText(`(${BASE_WORLD_W - 150}, 100)`, BASE_WORLD_W - 150, 90);
+      ctx.fillText('(100, ' + (BASE_WORLD_H - 150) + ')', 100, BASE_WORLD_H - 100);
+      ctx.fillText(`(${BASE_WORLD_W - 150}, ${BASE_WORLD_H - 150})`, BASE_WORLD_W - 200, BASE_WORLD_H - 100);
+
+      ctx.restore();
+
+      // Draw quality indicator overlay
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(10, 10, 120, 30);
+      ctx.fillStyle = '#fff';
+      ctx.font = '14px monospace';
+      ctx.fillText(`Quality: ${currentQuality}`, 20, 30);
+    }
+
+    function setQuality(q) {
+      currentQuality = q;
+      localStorage.setItem('graphicsQuality', q);
+
+      document.getElementById('btnHigh').classList.toggle('active', q === 'high');
+      document.getElementById('btnMedium').classList.toggle('active', q === 'medium');
+      document.getElementById('btnLow').classList.toggle('active', q === 'low');
+
+      sizeCanvas();
+    }
+
+    // Test that visible region stays consistent
+    let testResults = {};
+    function runTest() {
+      testResults = {};
+      const qualities = ['high', 'medium', 'low'];
+
+      for (const q of qualities) {
+        currentQuality = q;
+        sizeCanvas();
+
+        const regionW = canvas.width / currentZoom;
+        const regionH = canvas.height / currentZoom;
+        testResults[q] = { regionW, regionH };
+      }
+
+      // Check consistency
+      const highRegion = testResults.high;
+      const tolerance = 1; // Allow 1 world unit difference
+      let passed = true;
+      let message = '';
+
+      for (const q of ['medium', 'low']) {
+        const diff = Math.abs(testResults[q].regionW - highRegion.regionW);
+        if (diff > tolerance) {
+          passed = false;
+          message += `${q}: Region width differs by ${diff.toFixed(2)} world units. `;
+        }
+      }
+
+      const resultDiv = document.getElementById('testResult');
+      if (passed) {
+        resultDiv.innerHTML = `<div class="test-result">PASS: Camera view is consistent across all quality settings!<br>
+          High: ${testResults.high.regionW.toFixed(1)} x ${testResults.high.regionH.toFixed(1)}<br>
+          Medium: ${testResults.medium.regionW.toFixed(1)} x ${testResults.medium.regionH.toFixed(1)}<br>
+          Low: ${testResults.low.regionW.toFixed(1)} x ${testResults.low.regionH.toFixed(1)}</div>`;
+      } else {
+        resultDiv.innerHTML = `<div class="test-result fail">FAIL: ${message}<br>
+          High: ${testResults.high.regionW.toFixed(1)} x ${testResults.high.regionH.toFixed(1)}<br>
+          Medium: ${testResults.medium.regionW.toFixed(1)} x ${testResults.medium.regionH.toFixed(1)}<br>
+          Low: ${testResults.low.regionW.toFixed(1)} x ${testResults.low.regionH.toFixed(1)}</div>`;
+      }
+
+      // Restore current quality
+      const savedQuality = localStorage.getItem('graphicsQuality') || 'high';
+      setQuality(savedQuality);
+    }
+
+    // Initialize
+    window.addEventListener('resize', sizeCanvas);
+    sizeCanvas();
+  </script>
+</body>
+</html>
