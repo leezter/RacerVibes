@@ -2583,14 +2583,20 @@
         countdownActiveRef.current = true;
         runningRef.current = false;
         setRunning(false);
-        // Activate camera intro zoom - snap camera to close zoom immediately
-        cameraIntroRef.current = { active: true, startTime: performance.now() };
-        const cam = camRef.current;
-        if (cam) {
-          // Instantly set camera to close zoom (no interpolation)
-          const closeZoom = (cam.targetScale || cam.scale || CAM_BASE_ZOOM) * CAMERA_INTRO_ZOOM_MULTIPLIER;
-          cam.scale = closeZoom;
-          cam.targetScale = closeZoom;
+        // Handle camera intro zoom
+        const intro = cameraIntroRef.current;
+        if (intro && intro.active && intro.startTime === null) {
+          // Camera was pre-positioned during loading - now start the zoom-out animation
+          intro.startTime = performance.now();
+        } else {
+          // Fresh setup - snap camera to close zoom immediately and start animation
+          cameraIntroRef.current = { active: true, startTime: performance.now() };
+          const cam = camRef.current;
+          if (cam) {
+            const closeZoom = (cam.targetScale || cam.scale || CAM_BASE_ZOOM) * CAMERA_INTRO_ZOOM_MULTIPLIER;
+            cam.scale = closeZoom;
+            cam.targetScale = closeZoom;
+          }
         }
         const baseDelay = 320;
         const gap = 900;
@@ -4727,9 +4733,20 @@
               if (frameCount < STABLE_FRAME_COUNT) {
                 requestAnimationFrame(waitForStableFrames);
               } else {
-                // Frames are now stable, hide loading screen and start countdown
+                // Pre-position camera at zoomed-in level BEFORE hiding loading screen
+                // This prevents the "frozen screen" where track is visible at normal zoom
+                const cam = camRef.current;
+                if (cam) {
+                  const closeZoom = (cam.targetScale || cam.scale || CAM_BASE_ZOOM) * CAMERA_INTRO_ZOOM_MULTIPLIER;
+                  cam.scale = closeZoom;
+                  cam.targetScale = closeZoom;
+                }
+                // Mark intro as active but animation not started (startTime: null)
+                // The camera will stay zoomed until startRaceCountdown sets startTime
+                cameraIntroRef.current = { active: true, startTime: null };
+
+                // Hide loading screen, then start countdown
                 hideLoadingScreen(() => {
-                  // Additional short delay to ensure screen is fully visible
                   requestAnimationFrame(() => {
                     startRaceCountdown(player);
                   });
@@ -6280,22 +6297,29 @@
             const intro = cameraIntroRef.current;
             let effectiveTargetZoom = targetZoom;
 
-            if (intro && intro.active && intro.startTime !== null) {
-              const elapsed = performance.now() - intro.startTime;
-              const progress = Math.min(1, elapsed / CAMERA_INTRO_DURATION);
-
-              // Ease-out cubic for smooth deceleration as we zoom out
-              const easedProgress = 1 - Math.pow(1 - progress, 3);
-
-              // Start zoom is the normal zoom multiplied by intro factor (results in closer view)
-              // Higher cam.scale = more zoomed in (closer)
+            if (intro && intro.active) {
               const introZoom = targetZoom * CAMERA_INTRO_ZOOM_MULTIPLIER;
-              effectiveTargetZoom = introZoom + (targetZoom - introZoom) * easedProgress;
 
-              // Deactivate intro when complete
-              if (progress >= 1) {
-                intro.active = false;
-                intro.startTime = null;
+              if (intro.startTime !== null) {
+                // Animation is running - zoom out over time
+                const elapsed = performance.now() - intro.startTime;
+                const progress = Math.min(1, elapsed / CAMERA_INTRO_DURATION);
+
+                // Ease-out cubic for smooth deceleration as we zoom out
+                const easedProgress = 1 - Math.pow(1 - progress, 3);
+
+                // Start zoom is the normal zoom multiplied by intro factor (results in closer view)
+                // Higher cam.scale = more zoomed in (closer)
+                effectiveTargetZoom = introZoom + (targetZoom - introZoom) * easedProgress;
+
+                // Deactivate intro when complete
+                if (progress >= 1) {
+                  intro.active = false;
+                  intro.startTime = null;
+                }
+              } else {
+                // Camera pre-positioned but animation not started yet - stay zoomed in
+                effectiveTargetZoom = introZoom;
               }
             }
 
