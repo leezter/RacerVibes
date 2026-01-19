@@ -4675,6 +4675,9 @@
           // === PERFORMANCE: Warmup phase to reduce early-race stuttering ===
           // This runs physics and rendering code to trigger JIT compilation during loading
 
+          // Mobile detection for warmup intensity (duplicate check - main one is later in file)
+          const isMobileWarmup = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
           function warmupPhase() {
             // 1. Check if decor generation is complete
             const decorReady = !!(decorLayerRef.current && decorLayerRef.current.decorCanvas);
@@ -4685,12 +4688,13 @@
             );
 
             // 3. Run warmup physics steps (invisible, just to JIT compile)
+            // Reduced on mobile to prevent crashes
             const physicsAPI = window.RacerPhysics;
             if (physicsAPI && typeof physicsAPI.planckBeginStep === 'function') {
               try {
-                // Run a few tiny physics steps to warm up the JIT compiler
                 const warmupCars = planckCars();
-                for (let i = 0; i < 3; i++) {
+                const physicsSteps = isMobileWarmup ? 1 : 3;
+                for (let i = 0; i < physicsSteps; i++) {
                   physicsAPI.planckBeginStep(0.001, warmupCars);
                   physicsAPI.planckStep();
                 }
@@ -4706,6 +4710,31 @@
                   try { ctx.drawImage(img, -1000, -1000, 1, 1); } catch (_) { }
                 }
               });
+              ctx.restore();
+            }
+
+            // 5. Force canvas sizing to final dimensions now
+            // This ensures all subsequent warmup renders use the correct resolution
+            sizeBackbufferToViewport();
+
+            // 6. Run render warmup frames to warm GPU pipeline (SKIP on mobile to prevent crashes)
+            // Mobile devices can crash with synchronous render loops
+            if (!isMobileWarmup) {
+              const warmupRenderCount = 3;
+              for (let i = 0; i < warmupRenderCount; i++) {
+                try {
+                  drawBackground();
+                  drawHUD();
+                } catch (_) { /* ignore warmup render errors */ }
+              }
+            }
+
+            // 7. Pre-warm countdown overlay rendering (lightweight, safe for mobile)
+            if (ctx) {
+              ctx.save();
+              ctx.globalAlpha = 0;
+              ctx.font = "800 140px ui-sans-serif, system-ui, -apple-system";
+              ctx.fillText("3", -1000, -1000);
               ctx.restore();
             }
 
@@ -4726,10 +4755,21 @@
 
           function startFrameStabilityCheck() {
             let frameCount = 0;
-            const STABLE_FRAME_COUNT = 15; // Slightly more frames for better warmup
+            // Fewer frames on mobile to prevent long loading/crashes
+            const STABLE_FRAME_COUNT = isMobileWarmup ? 10 : 18;
 
             function waitForStableFrames() {
               frameCount++;
+
+              // During stability check, do actual renders to warm up GPU pipeline
+              // SKIP on mobile to prevent crashes - the frame loop itself provides warmup
+              if (!isMobileWarmup && frameCount <= STABLE_FRAME_COUNT) {
+                try {
+                  drawBackground();
+                  drawHUD();
+                } catch (_) { /* ignore warmup errors */ }
+              }
+
               if (frameCount < STABLE_FRAME_COUNT) {
                 requestAnimationFrame(waitForStableFrames);
               } else {
@@ -4748,6 +4788,8 @@
                 // Hide loading screen, then start countdown
                 hideLoadingScreen(() => {
                   requestAnimationFrame(() => {
+                    // Reset frame timing to prevent jitter from accumulated timing errors
+                    resetFrameTiming();
                     startRaceCountdown(player);
                   });
                 });
@@ -5626,6 +5668,14 @@
         let last = performance.now();
         let smoothedDt = 1 / 60; // Initial smoothed delta time (target 60fps)
         let frameCount = 0; // Frame counter for LOD timing
+
+        // Reset frame timing to prevent jitter at race start
+        // Called when countdown begins to ensure clean timing state
+        function resetFrameTiming() {
+          last = performance.now();
+          smoothedDt = 1 / 60; // Reset to ideal 60fps
+          frameCount = 0;
+        }
 
         // === PERFORMANCE: Mobile detection and optimization settings ===
         const isMobileDevice = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
