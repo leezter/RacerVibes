@@ -2390,9 +2390,6 @@
       const [widthScaleInput, setWidthScaleInput] = useState(() => clampScale(WIDTH_SCALE));
       const [cameraDistance, setCameraDistance] = useState(() => clampCamera(readCameraDistance(CAMERA_DEFAULT)));
       const [graphicsQuality, setGraphicsQuality] = useState(() => localStorage.getItem('graphicsQuality') || 'high');
-      // New graphics settings for performance optimization
-      const [shadowQuality, setShadowQuality] = useState(() => localStorage.getItem('graphicsShadowQuality') || 'full');
-      const [decorDensity, setDecorDensity] = useState(() => localStorage.getItem('graphicsDecorDensity') || 'full');
       const [zoomMaxDelta, setZoomMaxDelta] = useState(() => ZOOM_INIT.maxDelta);
       const [zoomResponseRate, setZoomResponseRate] = useState(() => ZOOM_INIT.response);
       const [zoomStartSpeed, setZoomStartSpeed] = useState(() => ZOOM_INIT.start);
@@ -2796,45 +2793,35 @@
         setGraphicsQuality(quality);
         // Trigger canvas resize to apply new quality setting
         window.dispatchEvent(new Event('resize'));
-      }
-
-      function applyShadowQuality(quality) {
-        if (quality !== 'off' && quality !== 'low' && quality !== 'full') return;
-        localStorage.setItem('graphicsShadowQuality', quality);
-        setShadowQuality(quality);
-      }
-
-      function applyDecorDensity(density) {
-        if (density !== 'low' && density !== 'medium' && density !== 'full') return;
-        localStorage.setItem('graphicsDecorDensity', density);
-        setDecorDensity(density);
-        // Regenerate decor with new density
+        // Regenerate decor with new quality-based density and shadows
         scheduleDecorGeneration(true);
       }
 
-      // Get decor density values based on setting
+      // Get decor density values based on graphics quality setting
       function getDecorDensityParams() {
-        switch (decorDensity) {
+        const quality = localStorage.getItem('graphicsQuality') || 'high';
+        switch (quality) {
           case 'low':
             return { treeDensity: 0.3, buildingDensity: 0.2 };
           case 'medium':
             return { treeDensity: 0.4, buildingDensity: 0.3 };
-          case 'full':
+          case 'high':
           default:
             return { treeDensity: 0.55, buildingDensity: 0.4 };
         }
       }
 
-      // Get shadow strength based on setting
+      // Get shadow strength based on graphics quality setting
       function getShadowStrength() {
-        switch (shadowQuality) {
-          case 'off':
-            return 0;
+        const quality = localStorage.getItem('graphicsQuality') || 'high';
+        switch (quality) {
           case 'low':
-            return 0.25;
-          case 'full':
+            return 0; // No shadows on low
+          case 'medium':
+            return 0.25; // Reduced shadows on medium
+          case 'high':
           default:
-            return 0.55;
+            return 0.55; // Full shadows on high
         }
       }
 
@@ -2909,8 +2896,7 @@
           key: source.trackKey,
           seed,
           params,
-          decorDensity, // Include setting so signature changes when density changes
-          shadowQuality, // Include setting so signature changes when shadow changes
+          graphicsQuality, // Include setting so signature changes when quality changes
           width: source.width,
           height: source.height,
           roadWidth: source.roadWidth,
@@ -6772,34 +6758,6 @@
                 <button
                   style={{flex:1, padding:'8px 4px', background: graphicsQuality==='low' ? 'var(--accent, #ef4444)' : '#333', border:'none', borderRadius:'4px', color:'#fff', cursor:'pointer', fontSize:'12px'}}
                   onClick={() => applyGraphicsQuality('low')}>Low</button>
-              </div>
-            </label>
-            <label>
-              <span>Shadows</span>
-              <div className="quality-buttons" style={{display:'flex',gap:'8px',marginTop:'4px'}}>
-                <button
-                  style={{flex:1, padding:'8px 4px', background: shadowQuality==='full' ? 'var(--accent, #ef4444)' : '#333', border:'none', borderRadius:'4px', color:'#fff', cursor:'pointer', fontSize:'12px'}}
-                  onClick={() => applyShadowQuality('full')}>Full</button>
-                <button
-                  style={{flex:1, padding:'8px 4px', background: shadowQuality==='low' ? 'var(--accent, #ef4444)' : '#333', border:'none', borderRadius:'4px', color:'#fff', cursor:'pointer', fontSize:'12px'}}
-                  onClick={() => applyShadowQuality('low')}>Low</button>
-                <button
-                  style={{flex:1, padding:'8px 4px', background: shadowQuality==='off' ? 'var(--accent, #ef4444)' : '#333', border:'none', borderRadius:'4px', color:'#fff', cursor:'pointer', fontSize:'12px'}}
-                  onClick={() => applyShadowQuality('off')}>Off</button>
-              </div>
-            </label>
-            <label>
-              <span>Scenery</span>
-              <div className="quality-buttons" style={{display:'flex',gap:'8px',marginTop:'4px'}}>
-                <button
-                  style={{flex:1, padding:'8px 4px', background: decorDensity==='full' ? 'var(--accent, #ef4444)' : '#333', border:'none', borderRadius:'4px', color:'#fff', cursor:'pointer', fontSize:'12px'}}
-                  onClick={() => applyDecorDensity('full')}>Full</button>
-                <button
-                  style={{flex:1, padding:'8px 4px', background: decorDensity==='medium' ? 'var(--accent, #ef4444)' : '#333', border:'none', borderRadius:'4px', color:'#fff', cursor:'pointer', fontSize:'12px'}}
-                  onClick={() => applyDecorDensity('medium')}>Medium</button>
-                <button
-                  style={{flex:1, padding:'8px 4px', background: decorDensity==='low' ? 'var(--accent, #ef4444)' : '#333', border:'none', borderRadius:'4px', color:'#fff', cursor:'pointer', fontSize:'12px'}}
-                  onClick={() => applyDecorDensity('low')}>Low</button>
               </div>
             </label>
             <h3>Track scale</h3>
