@@ -1122,10 +1122,21 @@
     // ===== Skid marks =====
     let skids = []; // {x1,y1,x2,y2, life}
     const SKID_LIFE = 2.2;
-    const SKID_MAX = 2400;
+    const SKID_MAX_HIGH = 2400;
+    const SKID_MAX_MEDIUM = 60;
+    const SKID_MAX_LOW = 30;
+    function getSkidMax() {
+      const quality = localStorage.getItem('graphicsQuality') || 'high';
+      switch (quality) {
+        case 'low': return SKID_MAX_LOW;
+        case 'medium': return SKID_MAX_MEDIUM;
+        default: return SKID_MAX_HIGH;
+      }
+    }
     function addSkid(x1, y1, x2, y2) {
+      const maxSkids = getSkidMax();
       skids.push({ x1, y1, x2, y2, life: SKID_LIFE });
-      if (skids.length > SKID_MAX) skids.splice(0, skids.length - SKID_MAX);
+      if (skids.length > maxSkids) skids.splice(0, skids.length - maxSkids);
     }
     function updateSkids(dt) {
       for (let i = skids.length - 1; i >= 0; i--) {
@@ -2379,6 +2390,9 @@
       const [widthScaleInput, setWidthScaleInput] = useState(() => clampScale(WIDTH_SCALE));
       const [cameraDistance, setCameraDistance] = useState(() => clampCamera(readCameraDistance(CAMERA_DEFAULT)));
       const [graphicsQuality, setGraphicsQuality] = useState(() => localStorage.getItem('graphicsQuality') || 'high');
+      // New graphics settings for performance optimization
+      const [shadowQuality, setShadowQuality] = useState(() => localStorage.getItem('graphicsShadowQuality') || 'full');
+      const [decorDensity, setDecorDensity] = useState(() => localStorage.getItem('graphicsDecorDensity') || 'full');
       const [zoomMaxDelta, setZoomMaxDelta] = useState(() => ZOOM_INIT.maxDelta);
       const [zoomResponseRate, setZoomResponseRate] = useState(() => ZOOM_INIT.response);
       const [zoomStartSpeed, setZoomStartSpeed] = useState(() => ZOOM_INIT.start);
@@ -2784,6 +2798,46 @@
         window.dispatchEvent(new Event('resize'));
       }
 
+      function applyShadowQuality(quality) {
+        if (quality !== 'off' && quality !== 'low' && quality !== 'full') return;
+        localStorage.setItem('graphicsShadowQuality', quality);
+        setShadowQuality(quality);
+      }
+
+      function applyDecorDensity(density) {
+        if (density !== 'low' && density !== 'medium' && density !== 'full') return;
+        localStorage.setItem('graphicsDecorDensity', density);
+        setDecorDensity(density);
+        // Regenerate decor with new density
+        scheduleDecorGeneration(true);
+      }
+
+      // Get decor density values based on setting
+      function getDecorDensityParams() {
+        switch (decorDensity) {
+          case 'low':
+            return { treeDensity: 0.3, buildingDensity: 0.2 };
+          case 'medium':
+            return { treeDensity: 0.4, buildingDensity: 0.3 };
+          case 'full':
+          default:
+            return { treeDensity: 0.55, buildingDensity: 0.4 };
+        }
+      }
+
+      // Get shadow strength based on setting
+      function getShadowStrength() {
+        switch (shadowQuality) {
+          case 'off':
+            return 0;
+          case 'low':
+            return 0.25;
+          case 'full':
+          default:
+            return 0.55;
+        }
+      }
+
       function handleZoomMaxDeltaChange(nextValue) {
         const parsed = typeof nextValue === "number" ? nextValue : parseFloat(nextValue);
         if (!Number.isFinite(parsed)) return;
@@ -2840,11 +2894,13 @@
         const source = decorSourceRef.current;
         if (!source) return;
         const atlas = decorAtlasRef.current || Decor.getAtlas && Decor.getAtlas();
+        // Use density settings from Graphics Settings UI
+        const densityParams = getDecorDensityParams();
         const params = {
-          treeDensity,
-          buildingDensity,
+          treeDensity: densityParams.treeDensity,
+          buildingDensity: densityParams.buildingDensity,
           kerbWidthScale: kerbWidthScaleParam,
-          shadowStrength: shadowStrengthParam,
+          shadowStrength: getShadowStrength(),
         };
         const dpr = (typeof window !== "undefined" && window.devicePixelRatio) ? window.devicePixelRatio : 1;
         const worldScale = source.worldScale || 1;
@@ -2853,6 +2909,8 @@
           key: source.trackKey,
           seed,
           params,
+          decorDensity, // Include setting so signature changes when density changes
+          shadowQuality, // Include setting so signature changes when shadow changes
           width: source.width,
           height: source.height,
           roadWidth: source.roadWidth,
@@ -3192,64 +3250,99 @@
         let ghostLapStartTime = 0; // When current lap started (for ghost recording)
         // --- Speedometer init ---
         let speedoCtrl = null;
-        let speedoScriptRequested = false;
-        function ensureSpeedometerScript() {
-          if (window.RacerUI && window.RacerUI.Speedometer) return true;
-          if (speedoScriptRequested) return false;
-          const script = document.createElement('script');
-          script.src = `ui/speedometer.js?v=${Date.now()}`;
-          script.defer = true;
-          script.onload = () => {
-            speedoScriptRequested = false;
-            tryInitSpeedometer();
-          };
-          script.onerror = () => { speedoScriptRequested = false; };
-          document.head.appendChild(script);
-          speedoScriptRequested = true;
-          return false;
-        }
-        function tryInitSpeedometer() {
-          if (speedoCtrl) return;
-          if (!(window.RacerUI && window.RacerUI.Speedometer)) {
-            ensureSpeedometerScript();
-            return;
+        let speedoScriptLoaded = false;
+        let speedoLoadPromise = null;
+
+        // Load speedometer script and return a promise
+        function loadSpeedometerScript() {
+          if (window.RacerUI && window.RacerUI.Speedometer) {
+            speedoScriptLoaded = true;
+            return Promise.resolve(true);
           }
+          if (speedoLoadPromise) return speedoLoadPromise;
+
+          speedoLoadPromise = new Promise((resolve) => {
+            const script = document.createElement('script');
+            script.src = `ui/speedometer.js?v=${Date.now()}`;
+            script.defer = true;
+            script.onload = () => {
+              speedoScriptLoaded = true;
+              resolve(true);
+            };
+            script.onerror = () => {
+              console.warn('Speedometer script failed to load');
+              resolve(false); // Don't block on failure
+            };
+            document.head.appendChild(script);
+          });
+          return speedoLoadPromise;
+        }
+
+        function initSpeedometer() {
+          if (speedoCtrl) return true;
+          if (!(window.RacerUI && window.RacerUI.Speedometer)) return false;
           try {
             speedoCtrl = window.RacerUI.Speedometer.init({ bottomOffset: 10, width: 420, mphMax: 180, smoothing: 0.18 });
+            return true;
           } catch (err) {
             console.warn('Speedometer init failed', err);
+            return false;
           }
         }
-        ensureSpeedometerScript();
-        tryInitSpeedometer();
+
+        // Start loading speedometer script immediately (will be awaited in warmup)
+        loadSpeedometerScript();
+
         window.playerCar = player;
-        const loadGearboxModule = () => {
-          if (window.GearboxModule) return Promise.resolve(window.GearboxModule);
-          if (window.__gearboxModulePromise) return window.__gearboxModulePromise;
+
+        // Gearbox module loading with proper promise tracking
+        let gearboxLoaded = false;
+        let gearboxLoadPromise = null;
+
+        function loadGearboxModule() {
+          if (window.GearboxModule) {
+            gearboxLoaded = true;
+            return Promise.resolve(window.GearboxModule);
+          }
+          if (gearboxLoadPromise) return gearboxLoadPromise;
+
           let loader;
           if (typeof window.importShim === 'function') {
             loader = window.importShim('./gearbox.js');
           } else {
             loader = eval('import("./gearbox.js")');
           }
-          window.__gearboxModulePromise = loader.then((mod) => {
+          gearboxLoadPromise = loader.then((mod) => {
             window.GearboxModule = mod;
+            gearboxLoaded = true;
             return mod;
           }).catch((err) => {
-            window.__gearboxModulePromise = null;
-            throw err;
+            gearboxLoadPromise = null;
+            console.warn('Gearbox module load failed', err);
+            return null; // Don't block on failure
           });
-          return window.__gearboxModulePromise;
-        };
-        loadGearboxModule().then(mod => {
-          const { Gearbox, gearboxDefaults } = mod;
-          window.GEARBOX_DEFAULTS = { ...gearboxDefaults };
-          let stored = null;
-          try { stored = JSON.parse(localStorage.getItem('gearboxCfg_activeProfile') || 'null'); } catch (_) { }
-          const gbxCfg = stored ? { ...gearboxDefaults, ...stored } : { ...gearboxDefaults };
-          player.gearbox = new Gearbox(gbxCfg);
-          try { if (window.RacerPhysics) window.RacerPhysics.initCar(player, player.kind); } catch (_) { }
-        }).catch(err => console.warn('Gearbox init failed', err));
+          return gearboxLoadPromise;
+        }
+
+        function initPlayerGearbox() {
+          if (!window.GearboxModule) return false;
+          try {
+            const { Gearbox, gearboxDefaults } = window.GearboxModule;
+            window.GEARBOX_DEFAULTS = { ...gearboxDefaults };
+            let stored = null;
+            try { stored = JSON.parse(localStorage.getItem('gearboxCfg_activeProfile') || 'null'); } catch (_) { }
+            const gbxCfg = stored ? { ...gearboxDefaults, ...stored } : { ...gearboxDefaults };
+            player.gearbox = new Gearbox(gbxCfg);
+            try { if (window.RacerPhysics) window.RacerPhysics.initCar(player, player.kind); } catch (_) { }
+            return true;
+          } catch (err) {
+            console.warn('Gearbox init failed', err);
+            return false;
+          }
+        }
+
+        // Start loading gearbox module immediately (will be awaited in warmup)
+        loadGearboxModule();
         const modeConfig = getCurrentModeConfig();
         const DEFAULT_AI_CAR_COUNT = (START_PAYLOAD && typeof START_PAYLOAD.botCount === 'number') ? START_PAYLOAD.botCount : ((modeConfig && modeConfig.ai && typeof modeConfig.ai.count === 'number') ? modeConfig.ai.count : 9);
         const LAPS_TO_FINISH = (START_PAYLOAD && typeof START_PAYLOAD.laps === 'number') ? START_PAYLOAD.laps : 3;
@@ -4554,7 +4647,7 @@
 
           drawTrackMask();
           buildTrackSurfaceCanvas();
-          updateLoadingProgress(40);
+          updateLoadingProgress(20);
           const zones = Array.isArray(T.speedZones) && T.speedZones.length ? T.speedZones : [[0, Math.max(1, Math.floor(centerline.length / 24)), 220]];
           waypoints = buildWaypoints(centerline, zones);
           const storedLine = Array.isArray(T.racingLine) ? T.racingLine : null;
@@ -4590,7 +4683,7 @@
             checkpoints.push({ a: { x: a.x + nx * half, y: a.y + ny * half }, b: { x: a.x - nx * half, y: a.y - ny * half } });
           }
 
-          updateLoadingProgress(60);
+          updateLoadingProgress(30);
           decorSourceRef.current = {
             width: W,
             height: H,
@@ -4670,7 +4763,7 @@
 
           // Wait for assets to fully settle and frames to stabilize before starting race
           // Use multiple requestAnimationFrame calls to ensure smooth frame delivery
-          updateLoadingProgress(95);
+          updateLoadingProgress(35);
 
           // === PERFORMANCE: Warmup phase to reduce early-race stuttering ===
           // This runs physics and rendering code to trigger JIT compilation during loading
@@ -4678,16 +4771,97 @@
           // Mobile detection for warmup intensity (duplicate check - main one is later in file)
           const isMobileWarmup = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-          function warmupPhase() {
-            // 1. Check if decor generation is complete
-            const decorReady = !!(decorLayerRef.current && decorLayerRef.current.decorCanvas);
+          async function warmupPhase() {
+            updateLoadingProgress(40);
 
-            // 2. Check if critical sprites are loaded
-            const spritesReady = [clipperSprite, truckSprite, bubbleSprite].every(
+            // 1. Wait for critical modules to load (with timeout)
+            const moduleTimeout = 5000; // 5 second max wait
+            const moduleStart = performance.now();
+
+            // Wait for gearbox module
+            try {
+              await Promise.race([
+                loadGearboxModule(),
+                new Promise(resolve => setTimeout(resolve, moduleTimeout))
+              ]);
+              initPlayerGearbox();
+            } catch (_) { /* continue even if gearbox fails */ }
+
+            updateLoadingProgress(45);
+
+            // Wait for speedometer script
+            try {
+              await Promise.race([
+                loadSpeedometerScript(),
+                new Promise(resolve => setTimeout(resolve, moduleTimeout - (performance.now() - moduleStart)))
+              ]);
+              initSpeedometer();
+            } catch (_) { /* continue even if speedometer fails */ }
+
+            updateLoadingProgress(50);
+
+            // 2. Wait for fonts to be ready (with timeout)
+            try {
+              await Promise.race([
+                document.fonts.ready,
+                new Promise(resolve => setTimeout(resolve, 2000))
+              ]);
+            } catch (_) { /* continue even if fonts timeout */ }
+
+            updateLoadingProgress(55);
+
+            // 3. Pre-render all fonts used in the game (force font rasterization)
+            if (ctx) {
+              ctx.save();
+              ctx.globalAlpha = 0;
+              const fonts = [
+                "bold 36px ui-sans-serif, system-ui",
+                "800 32px ui-sans-serif, system-ui",
+                "600 18px ui-sans-serif, system-ui",
+                "800 140px ui-sans-serif, system-ui, -apple-system",
+                "bold 48px system-ui",
+                "bold 20px system-ui",
+                "12px ui-sans-serif, system-ui"
+              ];
+              fonts.forEach(font => {
+                ctx.font = font;
+                ctx.fillText("0123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", -1000, -1000);
+              });
+              ctx.restore();
+            }
+
+            updateLoadingProgress(60);
+
+            // 4. Check if decor generation is complete - wait for it if not
+            let decorReady = !!(decorLayerRef.current && decorLayerRef.current.decorCanvas);
+            if (!decorReady) {
+              // Force decor generation and wait
+              const decorWaitStart = performance.now();
+              const decorMaxWait = 3000; // 3 second max wait for decor
+              while (!decorReady && (performance.now() - decorWaitStart) < decorMaxWait) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+                decorReady = !!(decorLayerRef.current && decorLayerRef.current.decorCanvas);
+              }
+            }
+
+            updateLoadingProgress(70);
+
+            // 5. Check if critical sprites are loaded - wait for them
+            const spriteMaxWait = 3000;
+            const spriteWaitStart = performance.now();
+            let spritesReady = [clipperSprite, truckSprite, bubbleSprite].every(
               img => !img || (img.complete && img.naturalWidth > 0)
             );
+            while (!spritesReady && (performance.now() - spriteWaitStart) < spriteMaxWait) {
+              await new Promise(resolve => setTimeout(resolve, 50));
+              spritesReady = [clipperSprite, truckSprite, bubbleSprite].every(
+                img => !img || (img.complete && img.naturalWidth > 0)
+              );
+            }
 
-            // 3. Run warmup physics steps (invisible, just to JIT compile)
+            updateLoadingProgress(75);
+
+            // 6. Run warmup physics steps (invisible, just to JIT compile)
             // Reduced on mobile to prevent crashes
             const physicsAPI = window.RacerPhysics;
             if (physicsAPI && typeof physicsAPI.planckBeginStep === 'function') {
@@ -4701,7 +4875,7 @@
               } catch (_) { /* ignore warmup errors */ }
             }
 
-            // 4. Pre-draw sprites to force GPU texture upload
+            // 7. Pre-draw sprites to force GPU texture upload
             if (ctx && spritesReady) {
               ctx.save();
               ctx.globalAlpha = 0; // Invisible
@@ -4713,11 +4887,13 @@
               ctx.restore();
             }
 
-            // 5. Force canvas sizing to final dimensions now
+            updateLoadingProgress(80);
+
+            // 8. Force canvas sizing to final dimensions now
             // This ensures all subsequent warmup renders use the correct resolution
             sizeBackbufferToViewport();
 
-            // 6. Run render warmup frames to warm GPU pipeline (SKIP on mobile to prevent crashes)
+            // 9. Run render warmup frames to warm GPU pipeline (SKIP on mobile to prevent crashes)
             // Mobile devices can crash with synchronous render loops
             if (!isMobileWarmup) {
               const warmupRenderCount = 3;
@@ -4729,28 +4905,10 @@
               }
             }
 
-            // 7. Pre-warm countdown overlay rendering (lightweight, safe for mobile)
-            if (ctx) {
-              ctx.save();
-              ctx.globalAlpha = 0;
-              ctx.font = "800 140px ui-sans-serif, system-ui, -apple-system";
-              ctx.fillText("3", -1000, -1000);
-              ctx.restore();
-            }
+            updateLoadingProgress(90);
 
-            updateLoadingProgress(100);
-
-            // If everything is ready, proceed to frame stability check
-            // Otherwise wait a bit more for decor
-            if (decorReady && spritesReady) {
-              startFrameStabilityCheck();
-            } else {
-              // Give decor more time, check again
-              setTimeout(() => {
-                // After more time, proceed anyway (don't block forever)
-                startFrameStabilityCheck();
-              }, 400);
-            }
+            // 10. Proceed to frame stability check
+            startFrameStabilityCheck();
           }
 
           function startFrameStabilityCheck() {
@@ -4860,6 +5018,32 @@
         // ===== Car rendering (detailed) =====
         // ===== Car rendering (per-vehicle models) =====
         // ===== Car rendering (distinct per-vehicle models) =====
+
+        // Gradient cache to avoid creating new gradients every frame
+        // Key format: "length_color" -> gradient object
+        const carGradientCache = new Map();
+        const MAX_GRADIENT_CACHE_SIZE = 50;
+
+        function getCachedGradient(ctx, carLength, color) {
+          const key = `${Math.round(carLength)}_${color}`;
+          if (carGradientCache.has(key)) {
+            return carGradientCache.get(key);
+          }
+          // Create new gradient
+          const g = ctx.createLinearGradient(0, -carLength / 2, 0, carLength / 2);
+          g.addColorStop(0, '#eef1f5');
+          g.addColorStop(0.45, color);
+          g.addColorStop(1, '#1a1f26');
+          // Cache it (with size limit to prevent memory leaks)
+          if (carGradientCache.size >= MAX_GRADIENT_CACHE_SIZE) {
+            // Remove oldest entry
+            const firstKey = carGradientCache.keys().next().value;
+            carGradientCache.delete(firstKey);
+          }
+          carGradientCache.set(key, g);
+          return g;
+        }
+
         function drawCarDetailed(ctx, car) {
           ctx.save();
           ctx.translate(car.x, car.y);
@@ -4883,11 +5067,9 @@
           function poly(points) { ctx.beginPath(); ctx.moveTo(points[0][0], points[0][1]); for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]); ctx.closePath(); }
           function circle(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.closePath(); }
           function gradBody(col) {
-            const g = ctx.createLinearGradient(0, -L / 2, 0, L / 2);
-            g.addColorStop(0, '#eef1f5');
-            g.addColorStop(0.45, col || (car.color || '#c23'));
-            g.addColorStop(1, '#1a1f26');
-            return g;
+            // Use cached gradient to avoid per-frame allocation
+            const color = col || (car.color || '#c23');
+            return getCachedGradient(ctx, L, color);
           }
           function wheel(x, y, a, ww, ll) {
             ctx.save(); ctx.translate(x, y); ctx.rotate(a);
@@ -5291,14 +5473,12 @@
             for (const cp of checkpoints) { ctx.beginPath(); ctx.moveTo(cp.a.x, cp.a.y); ctx.lineTo(cp.b.x, cp.b.y); ctx.stroke(); }
           }
 
-          if (decorLayer && decorLayer.shadowCanvas) {
+          // Shadow rendering - skip if shadow quality is 'off' for performance
+          const currentShadowStrength = getShadowStrength();
+          if (decorLayer && decorLayer.shadowCanvas && currentShadowStrength > 0) {
             ctx.save();
             ctx.globalCompositeOperation = "multiply";
-            const meta = decorLayer.metadata;
-            const shadowAlpha = meta && meta.params && typeof meta.params.shadowStrength === "number"
-              ? meta.params.shadowStrength
-              : shadowStrengthParam;
-            ctx.globalAlpha = shadowAlpha;
+            ctx.globalAlpha = currentShadowStrength;
             drawLayerImage(ctx, decorLayer.shadowCanvas, decorMapping, regionX, regionY, regionW, regionH);
             ctx.restore();
           }
@@ -6299,8 +6479,7 @@
               ghostRecording.push({ x: player.x, y: player.y, angle: player.angle, t });
             }
           }
-          tryInitSpeedometer();
-          // --- Speedometer update ---
+          // --- Speedometer update (initialized during loading) ---
           if (speedoCtrl) {
             const ppm = (window.PlanckWorld && window.PlanckWorld.PPM_DEFAULT) || 30;
             // speed (px/s -> m/s -> mph)
@@ -6593,6 +6772,34 @@
                 <button
                   style={{flex:1, padding:'8px 4px', background: graphicsQuality==='low' ? 'var(--accent, #ef4444)' : '#333', border:'none', borderRadius:'4px', color:'#fff', cursor:'pointer', fontSize:'12px'}}
                   onClick={() => applyGraphicsQuality('low')}>Low</button>
+              </div>
+            </label>
+            <label>
+              <span>Shadows</span>
+              <div className="quality-buttons" style={{display:'flex',gap:'8px',marginTop:'4px'}}>
+                <button
+                  style={{flex:1, padding:'8px 4px', background: shadowQuality==='full' ? 'var(--accent, #ef4444)' : '#333', border:'none', borderRadius:'4px', color:'#fff', cursor:'pointer', fontSize:'12px'}}
+                  onClick={() => applyShadowQuality('full')}>Full</button>
+                <button
+                  style={{flex:1, padding:'8px 4px', background: shadowQuality==='low' ? 'var(--accent, #ef4444)' : '#333', border:'none', borderRadius:'4px', color:'#fff', cursor:'pointer', fontSize:'12px'}}
+                  onClick={() => applyShadowQuality('low')}>Low</button>
+                <button
+                  style={{flex:1, padding:'8px 4px', background: shadowQuality==='off' ? 'var(--accent, #ef4444)' : '#333', border:'none', borderRadius:'4px', color:'#fff', cursor:'pointer', fontSize:'12px'}}
+                  onClick={() => applyShadowQuality('off')}>Off</button>
+              </div>
+            </label>
+            <label>
+              <span>Scenery</span>
+              <div className="quality-buttons" style={{display:'flex',gap:'8px',marginTop:'4px'}}>
+                <button
+                  style={{flex:1, padding:'8px 4px', background: decorDensity==='full' ? 'var(--accent, #ef4444)' : '#333', border:'none', borderRadius:'4px', color:'#fff', cursor:'pointer', fontSize:'12px'}}
+                  onClick={() => applyDecorDensity('full')}>Full</button>
+                <button
+                  style={{flex:1, padding:'8px 4px', background: decorDensity==='medium' ? 'var(--accent, #ef4444)' : '#333', border:'none', borderRadius:'4px', color:'#fff', cursor:'pointer', fontSize:'12px'}}
+                  onClick={() => applyDecorDensity('medium')}>Medium</button>
+                <button
+                  style={{flex:1, padding:'8px 4px', background: decorDensity==='low' ? 'var(--accent, #ef4444)' : '#333', border:'none', borderRadius:'4px', color:'#fff', cursor:'pointer', fontSize:'12px'}}
+                  onClick={() => applyDecorDensity('low')}>Low</button>
               </div>
             </label>
             <h3>Track scale</h3>
