@@ -38,11 +38,11 @@
     const canvas = (typeof OffscreenCanvas !== "undefined" && typeof document === "undefined")
       ? new OffscreenCanvas(width, height)
       : (() => {
-          const cnv = (typeof document !== "undefined") ? document.createElement("canvas") : new OffscreenCanvas(width, height);
-          cnv.width = width;
-          cnv.height = height;
-          return cnv;
-        })();
+        const cnv = (typeof document !== "undefined") ? document.createElement("canvas") : new OffscreenCanvas(width, height);
+        cnv.width = width;
+        cnv.height = height;
+        return cnv;
+      })();
     if (canvas.width !== width) canvas.width = width;
     if (canvas.height !== height) canvas.height = height;
     const ctx = canvas.getContext("2d", willRead ? { willReadFrequently: true } : undefined) || canvas.getContext("2d");
@@ -142,13 +142,13 @@
     atlasPromise = new Promise((resolve) => {
       const img = new Image();
       img.onload = function () {
-      if (img.naturalWidth < 160 || img.naturalHeight < 64) {
-        atlasImage = null;
-        resolve(null);
-        return;
-      }
-      atlasImage = img;
-      resolve(img);
+        if (img.naturalWidth < 160 || img.naturalHeight < 64) {
+          atlasImage = null;
+          resolve(null);
+          return;
+        }
+        atlasImage = img;
+        resolve(img);
       };
       img.onerror = function () {
         atlasImage = null;
@@ -270,9 +270,9 @@
     const normals = [];
     const half = (roadWidth || 80) * 0.5;
     const n = centerline.length;
-    
+
     if (n < 2) return { inner, outer, normals };
-    
+
     // Pre-compute segment normals
     const segNormals = [];
     for (let i = 0; i < n - 1; i++) {
@@ -290,14 +290,14 @@
     const dyClose = firstPt.y - lastPt.y;
     const lenClose = Math.hypot(dxClose, dyClose) || 1;
     segNormals.push({ x: -dyClose / lenClose, y: dxClose / lenClose });
-    
+
     for (let i = 0; i < n; i++) {
       const pt = centerline[i];
-      
+
       // Get normals of adjacent segments
       const prevSegIdx = (i - 1 + n) % n;
       const currSegIdx = i % segNormals.length;
-      
+
       // For first point, use next segment normal; for others, average prev and curr
       let nx, ny;
       if (i === 0) {
@@ -319,29 +319,29 @@
         nx = (n1.x + n2.x) / 2;
         ny = (n1.y + n2.y) / 2;
       }
-      
+
       // Normalize the averaged normal
       const avgLen = Math.hypot(nx, ny) || 1;
       nx /= avgLen;
       ny /= avgLen;
-      
+
       // Calculate miter factor (how much to extend/contract at corners)
       // For sharp corners (low avgLen before normalization), this can get very large
       // Limit it to prevent extreme miter extensions
       const miterFactor = 1 / (avgLen + 0.001);
-      
+
       // For inner curve (negative offset), limit the offset at sharp corners
       // to prevent self-intersection
       // The key insight: at sharp inward corners, reduce the inner offset
       let innerOffset = half;
       let outerOffset = half;
-      
+
       // Check if this is a sharp corner by looking at the angle between normals
       if (i > 0 && i < n - 1) {
         const n1 = segNormals[i - 1];
         const n2 = segNormals[i];
         const dot = n1.x * n2.x + n1.y * n2.y;
-        
+
         // dot < 1 means there's an angle; dot < 0 means > 90 degree turn
         if (dot < 0.7) {
           // Sharp corner - limit the inner offset to prevent overlap
@@ -352,20 +352,20 @@
           outerOffset = half * Math.min(1.5, 1 / Math.max(0.5, avgLen));
         }
       }
-      
+
       normals.push({ x: nx, y: ny });
-      inner.push({ 
-        x: pt.x - nx * innerOffset, 
-        y: pt.y - ny * innerOffset, 
-        nx, ny 
+      inner.push({
+        x: pt.x - nx * innerOffset,
+        y: pt.y - ny * innerOffset,
+        nx, ny
       });
-      outer.push({ 
-        x: pt.x + nx * outerOffset, 
-        y: pt.y + ny * outerOffset, 
-        nx, ny 
+      outer.push({
+        x: pt.x + nx * outerOffset,
+        y: pt.y + ny * outerOffset,
+        nx, ny
       });
     }
-    
+
     return { inner, outer, normals };
   }
 
@@ -675,17 +675,17 @@
     const stripeLength = 18;
     const kerbWidth = Math.max(6, 0.14 * params.roadWidth * params.kerbWidthScale);
     let acc = 0;
-    
+
     // First pass: collect all potential stripes
     const potentialStripes = [];
     for (let i = 0; i < edgePoints.length - 1; i++) {
       const a = edgePoints[i];
       const b = edgePoints[i + 1];
       const segLen = Math.hypot(b.x - a.x, b.y - a.y);
-      
+
       // Skip very short segments (can cause issues at sharp corners)
       if (segLen < 2) continue;
-      
+
       // Check for "folded" segments at sharp corners (inner edge crossing itself)
       // by comparing direction with previous segment
       if (i > 0) {
@@ -694,14 +694,14 @@
         const currDir = { x: b.x - a.x, y: b.y - a.y };
         const cross = prevDir.x * currDir.y - prevDir.y * currDir.x;
         const dot = prevDir.x * currDir.x + prevDir.y * currDir.y;
-        
+
         // If the segment has reversed direction significantly, skip it
         // This happens when the inner edge folds back on itself at sharp corners
         if (dot < 0 && side === "inner") {
           continue;
         }
       }
-      
+
       const segAngle = Math.atan2(b.y - a.y, b.x - a.x);
       let t = 0;
       while (t < segLen) {
@@ -725,19 +725,19 @@
         acc += stripeLength;
       }
     }
-    
+
     // Second pass: filter out stripes that would cause visual artifacts
     // Check for stripes from non-adjacent segments that intersect
     for (let i = 0; i < potentialStripes.length; i++) {
       const s1 = potentialStripes[i];
       let hasIntersection = false;
-      
+
       // Check against nearby (but not adjacent) stripes
       for (let j = i + 3; j < Math.min(i + 20, potentialStripes.length); j++) {
         const s2 = potentialStripes[j];
         // Skip if from same or adjacent segments
         if (Math.abs(s1.segIdx - s2.segIdx) <= 2) continue;
-        
+
         if (segmentsIntersect(
           { x: s1.x1, y: s1.y1 }, { x: s1.x2, y: s1.y2 },
           { x: s2.x1, y: s2.y1 }, { x: s2.x2, y: s2.y2 }
@@ -746,12 +746,12 @@
           break;
         }
       }
-      
+
       if (!hasIntersection) {
         stripes.push(s1);
       }
     }
-    
+
     return stripes;
   }
 
@@ -800,7 +800,7 @@
 
   function sampleTrees(zones, rng, params) {
     const { width, height, greenMask, offsetX = 0, offsetY = 0 } = zones;
-  const minSpacing = TREE_MIN_SPACING;
+    const minSpacing = TREE_MIN_SPACING;
     const target = Math.min(
       Math.floor((width * height) / 2800 * params.treeDensity),
       900
@@ -970,27 +970,34 @@
       const wallY = pt.y + ny * wallOffset;
 
       // Check if this wall point falls IN THE GAP between close track sections
-      // This happens when the wall point is closer to another track section's edge
-      // than to its own track edge, AND the other section is "in front" of the wall
-      // (in the direction the wall normal points)
+      // This happens when:
+      // 1. There's another track section nearby (far in index, close in distance)
+      // 2. The wall point is closer to THAT other section than to the grass
+      //    (meaning it's sandwiched between the two sections)
       let betweenSections = false;
       for (let j = 0; j < outer.length; j++) {
         const indexDist = Math.min(Math.abs(i - j), outer.length - Math.abs(i - j));
         if (indexDist < minIndexGap) continue;
 
         const otherPt = outer[j];
-        const distToOther = Math.hypot(wallX - otherPt.x, wallY - otherPt.y);
 
-        // Check if the other track point is in the direction of the wall normal
-        // (i.e., the wall would be pointing toward the other track section)
-        const toOtherX = otherPt.x - pt.x;
-        const toOtherY = otherPt.y - pt.y;
-        const dotProduct = toOtherX * nx + toOtherY * ny;
+        // Distance from the wall point to the other section's outer edge
+        const distWallToOther = Math.hypot(wallX - otherPt.x, wallY - otherPt.y);
 
-        // If the other track section is in the direction of our wall (dot > 0)
-        // AND the wall point is very close to that other section
-        // THEN this wall would fall in the gap between sections
-        if (dotProduct > 0 && distToOther < wallOffset * 0.5) {
+        // Only consider nearby track sections
+        if (distWallToOther > roadWidth * 1.5) continue;
+
+        // Check if the other track's normal points TOWARD our wall point
+        // (meaning our wall would be in the gap between the two track sections)
+        const otherNx = otherPt.nx || 0;
+        const otherNy = otherPt.ny || 0;
+        const toWallX = wallX - otherPt.x;
+        const toWallY = wallY - otherPt.y;
+        const otherDot = toWallX * otherNx + toWallY * otherNy;
+
+        // If the other section's outward normal points toward our wall point,
+        // then our wall is in the gap between the two sections
+        if (otherDot > 0 && distWallToOther < wallOffset * 0.8) {
           betweenSections = true;
           break;
         }
@@ -1471,7 +1478,7 @@
     const edges = buildEdges(centerline, roadWidth);
     const curvature = computeCurvature(centerline);
     const kerbs = createKerbs(edges, curvature, effectiveParams);
-  const barriers = createBarriers(edges, curvature, effectiveParams, rng, zones);
+    const barriers = createBarriers(edges, curvature, effectiveParams, rng, zones);
     const trees = sampleTrees(zones, rng, effectiveParams);
     const buildings = createBuildings(edges, zones, rng, effectiveParams);
     const innerWalls = createInnerWalls(edges, zones, effectiveParams);
@@ -1547,11 +1554,11 @@
 
     const rawBounds = options.bounds && typeof options.bounds === "object"
       ? {
-          minX: Number(options.bounds.minX) ?? 0,
-          minY: Number(options.bounds.minY) ?? 0,
-          maxX: Number(options.bounds.maxX) ?? worldWidth,
-          maxY: Number(options.bounds.maxY) ?? worldHeight,
-        }
+        minX: Number(options.bounds.minX) ?? 0,
+        minY: Number(options.bounds.minY) ?? 0,
+        maxX: Number(options.bounds.maxX) ?? worldWidth,
+        maxY: Number(options.bounds.maxY) ?? worldHeight,
+      }
       : computeBounds(options.centerline, worldWidth, worldHeight);
     const pad = (options.boundsPadding != null ? Number(options.boundsPadding) : (roadWidth * 1.25 + BUFFER_RADIUS));
     const bounds = expandBounds(rawBounds, pad, worldWidth, worldHeight);
