@@ -1026,6 +1026,8 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     world: null,
     trackBody: null,
     trackSegments: [],
+    innerWallSegments: [], // Inner wall segments for collision
+    innerWallBodies: [], // Planck bodies for inner walls
     ppm: PLANCK_DEFAULTS.pixelsPerMeter,
     velIters: PLANCK_DEFAULTS.velIters,
     posIters: PLANCK_DEFAULTS.posIters,
@@ -1048,6 +1050,11 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       try { planckState.world.destroyBody(planckState.trackBody); } catch (_) { }
     }
     planckState.trackBody = null;
+    // Destroy inner wall bodies
+    for (const wallBody of planckState.innerWallBodies) {
+      try { planckState.world.destroyBody(wallBody); } catch (_) { }
+    }
+    planckState.innerWallBodies = [];
     planckState.world = null;
   }
 
@@ -1068,6 +1075,11 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     planckState.needsWorldBuild = true;
   }
 
+  function configureInnerWalls(wallSegments) {
+    planckState.innerWallSegments = Array.isArray(wallSegments) ? wallSegments.slice() : [];
+    planckState.needsWorldBuild = true;
+  }
+
   function rebuildPlanckWorld({ cars } = {}) {
     const carList = Array.isArray(cars) ? cars.slice() : Array.from(planckState.carEntries.keys());
     destroyPlanckWorld();
@@ -1075,6 +1087,31 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     planckState.world = world;
     // Wall behavior permanently disabled - cars can freely drive over curbs onto grass
     planckState.trackBody = null;
+
+    // Create inner wall physics bodies
+    planckState.innerWallBodies = [];
+    if (planckState.innerWallSegments && planckState.innerWallSegments.length > 0) {
+      const pl = window.planck;
+      if (pl && world) {
+        const ppm = planckState.ppm || PPM_DEFAULT;
+        const restitution = planckState.restitution || 0.3;
+
+        for (const seg of planckState.innerWallSegments) {
+          try {
+            const wallBody = world.createBody({ type: 'static' });
+            const v1 = pl.Vec2(meters(seg.x1, ppm), meters(seg.y1, ppm));
+            const v2 = pl.Vec2(meters(seg.x2, ppm), meters(seg.y2, ppm));
+            const edgeShape = pl.Edge(v1, v2);
+            wallBody.createFixture(edgeShape, {
+              friction: 0.6,
+              restitution: restitution
+            });
+            planckState.innerWallBodies.push(wallBody);
+          } catch (_) { /* Skip invalid wall segments */ }
+        }
+      }
+    }
+
     planckState.needsWorldBuild = false;
     planckState.steppedThisFrame = false;
     planckState.pendingDt = 0;
@@ -3076,6 +3113,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     injectDevTools,
     injectVehicleTweaker,
     configureTrackCollision,
+    configureInnerWalls,
     rebuildPlanckWorld,
     registerPlanckCars,
     planckBeginStep,

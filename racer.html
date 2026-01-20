@@ -4521,6 +4521,24 @@
             planckPPM = ppm;
             const restitution = (player && player.physics && player.physics.params && player.physics.params.restitution) || 0;
             window.RacerPhysics.configureTrackCollision(planckSegments, { ppm, restitution });
+
+            // Configure inner walls for physics collision
+            if (decorLayerRef.current && decorLayerRef.current.metadata && decorLayerRef.current.metadata.items && decorLayerRef.current.metadata.items.innerWalls) {
+              const innerWalls = decorLayerRef.current.metadata.items.innerWalls;
+              const wallSegments = innerWalls.map(wall => {
+                const halfLen = wall.length * 0.5;
+                const cos = Math.cos(wall.angle);
+                const sin = Math.sin(wall.angle);
+                return {
+                  x1: wall.x - cos * halfLen,
+                  y1: wall.y - sin * halfLen,
+                  x2: wall.x + cos * halfLen,
+                  y2: wall.y + sin * halfLen
+                };
+              });
+              window.RacerPhysics.configureInnerWalls(wallSegments);
+            }
+
             const cars = planckCars();
             if (cars.length) {
               window.RacerPhysics.rebuildPlanckWorld({ cars });

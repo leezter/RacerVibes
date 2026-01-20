@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(python -m http.server:*)",
-      "Bash(npx http-server:*)"
+      "Bash(npx http-server:*)",
+      "Bash(git log:*)"
     ]
   }
 }

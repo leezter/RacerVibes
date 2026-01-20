@@ -15,6 +15,7 @@
   const BUILDING_SPACING = 160;
   const BARRIER_SPACING = 42;
   const BARRIER_CURVATURE_THRESHOLD = 0.35;
+  const INNER_WALL_SEGMENT_LENGTH = 80; // Length of each wall segment on inner edge
   const EDGE_SHADOW_BLUR = 8;
   const SPRITE_ATLAS_URL = "assets/decor/decor_atlas.png";
 
@@ -385,6 +386,152 @@
     return curv;
   }
 
+  /**
+   * Ensure a path is closed (first and last points match).
+   */
+  function ensureClosedPath(points) {
+    if (!points || points.length < 2) return points;
+    const first = points[0];
+    const last = points[points.length - 1];
+    if (Math.abs(first.x - last.x) > 0.1 || Math.abs(first.y - last.y) > 0.1) {
+      return [...points, { x: first.x, y: first.y }];
+    }
+    return points;
+  }
+
+  /**
+   * Laplacian smoothing for wall paths to eliminate sharp corners.
+   * Adapted from track_editor.js relaxPath().
+   */
+  function relaxWallPath(points, iterations = 1, strength = 0.5) {
+    let pts = ensureClosedPath(points).map(p => ({ x: p.x, y: p.y, nx: p.nx, ny: p.ny }));
+    const n = pts.length;
+    if (n < 4) return pts;
+
+    for (let k = 0; k < iterations; k++) {
+      const next = new Array(n);
+
+      for (let i = 0; i < n - 1; i++) {
+        const prevIdx = (i - 1 + n - 1) % (n - 1);
+        const nextIdx = (i + 1) % (n - 1);
+
+        const prev = pts[prevIdx];
+        const curr = pts[i];
+        const nextPt = pts[nextIdx];
+
+        // Move towards midpoint of neighbors
+        const midX = (prev.x + nextPt.x) / 2;
+        const midY = (prev.y + nextPt.y) / 2;
+
+        next[i] = {
+          x: curr.x + (midX - curr.x) * strength,
+          y: curr.y + (midY - curr.y) * strength,
+          nx: curr.nx,
+          ny: curr.ny
+        };
+      }
+      next[n - 1] = { ...next[0] };
+      pts = next;
+    }
+    return pts;
+  }
+
+  /**
+   * Calculate the signed curvature at a point given its neighbors.
+   * Returns: curvature (1/radius).
+   */
+  function calcWallCurvature(prev, curr, next) {
+    const v1x = curr.x - prev.x;
+    const v1y = curr.y - prev.y;
+    const v2x = next.x - curr.x;
+    const v2y = next.y - curr.y;
+
+    const cross = v1x * v2y - v1y * v2x;
+    const dot = v1x * v2x + v1y * v2y;
+    const len1 = Math.hypot(v1x, v1y) || 1;
+    const len2 = Math.hypot(v2x, v2y) || 1;
+
+    const angle = Math.atan2(cross, dot);
+    const avgLen = (len1 + len2) / 2;
+
+    return angle / avgLen;
+  }
+
+  /**
+   * Enforce minimum turning radius by iteratively smoothing points
+   * where curvature exceeds the limit. Prevents wall overlap at sharp corners.
+   * Adapted from track_editor.js enforceMinimumRadius().
+   */
+  function enforceMinimumWallRadius(points, minRadius, maxIterations = 200) {
+    let pts = ensureClosedPath(points).map(p => ({ x: p.x, y: p.y, nx: p.nx, ny: p.ny }));
+    const n = pts.length;
+    if (n < 4) return pts;
+
+    const maxCurvature = 1 / minRadius;
+
+    for (let iter = 0; iter < maxIterations; iter++) {
+      let maxViolation = 0;
+      const next = pts.map(p => ({ x: p.x, y: p.y, nx: p.nx, ny: p.ny }));
+
+      for (let i = 0; i < n - 1; i++) {
+        const prevIdx = (i - 1 + n - 1) % (n - 1);
+        const nextIdx = (i + 1) % (n - 1);
+
+        const prev = pts[prevIdx];
+        const curr = pts[i];
+        const nextPt = pts[nextIdx];
+
+        const curvature = Math.abs(calcWallCurvature(prev, curr, nextPt));
+
+        if (curvature > maxCurvature) {
+          const violation = curvature / maxCurvature;
+          maxViolation = Math.max(maxViolation, violation);
+
+          // Aggressive blend - higher violations get moved almost all the way
+          const blend = Math.min(0.95, 0.5 + 0.3 * violation);
+          const midX = (prev.x + nextPt.x) / 2;
+          const midY = (prev.y + nextPt.y) / 2;
+
+          next[i] = {
+            x: curr.x + (midX - curr.x) * blend,
+            y: curr.y + (midY - curr.y) * blend,
+            nx: curr.nx,
+            ny: curr.ny
+          };
+        }
+      }
+
+      next[n - 1] = { ...next[0] };
+      pts = next;
+
+      if (maxViolation <= 1.0) break;
+    }
+
+    return pts;
+  }
+
+  /**
+   * Smooth wall path to prevent overlap at sharp corners.
+   * Uses the same approach as track curb smoothing.
+   */
+  function smoothWallPath(points, roadWidth) {
+    if (!points || points.length < 4) return points;
+
+    // Minimum turning radius based on road width (same as track curbs)
+    const minTurnRadius = roadWidth * 0.55;
+
+    // Stage 1: Laplacian relaxation (moderate - 20 iterations)
+    let smoothed = relaxWallPath(points, 20, 0.5);
+
+    // Stage 2: Enforce minimum radius
+    smoothed = enforceMinimumWallRadius(smoothed, minTurnRadius);
+
+    // Stage 3: Final smoothing pass
+    smoothed = relaxWallPath(smoothed, 10, 0.3);
+
+    return smoothed;
+  }
+
   function lerpPoint(a, b, t) {
     return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
   }
@@ -669,6 +816,235 @@
     return points;
   }
 
+  /**
+   * Build a continuous wall path from the outer edge.
+   * Returns an array of points that form the wall centerline with index info.
+   */
+  function buildWallPath(outer, roadWidth) {
+    if (!outer || outer.length < 3) return [];
+
+    const wallOffset = roadWidth * 0.6;
+    const path = [];
+
+    for (let i = 0; i < outer.length; i++) {
+      const pt = outer[i];
+      // Use stored normal if available, otherwise compute it
+      let nx = pt.nx;
+      let ny = pt.ny;
+
+      if (nx === undefined || ny === undefined) {
+        // Compute normal from adjacent points
+        const prev = outer[(i - 1 + outer.length) % outer.length];
+        const next = outer[(i + 1) % outer.length];
+        const dx = next.x - prev.x;
+        const dy = next.y - prev.y;
+        const len = Math.hypot(dx, dy) || 1;
+        nx = -dy / len;
+        ny = dx / len;
+      }
+
+      path.push({
+        x: pt.x + nx * wallOffset,
+        y: pt.y + ny * wallOffset,
+        idx: i
+      });
+    }
+
+    return path;
+  }
+
+  /**
+   * Find overlapping pairs of points from different track sections.
+   * Returns a map of index -> closest overlapping index from another section.
+   */
+  function findOverlapPairs(path, mergeDistance) {
+    const n = path.length;
+    const minIndexGap = Math.max(20, Math.floor(n * 0.15));
+    const overlapPairs = new Map(); // Maps index -> { partnerIdx, midpoint }
+
+    for (let i = 0; i < n; i++) {
+      let closestDist = mergeDistance;
+      let closestJ = -1;
+
+      for (let j = 0; j < n; j++) {
+        // Check circular distance - only consider points far apart in sequence
+        const indexDist = Math.min(Math.abs(i - j), n - Math.abs(i - j));
+        if (indexDist < minIndexGap) continue;
+
+        const dx = path[i].x - path[j].x;
+        const dy = path[i].y - path[j].y;
+        const dist = Math.hypot(dx, dy);
+
+        if (dist < closestDist) {
+          closestDist = dist;
+          closestJ = j;
+        }
+      }
+
+      if (closestJ >= 0) {
+        overlapPairs.set(i, {
+          partnerIdx: closestJ,
+          midpoint: {
+            x: (path[i].x + path[closestJ].x) / 2,
+            y: (path[i].y + path[closestJ].y) / 2
+          },
+          dist: closestDist
+        });
+      }
+    }
+
+    return overlapPairs;
+  }
+
+  /**
+   * Create wall data for continuous path-based rendering.
+   * When walls from different track sections overlap, they merge into one.
+   */
+  function createInnerWalls(edges, zones, params) {
+    const outer = edges.outer;
+    if (!outer || outer.length < 3) return { segments: [], stripeData: [] };
+
+    // Smooth the path to prevent sharp corner issues
+    const smoothedOuter = smoothWallPath(outer, params.roadWidth);
+
+    // Build wall centerline path
+    const wallPath = buildWallPath(smoothedOuter, params.roadWidth);
+    if (wallPath.length < 3) return { segments: [], stripeData: [] };
+
+    const n = wallPath.length;
+
+    // Find overlapping points and their partners
+    const mergeDistance = params.roadWidth * 1.2;
+    const overlapPairs = findOverlapPairs(wallPath, mergeDistance);
+
+    // Track which points have been "claimed" by a merged section
+    // Only one side of an overlap should draw (the one with lower index)
+    const suppressed = new Array(n).fill(false);
+
+    for (const [i, info] of overlapPairs) {
+      const j = info.partnerIdx;
+      // Suppress the higher-indexed point so only one wall is drawn
+      if (i < j) {
+        suppressed[j] = true;
+      } else {
+        suppressed[i] = true;
+      }
+    }
+
+    // Build final path: use midpoints for overlapping sections, regular points otherwise
+    const finalPath = [];
+    for (let i = 0; i < n; i++) {
+      if (suppressed[i]) continue;
+
+      if (overlapPairs.has(i)) {
+        // This point overlaps with another section - use midpoint
+        finalPath.push({
+          x: overlapPairs.get(i).midpoint.x,
+          y: overlapPairs.get(i).midpoint.y,
+          merged: true
+        });
+      } else {
+        // Regular point
+        finalPath.push({
+          x: wallPath[i].x,
+          y: wallPath[i].y,
+          merged: false
+        });
+      }
+    }
+
+    // Build continuous segments (split where there are large gaps)
+    const segments = [];
+    let currentSegment = [];
+    const maxGap = params.roadWidth * 0.8;
+
+    for (let i = 0; i < finalPath.length; i++) {
+      const pt = finalPath[i];
+
+      if (currentSegment.length > 0) {
+        const last = currentSegment[currentSegment.length - 1];
+        const gap = Math.hypot(pt.x - last.x, pt.y - last.y);
+
+        if (gap > maxGap) {
+          // Large gap - start new segment
+          if (currentSegment.length > 1) {
+            segments.push({ points: currentSegment });
+          }
+          currentSegment = [];
+        }
+      }
+
+      currentSegment.push(pt);
+    }
+
+    // Close the loop if endpoints are close
+    if (currentSegment.length > 1 && segments.length > 0) {
+      const firstPt = segments[0].points[0];
+      const lastPt = currentSegment[currentSegment.length - 1];
+      const gap = Math.hypot(firstPt.x - lastPt.x, firstPt.y - lastPt.y);
+
+      if (gap < maxGap) {
+        // Join last segment with first
+        segments[0].points = currentSegment.concat(segments[0].points);
+      } else {
+        segments.push({ points: currentSegment });
+      }
+    } else if (currentSegment.length > 1) {
+      segments.push({ points: currentSegment });
+    }
+
+    // Generate stripe data for each segment
+    const stripeData = [];
+    const stripeLength = 20;
+
+    for (const segment of segments) {
+      if (segment.points.length < 2) continue;
+
+      let acc = 0;
+      let stripeIndex = 0;
+
+      for (let i = 0; i < segment.points.length - 1; i++) {
+        const a = segment.points[i];
+        const b = segment.points[i + 1];
+        const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+
+        if (segLen < 1) continue;
+
+        // Generate stripes along this segment
+        let t = 0;
+        while (t < segLen) {
+          const remaining = stripeLength - acc;
+          const advance = Math.min(remaining, segLen - t);
+
+          const startT = t / segLen;
+          const endT = (t + advance) / segLen;
+
+          stripeData.push({
+            x1: a.x + (b.x - a.x) * startT,
+            y1: a.y + (b.y - a.y) * startT,
+            x2: a.x + (b.x - a.x) * endT,
+            y2: a.y + (b.y - a.y) * endT,
+            colorIndex: stripeIndex % 2
+          });
+
+          t += advance;
+          acc += advance;
+
+          if (acc >= stripeLength) {
+            acc = 0;
+            stripeIndex++;
+          }
+        }
+      }
+    }
+
+    return {
+      segments: segments,
+      stripeData: stripeData,
+      wallWidth: 28
+    };
+  }
+
   function drawKerbs(ctx, kerbMeta, atlas) {
     const colors = ["#d63d3d", "#f2f4f8"];
     ctx.save();
@@ -733,6 +1109,60 @@
       }
       ctx.restore();
     }
+    ctx.restore();
+  }
+
+  function drawInnerWalls(ctx, wallData) {
+    if (!wallData || !wallData.segments) return;
+
+    const { segments, stripeData, wallWidth = 28 } = wallData;
+
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    // Draw wall body as thick stroked paths (no overlap due to path-based drawing)
+    for (const segment of segments) {
+      if (segment.points.length < 2) continue;
+
+      // Draw main wall body
+      ctx.beginPath();
+      ctx.moveTo(segment.points[0].x, segment.points[0].y);
+      for (let i = 1; i < segment.points.length; i++) {
+        ctx.lineTo(segment.points[i].x, segment.points[i].y);
+      }
+
+      // Gray wall body
+      ctx.strokeStyle = "#9fa3ab";
+      ctx.lineWidth = wallWidth;
+      ctx.stroke();
+
+      // Dark outline
+      ctx.strokeStyle = "#2d3138";
+      ctx.lineWidth = wallWidth + 3;
+      ctx.stroke();
+
+      // Re-draw gray on top of outline
+      ctx.strokeStyle = "#9fa3ab";
+      ctx.lineWidth = wallWidth;
+      ctx.stroke();
+    }
+
+    // Draw red/white stripes on top
+    const stripeWidth = 8;
+    const colors = ["#e63946", "#f8f9fa"];
+
+    ctx.lineCap = "butt";
+    ctx.lineWidth = stripeWidth;
+
+    for (const stripe of stripeData) {
+      ctx.beginPath();
+      ctx.moveTo(stripe.x1, stripe.y1);
+      ctx.lineTo(stripe.x2, stripe.y2);
+      ctx.strokeStyle = colors[stripe.colorIndex];
+      ctx.stroke();
+    }
+
     ctx.restore();
   }
 
@@ -893,6 +1323,7 @@
   const barriers = createBarriers(edges, curvature, effectiveParams, rng, zones);
     const trees = sampleTrees(zones, rng, effectiveParams);
     const buildings = createBuildings(edges, zones, rng, effectiveParams);
+    const innerWalls = createInnerWalls(edges, zones, effectiveParams);
     return {
       version: 2,
       seed,
@@ -907,6 +1338,7 @@
         barriers,
         trees,
         buildings,
+        innerWalls,
       },
       zones: {
         offsetX: zones.offsetX || 0,
@@ -940,6 +1372,9 @@
     decorCtx.imageSmoothingEnabled = false;
     decorCtx.globalCompositeOperation = "source-over";
     drawKerbs(decorCtx, metadata.items.kerbs, atlas);
+    if (metadata.items.innerWalls && metadata.items.innerWalls.segments && metadata.items.innerWalls.segments.length > 0) {
+      drawInnerWalls(decorCtx, metadata.items.innerWalls);
+    }
     drawBarriers(decorCtx, metadata.items.barriers, atlas);
     drawBuildings(decorCtx, metadata.items.buildings, atlas);
     drawTrees(decorCtx, metadata.items.trees, atlas);
