@@ -512,24 +512,130 @@
 
   /**
    * Smooth wall path to prevent overlap at sharp corners.
-   * Uses the same approach as track curb smoothing.
+   * Walls need MORE aggressive smoothing than curbs because they're offset
+   * further from the track, which amplifies corner sharpness.
    */
   function smoothWallPath(points, roadWidth) {
     if (!points || points.length < 4) return points;
 
-    // Minimum turning radius based on road width (same as track curbs)
-    const minTurnRadius = roadWidth * 0.55;
+    // Walls are offset by roadWidth * 0.6, so they need a much larger minimum
+    // turning radius to avoid self-intersection at sharp corners
+    const minTurnRadius = roadWidth * 1.2;
 
-    // Stage 1: Laplacian relaxation (moderate - 20 iterations)
-    let smoothed = relaxWallPath(points, 20, 0.5);
+    // Stage 1: Heavy Laplacian relaxation to round out corners
+    let smoothed = relaxWallPath(points, 50, 0.5);
 
-    // Stage 2: Enforce minimum radius
-    smoothed = enforceMinimumWallRadius(smoothed, minTurnRadius);
+    // Stage 2: Enforce minimum radius (run multiple times for very sharp corners)
+    smoothed = enforceMinimumWallRadius(smoothed, minTurnRadius, 300);
 
-    // Stage 3: Final smoothing pass
-    smoothed = relaxWallPath(smoothed, 10, 0.3);
+    // Stage 3: Another round of relaxation after radius enforcement
+    smoothed = relaxWallPath(smoothed, 30, 0.5);
+
+    // Stage 4: Re-enforce minimum radius
+    smoothed = enforceMinimumWallRadius(smoothed, minTurnRadius, 300);
+
+    // Stage 5: Final smoothing pass
+    smoothed = relaxWallPath(smoothed, 20, 0.3);
+
+    // Stage 6: Remove self-intersecting portions (create V-shape instead of X-shape)
+    smoothed = removeSelfIntersections(smoothed);
 
     return smoothed;
+  }
+
+  /**
+   * Find intersection point of two line segments.
+   * Returns { x, y, t, u } where t and u are the parametric positions on each segment.
+   * Returns null if segments don't intersect.
+   */
+  function getSegmentIntersection(p1, p2, p3, p4) {
+    const d1x = p2.x - p1.x, d1y = p2.y - p1.y;
+    const d2x = p4.x - p3.x, d2y = p4.y - p3.y;
+    const cross = d1x * d2y - d1y * d2x;
+    if (Math.abs(cross) < 0.0001) return null;
+
+    const t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / cross;
+    const u = ((p3.x - p1.x) * d1y - (p3.y - p1.y) * d1x) / cross;
+
+    if (t > 0.01 && t < 0.99 && u > 0.01 && u < 0.99) {
+      return {
+        x: p1.x + t * d1x,
+        y: p1.y + t * d1y,
+        t: t,
+        u: u
+      };
+    }
+    return null;
+  }
+
+  /**
+   * Remove self-intersecting portions of a path.
+   * When the path crosses itself, cut out the loop to create a V-shape.
+   */
+  function removeSelfIntersections(points) {
+    if (!points || points.length < 4) return points;
+
+    let result = points.map(p => ({ x: p.x, y: p.y, nx: p.nx, ny: p.ny, idx: p.idx }));
+    let changed = true;
+    let iterations = 0;
+    const maxIterations = 100;
+
+    while (changed && iterations < maxIterations) {
+      changed = false;
+      iterations++;
+
+      const n = result.length;
+      if (n < 4) break;
+
+      // Check for self-intersections (only skip immediately adjacent segment)
+      outerLoop:
+      for (let i = 0; i < n - 1; i++) {
+        const p1 = result[i];
+        const p2 = result[i + 1];
+
+        // Check against non-adjacent segments (skip only i and i+1)
+        // Start from i+2 to catch sharp corner intersections
+        for (let j = i + 2; j < n - 1; j++) {
+          // Skip if j wraps around to be adjacent to i (for closed paths)
+          if (i === 0 && j >= n - 2) continue;
+
+          const p3 = result[j];
+          const p4 = result[j + 1];
+
+          const intersection = getSegmentIntersection(p1, p2, p3, p4);
+          if (intersection) {
+            // Found intersection - remove the loop between segments i and j
+            // Keep points [0..i], add intersection point, then [j+1..end]
+            const newResult = [];
+
+            // Add points up to and including i
+            for (let k = 0; k <= i; k++) {
+              newResult.push(result[k]);
+            }
+
+            // Add the intersection point
+            newResult.push({
+              x: intersection.x,
+              y: intersection.y,
+              nx: p1.nx,
+              ny: p1.ny,
+              idx: p1.idx
+            });
+
+            // Add points from j+1 onwards
+            for (let k = j + 1; k < n; k++) {
+              newResult.push(result[k]);
+            }
+
+            result = newResult;
+            changed = true;
+            break outerLoop;
+          }
+        }
+      }
+    }
+
+    return result;
   }
 
   function lerpPoint(a, b, t) {
@@ -907,8 +1013,13 @@
     // Smooth the path to prevent sharp corner issues
     const smoothedOuter = smoothWallPath(outer, params.roadWidth);
 
-    // Build wall centerline path
-    const wallPath = buildWallPath(smoothedOuter, params.roadWidth);
+    // Build wall centerline path (this adds offset which can create NEW self-intersections)
+    let wallPath = buildWallPath(smoothedOuter, params.roadWidth);
+    if (wallPath.length < 3) return { segments: [], stripeData: [] };
+
+    // Remove self-intersections AFTER the offset is applied
+    // This is critical because the offset can create new intersections at sharp corners
+    wallPath = removeSelfIntersections(wallPath);
     if (wallPath.length < 3) return { segments: [], stripeData: [] };
 
     const n = wallPath.length;
@@ -993,54 +1104,11 @@
       segments.push({ points: currentSegment });
     }
 
-    // Generate stripe data for each segment
-    const stripeData = [];
-    const stripeLength = 20;
-
-    for (const segment of segments) {
-      if (segment.points.length < 2) continue;
-
-      let acc = 0;
-      let stripeIndex = 0;
-
-      for (let i = 0; i < segment.points.length - 1; i++) {
-        const a = segment.points[i];
-        const b = segment.points[i + 1];
-        const segLen = Math.hypot(b.x - a.x, b.y - a.y);
-
-        if (segLen < 1) continue;
-
-        // Generate stripes along this segment
-        let t = 0;
-        while (t < segLen) {
-          const remaining = stripeLength - acc;
-          const advance = Math.min(remaining, segLen - t);
-
-          const startT = t / segLen;
-          const endT = (t + advance) / segLen;
-
-          stripeData.push({
-            x1: a.x + (b.x - a.x) * startT,
-            y1: a.y + (b.y - a.y) * startT,
-            x2: a.x + (b.x - a.x) * endT,
-            y2: a.y + (b.y - a.y) * endT,
-            colorIndex: stripeIndex % 2
-          });
-
-          t += advance;
-          acc += advance;
-
-          if (acc >= stripeLength) {
-            acc = 0;
-            stripeIndex++;
-          }
-        }
-      }
-    }
+    // Stripes are now drawn using setLineDash() in drawInnerWalls,
+    // so we don't need to pre-compute stripe segments
 
     return {
       segments: segments,
-      stripeData: stripeData,
       wallWidth: 28
     };
   }
@@ -1115,7 +1183,9 @@
   function drawInnerWalls(ctx, wallData) {
     if (!wallData || !wallData.segments) return;
 
-    const { segments, stripeData, wallWidth = 28 } = wallData;
+    const { segments, wallWidth = 28 } = wallData;
+    const stripeLength = 20;
+    const stripeWidth = 8;
 
     ctx.save();
     ctx.lineCap = "round";
@@ -1125,42 +1195,43 @@
     for (const segment of segments) {
       if (segment.points.length < 2) continue;
 
-      // Draw main wall body
+      // Build the path once
       ctx.beginPath();
       ctx.moveTo(segment.points[0].x, segment.points[0].y);
       for (let i = 1; i < segment.points.length; i++) {
         ctx.lineTo(segment.points[i].x, segment.points[i].y);
       }
 
-      // Gray wall body
-      ctx.strokeStyle = "#9fa3ab";
-      ctx.lineWidth = wallWidth;
-      ctx.stroke();
-
-      // Dark outline
+      // Dark outline first (drawn thicker, underneath)
       ctx.strokeStyle = "#2d3138";
-      ctx.lineWidth = wallWidth + 3;
+      ctx.lineWidth = wallWidth + 4;
+      ctx.setLineDash([]);
       ctx.stroke();
 
-      // Re-draw gray on top of outline
+      // Gray wall body on top
       ctx.strokeStyle = "#9fa3ab";
       ctx.lineWidth = wallWidth;
       ctx.stroke();
-    }
 
-    // Draw red/white stripes on top
-    const stripeWidth = 8;
-    const colors = ["#e63946", "#f8f9fa"];
+      // Draw red/white stripes as dashed lines along the same path
+      // This ensures stripes curve properly with the wall
+      ctx.lineCap = "butt";
+      ctx.lineWidth = stripeWidth;
 
-    ctx.lineCap = "butt";
-    ctx.lineWidth = stripeWidth;
-
-    for (const stripe of stripeData) {
-      ctx.beginPath();
-      ctx.moveTo(stripe.x1, stripe.y1);
-      ctx.lineTo(stripe.x2, stripe.y2);
-      ctx.strokeStyle = colors[stripe.colorIndex];
+      // Red stripes (offset by 0)
+      ctx.strokeStyle = "#e63946";
+      ctx.setLineDash([stripeLength, stripeLength]);
+      ctx.lineDashOffset = 0;
       ctx.stroke();
+
+      // White stripes (offset by stripeLength so they fill the gaps)
+      ctx.strokeStyle = "#f8f9fa";
+      ctx.lineDashOffset = -stripeLength;
+      ctx.stroke();
+
+      // Reset line dash
+      ctx.setLineDash([]);
+      ctx.lineCap = "round";
     }
 
     ctx.restore();
