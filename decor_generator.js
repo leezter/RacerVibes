@@ -570,7 +570,8 @@
 
   /**
    * Remove self-intersecting portions of a path.
-   * When the path crosses itself, cut out the loop to create a V-shape.
+   * When the path crosses itself at SHARP CORNERS, cut out the loop to create a V-shape.
+   * Only removes SMALL loops - large loops (from parallel track sections) are preserved.
    */
   function removeSelfIntersections(points) {
     if (!points || points.length < 4) return points;
@@ -580,12 +581,19 @@
     let iterations = 0;
     const maxIterations = 100;
 
+    // Maximum loop size to cut (as fraction of total path)
+    // Larger loops are likely parallel section crossings, not sharp corners
+    const maxLoopFraction = 0.15;
+
     while (changed && iterations < maxIterations) {
       changed = false;
       iterations++;
 
       const n = result.length;
       if (n < 4) break;
+
+      // Maximum number of points to remove in one cut
+      const maxLoopSize = Math.max(10, Math.floor(n * maxLoopFraction));
 
       // Check for self-intersections (only skip immediately adjacent segment)
       outerLoop:
@@ -599,12 +607,19 @@
           // Skip if j wraps around to be adjacent to i (for closed paths)
           if (i === 0 && j >= n - 2) continue;
 
+          // Calculate how many points would be removed
+          const loopSize = j - i - 1;
+
+          // Only cut SMALL loops (sharp corner artifacts)
+          // Large loops are likely from parallel track sections and should be preserved
+          if (loopSize > maxLoopSize) continue;
+
           const p3 = result[j];
           const p4 = result[j + 1];
 
           const intersection = getSegmentIntersection(p1, p2, p3, p4);
           if (intersection) {
-            // Found intersection - remove the loop between segments i and j
+            // Found intersection with small loop - remove it to create V-shape
             // Keep points [0..i], add intersection point, then [j+1..end]
             const newResult = [];
 
@@ -925,11 +940,13 @@
   /**
    * Build a continuous wall path from the outer edge.
    * Returns an array of points that form the wall centerline with index info.
+   * Also checks if wall points would fall between close track sections.
    */
   function buildWallPath(outer, roadWidth) {
     if (!outer || outer.length < 3) return [];
 
     const wallOffset = roadWidth * 0.6;
+    const minIndexGap = Math.max(20, Math.floor(outer.length * 0.15));
     const path = [];
 
     for (let i = 0; i < outer.length; i++) {
@@ -949,10 +966,41 @@
         ny = dx / len;
       }
 
+      const wallX = pt.x + nx * wallOffset;
+      const wallY = pt.y + ny * wallOffset;
+
+      // Check if this wall point falls IN THE GAP between close track sections
+      // This happens when the wall point is closer to another track section's edge
+      // than to its own track edge, AND the other section is "in front" of the wall
+      // (in the direction the wall normal points)
+      let betweenSections = false;
+      for (let j = 0; j < outer.length; j++) {
+        const indexDist = Math.min(Math.abs(i - j), outer.length - Math.abs(i - j));
+        if (indexDist < minIndexGap) continue;
+
+        const otherPt = outer[j];
+        const distToOther = Math.hypot(wallX - otherPt.x, wallY - otherPt.y);
+
+        // Check if the other track point is in the direction of the wall normal
+        // (i.e., the wall would be pointing toward the other track section)
+        const toOtherX = otherPt.x - pt.x;
+        const toOtherY = otherPt.y - pt.y;
+        const dotProduct = toOtherX * nx + toOtherY * ny;
+
+        // If the other track section is in the direction of our wall (dot > 0)
+        // AND the wall point is very close to that other section
+        // THEN this wall would fall in the gap between sections
+        if (dotProduct > 0 && distToOther < wallOffset * 0.5) {
+          betweenSections = true;
+          break;
+        }
+      }
+
       path.push({
-        x: pt.x + nx * wallOffset,
-        y: pt.y + ny * wallOffset,
-        idx: i
+        x: wallX,
+        y: wallY,
+        idx: i,
+        betweenSections: betweenSections
       });
     }
 
@@ -1024,59 +1072,75 @@
 
     const n = wallPath.length;
 
-    // Find overlapping points and their partners
+    // Find overlapping points and their partners from different track sections
     const mergeDistance = params.roadWidth * 1.2;
     const overlapPairs = findOverlapPairs(wallPath, mergeDistance);
 
-    // Track which points have been "claimed" by a merged section
-    // Only one side of an overlap should draw (the one with lower index)
-    const suppressed = new Array(n).fill(false);
-
+    // Find contiguous overlap regions
+    // An overlap region is where walls from different sections run parallel and close
+    const inOverlapRegion = new Array(n).fill(false);
     for (const [i, info] of overlapPairs) {
-      const j = info.partnerIdx;
-      // Suppress the higher-indexed point so only one wall is drawn
-      if (i < j) {
-        suppressed[j] = true;
-      } else {
-        suppressed[i] = true;
-      }
+      inOverlapRegion[i] = true;
+      inOverlapRegion[info.partnerIdx] = true;
     }
 
-    // Build final path: use midpoints for overlapping sections, regular points otherwise
-    const finalPath = [];
-    for (let i = 0; i < n; i++) {
-      if (suppressed[i]) continue;
-
-      if (overlapPairs.has(i)) {
-        // This point overlaps with another section - use midpoint
-        finalPath.push({
-          x: overlapPairs.get(i).midpoint.x,
-          y: overlapPairs.get(i).midpoint.y,
-          merged: true
-        });
-      } else {
-        // Regular point
-        finalPath.push({
-          x: wallPath[i].x,
-          y: wallPath[i].y,
-          merged: false
-        });
-      }
-    }
-
-    // Build continuous segments (split where there are large gaps)
+    // Build segments, skipping points that fall between close track sections
     const segments = [];
     let currentSegment = [];
+    let lastAddedIdx = -1;
     const maxGap = params.roadWidth * 0.8;
 
-    for (let i = 0; i < finalPath.length; i++) {
-      const pt = finalPath[i];
+    // Track which indices we've already processed as part of an overlap
+    const processedAsPartner = new Set();
 
+    for (let i = 0; i < n; i++) {
+      const wallPt = wallPath[i];
+
+      // Skip if this wall point falls between two close track sections
+      // (it would be in the narrow gap between parallel tracks)
+      if (wallPt.betweenSections) {
+        // End current segment if any
+        if (currentSegment.length > 1) {
+          segments.push({ points: currentSegment });
+        }
+        currentSegment = [];
+        continue;
+      }
+
+      // Skip if this point was already used as a partner in an overlap
+      if (processedAsPartner.has(i)) continue;
+
+      let pt;
+      if (overlapPairs.has(i)) {
+        const info = overlapPairs.get(i);
+        // This point overlaps with another section
+        // Use midpoint and mark partner as processed
+        pt = {
+          x: info.midpoint.x,
+          y: info.midpoint.y,
+          merged: true,
+          origIdx: i
+        };
+        processedAsPartner.add(info.partnerIdx);
+      } else {
+        // Regular point - use as-is
+        pt = {
+          x: wallPt.x,
+          y: wallPt.y,
+          merged: false,
+          origIdx: i
+        };
+      }
+
+      // Check for gaps (when we skip many indices due to overlap processing)
       if (currentSegment.length > 0) {
         const last = currentSegment[currentSegment.length - 1];
         const gap = Math.hypot(pt.x - last.x, pt.y - last.y);
 
-        if (gap > maxGap) {
+        // Also check index gap - if we skipped many points, might need new segment
+        const indexGap = i - lastAddedIdx;
+
+        if (gap > maxGap && indexGap > 5) {
           // Large gap - start new segment
           if (currentSegment.length > 1) {
             segments.push({ points: currentSegment });
@@ -1086,22 +1150,38 @@
       }
 
       currentSegment.push(pt);
+      lastAddedIdx = i;
     }
 
-    // Close the loop if endpoints are close
-    if (currentSegment.length > 1 && segments.length > 0) {
-      const firstPt = segments[0].points[0];
-      const lastPt = currentSegment[currentSegment.length - 1];
+    // Add final segment
+    if (currentSegment.length > 1) {
+      segments.push({ points: currentSegment });
+    }
+
+    // Try to close the loop by connecting last segment to first
+    if (segments.length >= 2) {
+      const firstSeg = segments[0];
+      const lastSeg = segments[segments.length - 1];
+      const firstPt = firstSeg.points[0];
+      const lastPt = lastSeg.points[lastSeg.points.length - 1];
       const gap = Math.hypot(firstPt.x - lastPt.x, firstPt.y - lastPt.y);
 
-      if (gap < maxGap) {
-        // Join last segment with first
-        segments[0].points = currentSegment.concat(segments[0].points);
-      } else {
-        segments.push({ points: currentSegment });
+      if (gap < maxGap * 2) {
+        // Merge last segment into first
+        firstSeg.points = lastSeg.points.concat(firstSeg.points);
+        segments.pop();
       }
-    } else if (currentSegment.length > 1) {
-      segments.push({ points: currentSegment });
+    } else if (segments.length === 1 && currentSegment.length > 2) {
+      // Single segment - check if it should close on itself
+      const seg = segments[0];
+      const firstPt = seg.points[0];
+      const lastPt = seg.points[seg.points.length - 1];
+      const gap = Math.hypot(firstPt.x - lastPt.x, firstPt.y - lastPt.y);
+
+      if (gap < maxGap * 2) {
+        // Close the loop
+        seg.points.push({ ...firstPt });
+      }
     }
 
     // Stripes are now drawn using setLineDash() in drawInnerWalls,
