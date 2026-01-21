@@ -948,29 +948,32 @@
   }
 
   /**
-   * Build a continuous wall path from the outer edge.
+   * Build a continuous wall path from a track edge.
    * Returns an array of points that form the wall centerline.
    * When parallel track sections are close, walls merge smoothly.
    * NEVER skips points - every track edge point gets a wall position.
+   * @param {Array} edge - The edge points (either outer or inner edge)
+   * @param {number} roadWidth - The road width for calculating offsets
+   * @param {number} offsetDirection - 1 for outward (outer edge), -1 for inward (inner edge)
    */
-  function buildWallPath(outer, roadWidth) {
-    if (!outer || outer.length < 3) return [];
+  function buildWallPath(edge, roadWidth, offsetDirection = 1) {
+    if (!edge || edge.length < 3) return [];
 
-    const wallOffset = roadWidth * 0.6;
-    const minIndexGap = Math.max(20, Math.floor(outer.length * 0.15));
+    const wallOffset = roadWidth * 0.6 * offsetDirection;
+    const minIndexGap = Math.max(20, Math.floor(edge.length * 0.15));
     const mergeThreshold = wallOffset * 2.2; // Distance threshold for merging walls
     const path = [];
 
     // First pass: compute default wall positions and normals for all points
     const wallPoints = [];
-    for (let i = 0; i < outer.length; i++) {
-      const pt = outer[i];
+    for (let i = 0; i < edge.length; i++) {
+      const pt = edge[i];
       let nx = pt.nx;
       let ny = pt.ny;
 
       if (nx === undefined || ny === undefined) {
-        const prev = outer[(i - 1 + outer.length) % outer.length];
-        const next = outer[(i + 1) % outer.length];
+        const prev = edge[(i - 1 + edge.length) % edge.length];
+        const next = edge[(i + 1) % edge.length];
         const dx = next.x - prev.x;
         const dy = next.y - prev.y;
         const len = Math.hypot(dx, dy) || 1;
@@ -990,15 +993,15 @@
     }
 
     // Second pass: for each point, check for nearby parallel sections and merge
-    for (let i = 0; i < outer.length; i++) {
+    for (let i = 0; i < edge.length; i++) {
       const wp = wallPoints[i];
 
       // Find the closest point from a different track section
       let closestPartnerIdx = -1;
       let closestDist = mergeThreshold;
 
-      for (let j = 0; j < outer.length; j++) {
-        const indexDist = Math.min(Math.abs(i - j), outer.length - Math.abs(i - j));
+      for (let j = 0; j < edge.length; j++) {
+        const indexDist = Math.min(Math.abs(i - j), edge.length - Math.abs(i - j));
         if (indexDist < minIndexGap) continue;
 
         const otherWp = wallPoints[j];
@@ -1052,33 +1055,16 @@
   }
 
   /**
-   * Create wall data for continuous path-based rendering.
-   * When walls from different track sections overlap, they merge into one.
+   * Build wall segments from a wall path.
+   * Handles merging of overlapping points and creates continuous segments.
    */
-  function createInnerWalls(edges, zones, params) {
-    const outer = edges.outer;
-    if (!outer || outer.length < 3) return { segments: [], stripeData: [] };
-
-    // Smooth the path to prevent sharp corner issues
-    const smoothedOuter = smoothWallPath(outer, params.roadWidth);
-
-    // Build wall centerline path - this now handles merging of parallel sections
-    let wallPath = buildWallPath(smoothedOuter, params.roadWidth);
-    if (wallPath.length < 3) return { segments: [], stripeData: [] };
-
-    // Remove self-intersections AFTER the offset is applied
-    // This is critical because the offset can create new intersections at sharp corners
-    wallPath = removeSelfIntersections(wallPath);
-    if (wallPath.length < 3) return { segments: [], stripeData: [] };
+  function buildWallSegments(wallPath, maxGap) {
+    if (!wallPath || wallPath.length < 3) return [];
 
     const n = wallPath.length;
-
-    // Build segments
-    // When a point is merged with a partner, skip the partner to avoid double-drawing
     const segments = [];
     let currentSegment = [];
     let lastAddedIdx = -1;
-    const maxGap = params.roadWidth * 0.8;
 
     // Track which original indices have been processed as part of a merge
     const processedAsPartner = new Set();
@@ -1140,7 +1126,7 @@
         firstSeg.points = lastSeg.points.concat(firstSeg.points);
         segments.pop();
       }
-    } else if (segments.length === 1 && currentSegment.length > 2) {
+    } else if (segments.length === 1) {
       // Single segment - check if it should close on itself
       const seg = segments[0];
       const firstPt = seg.points[0];
@@ -1153,11 +1139,50 @@
       }
     }
 
-    // Stripes are now drawn using setLineDash() in drawInnerWalls,
-    // so we don't need to pre-compute stripe segments
+    return segments;
+  }
+
+  /**
+   * Process an edge to create wall segments.
+   * Smooths the edge, builds wall path, removes self-intersections, and creates segments.
+   * @param {Array} edge - The edge points
+   * @param {number} roadWidth - The road width
+   * @param {number} offsetDirection - 1 for outer edge (offset outward), -1 for inner edge (offset inward toward center grass)
+   */
+  function processEdgeForWalls(edge, roadWidth, offsetDirection = 1) {
+    if (!edge || edge.length < 3) return [];
+
+    // Smooth the path to prevent sharp corner issues
+    const smoothedEdge = smoothWallPath(edge, roadWidth);
+
+    // Build wall centerline path - handles merging of parallel sections
+    let wallPath = buildWallPath(smoothedEdge, roadWidth, offsetDirection);
+    if (wallPath.length < 3) return [];
+
+    // Remove self-intersections AFTER the offset is applied
+    // This is critical because the offset can create new intersections at sharp corners
+    wallPath = removeSelfIntersections(wallPath);
+    if (wallPath.length < 3) return [];
+
+    // Build segments from the wall path
+    const maxGap = roadWidth * 0.8;
+    return buildWallSegments(wallPath, maxGap);
+  }
+
+  /**
+   * Create wall data for continuous path-based rendering on both track edges.
+   * When walls from different track sections overlap, they merge into one.
+   */
+  function createInnerWalls(edges, zones, params) {
+    // Process outer edge walls (offset outward, away from track)
+    const outerSegments = processEdgeForWalls(edges.outer, params.roadWidth, 1);
+
+    // Process inner edge walls (offset inward toward center grass, opposite of normal direction)
+    const innerSegments = processEdgeForWalls(edges.inner, params.roadWidth, -1);
 
     return {
-      segments: segments,
+      outerSegments: outerSegments,
+      innerSegments: innerSegments,
       wallWidth: 28
     };
   }
@@ -1229,18 +1254,10 @@
     ctx.restore();
   }
 
-  function drawInnerWalls(ctx, wallData) {
-    if (!wallData || !wallData.segments) return;
-
-    const { segments, wallWidth = 28 } = wallData;
-    const stripeLength = 20;
-    const stripeWidth = 8;
-
-    ctx.save();
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-
-    // Draw wall body as thick stroked paths (no overlap due to path-based drawing)
+  /**
+   * Draw a set of wall segments with the red/white striped pattern.
+   */
+  function drawWallSegments(ctx, segments, wallWidth, stripeLength, stripeWidth) {
     for (const segment of segments) {
       if (segment.points.length < 2) continue;
 
@@ -1281,6 +1298,28 @@
       // Reset line dash
       ctx.setLineDash([]);
       ctx.lineCap = "round";
+    }
+  }
+
+  function drawInnerWalls(ctx, wallData) {
+    if (!wallData) return;
+
+    const { outerSegments = [], innerSegments = [], wallWidth = 28 } = wallData;
+    const stripeLength = 20;
+    const stripeWidth = 8;
+
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    // Draw outer edge walls
+    if (outerSegments.length > 0) {
+      drawWallSegments(ctx, outerSegments, wallWidth, stripeLength, stripeWidth);
+    }
+
+    // Draw inner edge walls
+    if (innerSegments.length > 0) {
+      drawWallSegments(ctx, innerSegments, wallWidth, stripeLength, stripeWidth);
     }
 
     ctx.restore();
@@ -1492,7 +1531,9 @@
     decorCtx.imageSmoothingEnabled = false;
     decorCtx.globalCompositeOperation = "source-over";
     drawKerbs(decorCtx, metadata.items.kerbs, atlas);
-    if (metadata.items.innerWalls && metadata.items.innerWalls.segments && metadata.items.innerWalls.segments.length > 0) {
+    if (metadata.items.innerWalls &&
+        ((metadata.items.innerWalls.outerSegments && metadata.items.innerWalls.outerSegments.length > 0) ||
+         (metadata.items.innerWalls.innerSegments && metadata.items.innerWalls.innerSegments.length > 0))) {
       drawInnerWalls(decorCtx, metadata.items.innerWalls);
     }
     drawBarriers(decorCtx, metadata.items.barriers, atlas);
