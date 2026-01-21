@@ -13,7 +13,7 @@ This workflow describes how to test the racing game visually, including how to z
    npx http-server -p 8080 .
    ```
 
-2. Open http://localhost:8080/racer.html in the browser
+2. Open http://localhost:8080/racer.html in the browser (for the start menu: http://http://localhost:8080/racer_start_menu.html)
 
 3. Click "TAP TO CONTINUE" to start the race
 

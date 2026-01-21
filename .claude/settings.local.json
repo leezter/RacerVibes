@@ -3,7 +3,9 @@
     "allow": [
       "Bash(python -m http.server:*)",
       "Bash(npx http-server:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(timeout:*)",
+      "Bash(curl:*)"
     ]
   }
 }
