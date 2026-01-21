@@ -576,7 +576,15 @@
   function removeSelfIntersections(points) {
     if (!points || points.length < 4) return points;
 
-    let result = points.map(p => ({ x: p.x, y: p.y, nx: p.nx, ny: p.ny, idx: p.idx }));
+    let result = points.map(p => ({
+      x: p.x,
+      y: p.y,
+      nx: p.nx,
+      ny: p.ny,
+      idx: p.idx,
+      partnerIdx: p.partnerIdx,
+      merged: p.merged
+    }));
     let changed = true;
     let iterations = 0;
     const maxIterations = 100;
@@ -634,7 +642,9 @@
               y: intersection.y,
               nx: p1.nx,
               ny: p1.ny,
-              idx: p1.idx
+              idx: p1.idx,
+              partnerIdx: p1.partnerIdx,
+              merged: p1.merged
             });
 
             // Add points from j+1 onwards
@@ -939,24 +949,26 @@
 
   /**
    * Build a continuous wall path from the outer edge.
-   * Returns an array of points that form the wall centerline with index info.
-   * Also checks if wall points would fall between close track sections.
+   * Returns an array of points that form the wall centerline.
+   * When parallel track sections are close, walls merge smoothly.
+   * NEVER skips points - every track edge point gets a wall position.
    */
   function buildWallPath(outer, roadWidth) {
     if (!outer || outer.length < 3) return [];
 
     const wallOffset = roadWidth * 0.6;
     const minIndexGap = Math.max(20, Math.floor(outer.length * 0.15));
+    const mergeThreshold = wallOffset * 2.2; // Distance threshold for merging walls
     const path = [];
 
+    // First pass: compute default wall positions and normals for all points
+    const wallPoints = [];
     for (let i = 0; i < outer.length; i++) {
       const pt = outer[i];
-      // Use stored normal if available, otherwise compute it
       let nx = pt.nx;
       let ny = pt.ny;
 
       if (nx === undefined || ny === undefined) {
-        // Compute normal from adjacent points
         const prev = outer[(i - 1 + outer.length) % outer.length];
         const next = outer[(i + 1) % outer.length];
         const dx = next.x - prev.x;
@@ -966,95 +978,77 @@
         ny = dx / len;
       }
 
-      const wallX = pt.x + nx * wallOffset;
-      const wallY = pt.y + ny * wallOffset;
+      wallPoints.push({
+        x: pt.x + nx * wallOffset,
+        y: pt.y + ny * wallOffset,
+        edgeX: pt.x,
+        edgeY: pt.y,
+        nx: nx,
+        ny: ny,
+        idx: i
+      });
+    }
 
-      // Check if this wall point falls IN THE GAP between close track sections
-      // This happens when:
-      // 1. There's another track section nearby (far in index, close in distance)
-      // 2. The wall point is closer to THAT other section than to the grass
-      //    (meaning it's sandwiched between the two sections)
-      let betweenSections = false;
+    // Second pass: for each point, check for nearby parallel sections and merge
+    for (let i = 0; i < outer.length; i++) {
+      const wp = wallPoints[i];
+
+      // Find the closest point from a different track section
+      let closestPartnerIdx = -1;
+      let closestDist = mergeThreshold;
+
       for (let j = 0; j < outer.length; j++) {
         const indexDist = Math.min(Math.abs(i - j), outer.length - Math.abs(i - j));
         if (indexDist < minIndexGap) continue;
 
-        const otherPt = outer[j];
-
-        // Distance from the wall point to the other section's outer edge
-        const distWallToOther = Math.hypot(wallX - otherPt.x, wallY - otherPt.y);
-
-        // Only consider nearby track sections
-        if (distWallToOther > roadWidth * 1.5) continue;
-
-        // Check if the other track's normal points TOWARD our wall point
-        // (meaning our wall would be in the gap between the two track sections)
-        const otherNx = otherPt.nx || 0;
-        const otherNy = otherPt.ny || 0;
-        const toWallX = wallX - otherPt.x;
-        const toWallY = wallY - otherPt.y;
-        const otherDot = toWallX * otherNx + toWallY * otherNy;
-
-        // If the other section's outward normal points toward our wall point,
-        // then our wall is in the gap between the two sections
-        if (otherDot > 0 && distWallToOther < wallOffset * 0.8) {
-          betweenSections = true;
-          break;
-        }
-      }
-
-      path.push({
-        x: wallX,
-        y: wallY,
-        idx: i,
-        betweenSections: betweenSections
-      });
-    }
-
-    return path;
-  }
-
-  /**
-   * Find overlapping pairs of points from different track sections.
-   * Returns a map of index -> closest overlapping index from another section.
-   */
-  function findOverlapPairs(path, mergeDistance) {
-    const n = path.length;
-    const minIndexGap = Math.max(20, Math.floor(n * 0.15));
-    const overlapPairs = new Map(); // Maps index -> { partnerIdx, midpoint }
-
-    for (let i = 0; i < n; i++) {
-      let closestDist = mergeDistance;
-      let closestJ = -1;
-
-      for (let j = 0; j < n; j++) {
-        // Check circular distance - only consider points far apart in sequence
-        const indexDist = Math.min(Math.abs(i - j), n - Math.abs(i - j));
-        if (indexDist < minIndexGap) continue;
-
-        const dx = path[i].x - path[j].x;
-        const dy = path[i].y - path[j].y;
-        const dist = Math.hypot(dx, dy);
+        const otherWp = wallPoints[j];
+        const dist = Math.hypot(wp.x - otherWp.x, wp.y - otherWp.y);
 
         if (dist < closestDist) {
-          closestDist = dist;
-          closestJ = j;
+          // Check if walls are "facing each other" (both pointing inward to the gap)
+          // by checking if normals point roughly toward each other
+          const toOtherX = otherWp.edgeX - wp.edgeX;
+          const toOtherY = otherWp.edgeY - wp.edgeY;
+          const toOtherLen = Math.hypot(toOtherX, toOtherY) || 1;
+          const toOtherNormX = toOtherX / toOtherLen;
+          const toOtherNormY = toOtherY / toOtherLen;
+
+          // Check if our normal points toward the other section
+          const dotOur = wp.nx * toOtherNormX + wp.ny * toOtherNormY;
+          // Check if other normal points toward us
+          const dotOther = otherWp.nx * (-toOtherNormX) + otherWp.ny * (-toOtherNormY);
+
+          // Both normals should point toward each other (positive dots)
+          if (dotOur > 0.3 && dotOther > 0.3) {
+            closestDist = dist;
+            closestPartnerIdx = j;
+          }
         }
       }
 
-      if (closestJ >= 0) {
-        overlapPairs.set(i, {
-          partnerIdx: closestJ,
-          midpoint: {
-            x: (path[i].x + path[closestJ].x) / 2,
-            y: (path[i].y + path[closestJ].y) / 2
-          },
-          dist: closestDist
+      if (closestPartnerIdx >= 0) {
+        // Merge with partner - use midpoint
+        const otherWp = wallPoints[closestPartnerIdx];
+        path.push({
+          x: (wp.x + otherWp.x) / 2,
+          y: (wp.y + otherWp.y) / 2,
+          idx: i,
+          partnerIdx: closestPartnerIdx,
+          merged: true
+        });
+      } else {
+        // No nearby parallel section - use default wall position
+        path.push({
+          x: wp.x,
+          y: wp.y,
+          idx: i,
+          partnerIdx: -1,
+          merged: false
         });
       }
     }
 
-    return overlapPairs;
+    return path;
   }
 
   /**
@@ -1068,7 +1062,7 @@
     // Smooth the path to prevent sharp corner issues
     const smoothedOuter = smoothWallPath(outer, params.roadWidth);
 
-    // Build wall centerline path (this adds offset which can create NEW self-intersections)
+    // Build wall centerline path - this now handles merging of parallel sections
     let wallPath = buildWallPath(smoothedOuter, params.roadWidth);
     if (wallPath.length < 3) return { segments: [], stripeData: [] };
 
@@ -1079,72 +1073,40 @@
 
     const n = wallPath.length;
 
-    // Find overlapping points and their partners from different track sections
-    const mergeDistance = params.roadWidth * 1.2;
-    const overlapPairs = findOverlapPairs(wallPath, mergeDistance);
-
-    // Find contiguous overlap regions
-    // An overlap region is where walls from different sections run parallel and close
-    const inOverlapRegion = new Array(n).fill(false);
-    for (const [i, info] of overlapPairs) {
-      inOverlapRegion[i] = true;
-      inOverlapRegion[info.partnerIdx] = true;
-    }
-
-    // Build segments, skipping points that fall between close track sections
+    // Build segments
+    // When a point is merged with a partner, skip the partner to avoid double-drawing
     const segments = [];
     let currentSegment = [];
     let lastAddedIdx = -1;
     const maxGap = params.roadWidth * 0.8;
 
-    // Track which indices we've already processed as part of an overlap
+    // Track which original indices have been processed as part of a merge
     const processedAsPartner = new Set();
 
     for (let i = 0; i < n; i++) {
       const wallPt = wallPath[i];
 
-      // Skip if this wall point falls between two close track sections
-      // (it would be in the narrow gap between parallel tracks)
-      if (wallPt.betweenSections) {
-        // End current segment if any
-        if (currentSegment.length > 1) {
-          segments.push({ points: currentSegment });
-        }
-        currentSegment = [];
-        continue;
+      // Skip if this point was already used as a partner in a merge
+      if (processedAsPartner.has(wallPt.idx)) continue;
+
+      // If this point is merged with a partner, mark the partner as processed
+      if (wallPt.merged && wallPt.partnerIdx >= 0) {
+        processedAsPartner.add(wallPt.partnerIdx);
       }
 
-      // Skip if this point was already used as a partner in an overlap
-      if (processedAsPartner.has(i)) continue;
+      const pt = {
+        x: wallPt.x,
+        y: wallPt.y,
+        merged: wallPt.merged,
+        origIdx: wallPt.idx
+      };
 
-      let pt;
-      if (overlapPairs.has(i)) {
-        const info = overlapPairs.get(i);
-        // This point overlaps with another section
-        // Use midpoint and mark partner as processed
-        pt = {
-          x: info.midpoint.x,
-          y: info.midpoint.y,
-          merged: true,
-          origIdx: i
-        };
-        processedAsPartner.add(info.partnerIdx);
-      } else {
-        // Regular point - use as-is
-        pt = {
-          x: wallPt.x,
-          y: wallPt.y,
-          merged: false,
-          origIdx: i
-        };
-      }
-
-      // Check for gaps (when we skip many indices due to overlap processing)
+      // Check for gaps (when we skip indices due to merge processing)
       if (currentSegment.length > 0) {
         const last = currentSegment[currentSegment.length - 1];
         const gap = Math.hypot(pt.x - last.x, pt.y - last.y);
 
-        // Also check index gap - if we skipped many points, might need new segment
+        // Check index gap - if we skipped many points, might need new segment
         const indexGap = i - lastAddedIdx;
 
         if (gap > maxGap && indexGap > 5) {
