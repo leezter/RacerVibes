@@ -1137,7 +1137,10 @@
     if (!edge || edge.length < 3) return [];
 
     const wallOffset = roadWidth * 0.6 * offsetDirection;
-    const minIndexGap = Math.max(20, Math.floor(edge.length * 0.12));
+    // Fix for sharp corners: Use a small constant gap instead of a percentage.
+    // This allows walls on the "return" side of a hairpin to be considered for merging,
+    // even if they are relatively close in index (e.g. very tight turns).
+    const minIndexGap = 2; // Reduced from 15 to catch even tighter loops
     const mergeThreshold = Math.abs(wallOffset) * 2.2;
 
     // Pass 1: Compute default wall positions and normals for all points
