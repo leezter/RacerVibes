@@ -591,7 +591,8 @@
 
     // Maximum loop size to cut (as fraction of total path)
     // Larger loops are likely parallel section crossings, not sharp corners
-    const maxLoopFraction = 0.15;
+    // Increased to 0.40 to handle very sharp hairpin corners
+    const maxLoopFraction = 0.40;
 
     while (changed && iterations < maxIterations) {
       changed = false;
@@ -992,6 +993,8 @@
     }
 
     // Pass 2: For each point, find its closest potential partner
+    // IMPORTANT: Only merge if walls face TOWARD each other (opposite normals)
+    // This distinguishes true merges (loop-back) from hairpin turns
     const closestPartner = new Map();
     for (let i = 0; i < edge.length; i++) {
       const wp = wallPoints[i];
@@ -1006,6 +1009,16 @@
         const dist = Math.hypot(wp.x - otherWp.x, wp.y - otherWp.y);
 
         if (dist < closestDist) {
+          // Check if walls face toward each other (normals should be roughly opposite)
+          // Dot product of normals: -1 = opposite, 0 = perpendicular, +1 = same direction
+          const dotNormals = wp.nx * otherWp.nx + wp.ny * otherWp.ny;
+
+          // For a valid merge, walls should face toward each other
+          // At hairpins, walls face the same direction (dot > 0), so DON'T merge
+          // At loop-backs, walls face opposite directions (dot < 0), so DO merge
+          // Use threshold of 0.3 to allow some tolerance
+          if (dotNormals > 0.3) continue; // Same direction - hairpin, not a merge
+
           closestDist = dist;
           closestIdx = j;
         }
@@ -1059,9 +1072,9 @@
     const segments = [];
     let currentSegment = [];
 
-    // Track all points we've added so far with their path index
-    const addedPoints = [];
-    const duplicateThreshold = maxGap * 0.5; // Points closer than this are duplicates
+    // Track merged points we've added so far (only merged points can be duplicates)
+    const addedMergedPoints = [];
+    const duplicateThreshold = maxGap * 0.35; // Tighter threshold - only skip true overlaps
     const minIndexGapForDuplicate = Math.max(20, Math.floor(n * 0.1));
 
     for (let i = 0; i < n; i++) {
@@ -1076,15 +1089,18 @@
       };
 
       // Check if this point is a duplicate of one we've already added
+      // ONLY merged points can be duplicates - this ensures corner tips are preserved
       let isDuplicate = false;
-      for (const added of addedPoints) {
-        const indexDist = Math.abs(i - added.pathIdx);
-        if (indexDist < minIndexGapForDuplicate) continue; // Too close in path order
+      if (pt.merged) {
+        for (const added of addedMergedPoints) {
+          const indexDist = Math.abs(i - added.pathIdx);
+          if (indexDist < minIndexGapForDuplicate) continue; // Too close in path order
 
-        const spatialDist = Math.hypot(pt.x - added.x, pt.y - added.y);
-        if (spatialDist < duplicateThreshold) {
-          isDuplicate = true;
-          break;
+          const spatialDist = Math.hypot(pt.x - added.x, pt.y - added.y);
+          if (spatialDist < duplicateThreshold) {
+            isDuplicate = true;
+            break;
+          }
         }
       }
 
@@ -1112,7 +1128,10 @@
       }
 
       currentSegment.push(pt);
-      addedPoints.push(pt);
+      // Only track merged points for duplicate detection
+      if (pt.merged) {
+        addedMergedPoints.push(pt);
+      }
     }
 
     // Add final segment
