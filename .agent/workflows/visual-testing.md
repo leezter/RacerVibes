@@ -8,16 +8,35 @@ This workflow describes how to test the racing game visually, including how to z
 
 ## Starting the Game
 
+> [!CAUTION]
+> **Browser Cache Issue**: The browser subagent CANNOT reliably clear the browser cache. `location.reload(true)` does NOT clear cached JavaScript files in modern browsers.
+
 1. Ensure the dev server is running:
    ```powershell
    npx http-server -p 8080 .
    ```
 
-2. Open http://localhost:8080/racer.html in the browser (for the start menu: http://http://localhost:8080/racer_start_menu.html)
+2. **Clear browser cache for localhost:8080** (CRITICAL for testing code changes):
+   
+   **For Manual Testing:**
+   - Open DevTools (F12)
+   - Right-click the browser refresh button and select "Empty Cache and Hard Reload"
+   - OR in DevTools > Network tab, check "Disable cache" (stays active while DevTools is open)
+   
+   **For Automated Agent Testing:**
+   - The browser subagent CANNOT clear the cache reliably
+   - Instead, use a cache-busting query parameter:
+     ```javascript
+     window.location.href = 'http://localhost:8080/racer.html?v=' + Date.now();
+     ```
+   - OR ask the user to manually clear the browser cache before testing
+   - **If testing critical code changes, STOP and ask the user to verify the changes manually**
 
-3. Click "TAP TO CONTINUE" to start the race
+3. Open http://localhost:8080/racer.html in the browser (for the start menu: http://localhost:8080/racer_start_menu.html)
 
-4. Wait for the countdown to finish
+4. Click "TAP TO CONTINUE" to start the race
+
+5. Wait for the countdown to finish
 
 ## Zooming Out to See the Full Track
 
