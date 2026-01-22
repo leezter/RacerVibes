@@ -809,7 +809,19 @@
     return (s - Math.floor(s));
   }
 
-  function sampleTrees(zones, rng, params) {
+  function isPointInPolygon(x, y, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i].x, yi = poly[i].y;
+      const xj = poly[j].x, yj = poly[j].y;
+      const intersect = ((yi > y) !== (yj > y)) &&
+        (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  function sampleTrees(zones, rng, params, stadiums) {
     const { width, height, greenMask, offsetX = 0, offsetY = 0 } = zones;
     const minSpacing = TREE_MIN_SPACING;
     const target = Math.min(
@@ -830,6 +842,27 @@
       }
       const worldX = x + offsetX;
       const worldY = y + offsetY;
+
+      // Check against stadiums
+      if (stadiums && stadiums.length > 0) {
+        let insideStadium = false;
+        for (const s of stadiums) {
+          if (s.points && s.points.length >= 3) {
+            // Simple optimization: check bounding box first?
+            // Since we don't have BBoxes precalculated here, we skip it for simplicity
+            // unless performance is still bad (unlikely for <1000 trees vs ~10 stadiums).
+            if (isPointInPolygon(worldX, worldY, s.points)) {
+              insideStadium = true;
+              break;
+            }
+          }
+        }
+        if (insideStadium) {
+          attempts++;
+          continue;
+        }
+      }
+
       const n = noise2D(worldX * 0.035, worldY * 0.035, zones.seed || 1);
       if (n < 0.22) {
         attempts++;
@@ -859,6 +892,7 @@
     }
     return accepted;
   }
+
 
   function pointInsideMask(mask, width, height, x, y, offsetX = 0, offsetY = 0) {
     const ix = Math.round(x - offsetX);
@@ -947,6 +981,148 @@
     }
     return points;
   }
+
+  function createStadiums(wallData, zones, rng, params) {
+    const { width, height, greenMask, offsetX = 0, offsetY = 0 } = zones;
+    const stadiums = [];
+    const minStadiumDepth = 60; // Minimum depth to be considered for a stadium
+    const maxStadiumDepth = 300; // Cap depth
+    const minStadiumLength = 100; // Minimum length of wall to form a stadium
+
+    // Helper to check depth at a point with a given normal
+    function checkDepth(x, y, nx, ny) {
+      const step = 20;
+      let depth = 0;
+      // March outward from the wall
+      for (let d = 20; d < maxStadiumDepth; d += step) {
+        const tx = x + nx * d;
+        const ty = y + ny * d;
+
+        // Convert to mask coordinates
+        const ix = Math.round(tx - offsetX);
+        const iy = Math.round(ty - offsetY);
+
+        // Out of bounds
+        if (ix < 0 || iy < 0 || ix >= width || iy >= height) return d;
+
+        // Hit something not green (road buffer or other track)
+        // greenMask is 1 for green, 0 for buffer/road
+        if (!greenMask[iy * width + ix]) {
+          return d;
+        }
+
+        depth = d;
+      }
+      return depth;
+    }
+
+    const segmentsToCheck = [
+      ...(wallData.outerSegments || []),
+      ...(wallData.innerSegments || [])
+    ];
+
+    for (const segment of segmentsToCheck) {
+      if (!segment.points || segment.points.length < 5) continue;
+
+      const pts = segment.points;
+      const pointDepths = new Array(pts.length).fill(0);
+
+      // Calculate depth for every point
+      for (let i = 0; i < pts.length; i++) {
+        // Wall points already have nx/ny from construction? 
+        // processEdgeForWalls preserves original properties if they exist?
+        // buildWallPath calculates nx/ny.
+        let nx = pts[i].nx;
+        let ny = pts[i].ny;
+
+        // Accessing nx/ny directly might be missing if they were stripped or recalculated 
+        // without saving. Let's re-verify or compute if missing.
+        if (nx === undefined) {
+          // Compute normal from neighbors
+          const prev = pts[Math.max(0, i - 1)];
+          const next = pts[Math.min(pts.length - 1, i + 1)];
+          const dx = next.x - prev.x;
+          const dy = next.y - prev.y;
+          const len = Math.hypot(dx, dy) || 1;
+          nx = -dy / len;
+          ny = dx / len;
+        }
+
+        pointDepths[i] = checkDepth(pts[i].x, pts[i].y, nx, ny);
+      }
+
+      // Find continuous runs of valid depth
+      let startIdx = -1;
+
+      for (let i = 0; i < pts.length; i++) {
+        const isDeepEnough = pointDepths[i] >= minStadiumDepth;
+
+        if (isDeepEnough && startIdx === -1) {
+          startIdx = i;
+        } else if ((!isDeepEnough || i === pts.length - 1) && startIdx !== -1) {
+          // End of a run (or end of segment)
+          let endIdx = isDeepEnough ? i : i - 1;
+
+          // Check length
+          // We can approximate length by direct distance for now, or sum of segments
+          const length = Math.hypot(pts[endIdx].x - pts[startIdx].x, pts[endIdx].y - pts[startIdx].y);
+
+          if (length > minStadiumLength) {
+            // Create stadium polygon
+            const innerPath = [];
+            const outerPath = [];
+
+            // Smoothing the outer path (the back of the stadium)
+            // We'll collect the "deep" points and then maybe smooth them
+
+            for (let k = startIdx; k <= endIdx; k += 2) { // Skip some points for performance/simplicity
+              const p = pts[k];
+              innerPath.push({ x: p.x, y: p.y });
+
+              // For the back, we use the measured depth (clamped slightly to be safe)
+              // Subtract a bit of buffer (e.g. 10px) to avoid hitting the road exactly
+              const d = Math.max(minStadiumDepth, pointDepths[k] - 10);
+
+              // We need the normal again
+              let nx = p.nx;
+              let ny = p.ny;
+              if (nx === undefined) {
+                const prev = pts[Math.max(0, k - 1)];
+                const next = pts[Math.min(pts.length - 1, k + 1)];
+                const dx = next.x - prev.x;
+                const dy = next.y - prev.y;
+                const len = Math.hypot(dx, dy) || 1;
+                nx = -dy / len; ny = dx / len;
+              }
+
+              outerPath.push({
+                x: p.x + nx * d,
+                y: p.y + ny * d
+              });
+            }
+
+            // Construct closed polygon
+            // Inner path forward, Outer path reversed
+            const polygon = [
+              ...innerPath,
+              ...outerPath.reverse()
+            ];
+
+            stadiums.push({
+              points: polygon,
+              innerPoints: innerPath,
+              type: 'stadium'
+            });
+          }
+
+          startIdx = -1;
+        }
+      }
+    }
+
+    return stadiums;
+  }
+
 
   /**
    * Build a continuous wall path from a track edge.
@@ -1388,35 +1564,163 @@
     ctx.restore();
   }
 
-  function drawBuildings(ctx, buildings, atlas) {
+  function drawStadiums(ctx, stadiums) {
+    if (!stadiums || stadiums.length === 0) return;
+
     ctx.save();
-    ctx.fillStyle = "#8b93a0";
-    ctx.strokeStyle = "#1f2933";
-    ctx.lineWidth = 2;
-    for (const b of buildings) {
-      ctx.save();
-      ctx.translate(b.x, b.y);
-      ctx.rotate(b.angle);
-      if (atlas) {
-        const sprite = SPRITE_MAP.building;
-        ctx.drawImage(
-          atlas,
-          sprite.x,
-          sprite.y,
-          sprite.w,
-          sprite.h,
-          -b.width * 0.5,
-          -b.depth * 0.5,
-          b.width,
-          b.depth
-        );
-      } else {
-        ctx.fillRect(-b.width * 0.5, -b.depth * 0.5, b.width, b.depth);
-        ctx.strokeRect(-b.width * 0.5, -b.depth * 0.5, b.width, b.depth);
-        ctx.fillStyle = "rgba(255,255,255,0.12)";
-        ctx.fillRect(-b.width * 0.4, -b.depth * 0.3, b.width * 0.8, b.depth * 0.6);
+    ctx.lineJoin = "round";
+
+    for (const stadium of stadiums) {
+      if (!stadium.points || stadium.points.length < 3) continue;
+
+      // Draw the main stadium body
+      ctx.beginPath();
+      ctx.moveTo(stadium.points[0].x, stadium.points[0].y);
+      for (let i = 1; i < stadium.points.length; i++) {
+        ctx.lineTo(stadium.points[i].x, stadium.points[i].y);
       }
-      ctx.restore();
+      ctx.closePath();
+
+      // Concrete/Structure color
+      ctx.fillStyle = "#cbd5e1"; // Slate-300
+      ctx.fill();
+
+      // Border
+      ctx.strokeStyle = "#64748b"; // Slate-500
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Roof/Structure details (simple internal lines)
+      ctx.beginPath();
+      // Draw a line inset from the back edge to simulate roof structure
+      // For simplicity in this version, we just add some texture or noise if needed, 
+      // but a flat clean look fits the style.
+
+      // Draw audience along the FRONT edge (the track-facing side)
+      // The track facing side is the first segment of points (from construction)
+      // The stadium points are constructed as: [ ...innerPoints, ...outerPointsReversed ]
+      // So the first half of points is the inner edge (facing track)
+
+
+      if (stadium.innerPoints && stadium.innerPoints.length > 1) {
+        ctx.save();
+
+        // Draw multiple rows of "seats" / "audience"
+        const rowCount = 3;
+        const rowSpacing = 4; // Spacing between rows
+        const baseWidth = 4;  // Width of each row line
+
+        // We'll draw parallel lines for the rows
+        // Since we don't have easy parallel-curve logic here for the canvas path,
+        // we'll approximate by just drawing the same path with increasing line widths
+        // and layering them, or using the offset logic if we had it.
+        // EASIER TRICK: Draw thick lines first (back rows), then thinner lines (front rows)?
+        // No, that stacks them on top of each other.
+        // We really want distinct bands.
+
+        // Let's just draw the "Audience Area" as a thick colored band first
+        ctx.lineCap = "butt";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        ctx.moveTo(stadium.innerPoints[0].x, stadium.innerPoints[0].y);
+        for (let j = 1; j < stadium.innerPoints.length; j++) {
+          ctx.lineTo(stadium.innerPoints[j].x, stadium.innerPoints[j].y);
+        }
+
+        // Draw 3 distinct bands for the crowd
+        const colors = ["#d1d5db", "#9ca3af", "#6b7280"]; // Seat backings (Greys)
+
+        // Draw the "structure" of the stands first
+        ctx.strokeStyle = "#475569"; // Stands base
+        ctx.lineWidth = 26;
+        ctx.stroke();
+
+        // Now draw the "people" as stippled dots on top
+        // We use the same path but with offsets? 
+        // Canvas doesn't support "offset path" natively well without 2d context filter hacks.
+        // We will just draw the same path multiple times with different line widths, 
+        // relying on the fact that the 'innerPoints' are the FRONT of the stadium (closest to track).
+        // Actually, the innerPoints are the wall boundary. 
+        // The stadium expands OUTWARDS from there.
+        // So we want the first row to be close to the wall, second row further back, etc.
+        // Since we are stroking the centerline, a thick line grows both ways.
+        // We want to grow ONLY away from the track? 
+        // No, `innerPoints` defines the edge. If we stroke it, half the stroke is on the track side!
+        // We need to CLIP or OFFSET.
+
+        // Since we can't easily clip to "outside only" without complex paths,
+        // let's assume the wall thickness covers the "inner" half of the stroke,
+        // or we just accept a bit of overhang (which might look like the upper deck hanging over).
+        // Actually, let's just use the `outerPath` logic from `createStadiums` to derive parallel lines?
+        // Too expensive to recompute here.
+
+        // SIMPLE FIX: Draw the audience dots on the path itself, 
+        // but assume the path is the "front row".
+
+        const crowdColors = ["#ef4444", "#3b82f6", "#eab308", "#f0fdf4"];
+
+        // Draw 3 rows by using transparency and line dashes
+        for (let r = 0; r < 3; r++) {
+          ctx.beginPath();
+          // We can manually offset the points slightly if we access the normals?
+          // We don't have normals here easily.
+          // Let's just draw one THICK band of "crowd" 
+
+          // Randomize color for this pass
+          ctx.strokeStyle = crowdColors[r % crowdColors.length];
+          ctx.lineWidth = 4;
+
+          // Magic: Use lineDashOffset to scramble visual pattern
+          ctx.setLineDash([3, 4]); // dots
+          ctx.lineDashOffset = r * 13; // scramble
+
+          // We can't offset the position easily without normals.
+          // BUT, we can just draw ONE rich band of crowd.
+          // Let's try drawing it WIDE with a "pattern"
+
+          // Re-stroke each time? No, expensive.
+        }
+
+        // Better Approach:
+        // Create a pattern? No.
+        // Let's just draw high-contrast "confetti" on the edge.
+
+        ctx.strokeStyle = "#e2e8f0"; // Background for seats
+        ctx.lineWidth = 18;
+        ctx.stroke();
+
+        // Row 1 (Back)
+        ctx.strokeStyle = "#64748b";
+        ctx.lineWidth = 14;
+        ctx.setLineDash([2, 2]);
+        ctx.stroke();
+
+        // Row 2 (Middle)
+        ctx.strokeStyle = "#94a3b8";
+        ctx.lineWidth = 8;
+        ctx.setLineDash([3, 3]);
+        ctx.lineDashOffset = 2;
+        ctx.stroke();
+
+        // Row 3 (Front - People)
+        // We'll iterate colors to make it look alive
+        ctx.lineWidth = 4;
+        ctx.setLineDash([2, 5]);
+
+        ctx.strokeStyle = "#ef4444"; // Red shirts
+        ctx.lineDashOffset = 0;
+        ctx.stroke();
+
+        ctx.strokeStyle = "#3b82f6"; // Blue shirts
+        ctx.lineDashOffset = 3;
+        ctx.stroke();
+
+        ctx.strokeStyle = "#eab308"; // Yellow shirts
+        ctx.lineDashOffset = 6;
+        ctx.stroke();
+
+        ctx.restore();
+      }
     }
     ctx.restore();
   }
@@ -1455,17 +1759,27 @@
       shadowCtx.restore();
     }
     shadowCtx.fillStyle = "rgba(12, 12, 12, 0.32)";
-    for (const b of metadata.items.buildings) {
-      const offset = Math.max(16, Math.min(42, (b.depth + b.width) * 0.2));
-      const dx = Math.cos(b.angle) * offset * 0.6;
-      const dy = Math.sin(b.angle) * offset * 0.6;
-      shadowCtx.save();
-      shadowCtx.translate(b.x + dx, b.y + dy);
-      shadowCtx.rotate(b.angle);
-      shadowCtx.scale(1.1, 0.6);
-      shadowCtx.fillRect(-b.width * 0.5, -b.depth * 0.5, b.width, b.depth);
-      shadowCtx.restore();
+
+    // Shadow for stadiums
+    if (metadata.items.stadiums) {
+      for (const stadium of metadata.items.stadiums) {
+        if (!stadium.points || stadium.points.length < 3) continue;
+
+        shadowCtx.save();
+        // Offset shadow
+        shadowCtx.translate(16, 16);
+
+        shadowCtx.beginPath();
+        shadowCtx.moveTo(stadium.points[0].x, stadium.points[0].y);
+        for (let i = 1; i < stadium.points.length; i++) {
+          shadowCtx.lineTo(stadium.points[i].x, stadium.points[i].y);
+        }
+        shadowCtx.closePath();
+        shadowCtx.fill();
+        shadowCtx.restore();
+      }
     }
+
     if (maskCanvas) {
       shadowCtx.save();
       shadowCtx.globalAlpha = 0.45 * shadowAlpha;
@@ -1506,9 +1820,13 @@
     const curvature = computeCurvature(centerline);
     const kerbs = createKerbs(edges, curvature, effectiveParams);
     const barriers = createBarriers(edges, curvature, effectiveParams, rng, zones);
-    const trees = sampleTrees(zones, rng, effectiveParams);
-    const buildings = createBuildings(edges, zones, rng, effectiveParams);
     const innerWalls = createInnerWalls(edges, zones, effectiveParams);
+
+    // Create stadiums FIRST so we can mask them out for trees
+    const stadiums = createStadiums(innerWalls, zones, rng, effectiveParams);
+
+    const trees = sampleTrees(zones, rng, effectiveParams, stadiums);
+
     return {
       version: 2,
       seed,
@@ -1519,10 +1837,11 @@
         shadowStrength: effectiveParams.shadowStrength,
       },
       items: {
+        stadiums,
         kerbs,
         barriers,
         trees,
-        buildings,
+        buildings: [], // Deprecated
         innerWalls,
       },
       zones: {
@@ -1558,12 +1877,15 @@
     decorCtx.globalCompositeOperation = "source-over";
     drawKerbs(decorCtx, metadata.items.kerbs, atlas);
     if (metadata.items.innerWalls &&
-        ((metadata.items.innerWalls.outerSegments && metadata.items.innerWalls.outerSegments.length > 0) ||
-         (metadata.items.innerWalls.innerSegments && metadata.items.innerWalls.innerSegments.length > 0))) {
+      ((metadata.items.innerWalls.outerSegments && metadata.items.innerWalls.outerSegments.length > 0) ||
+        (metadata.items.innerWalls.innerSegments && metadata.items.innerWalls.innerSegments.length > 0))) {
       drawInnerWalls(decorCtx, metadata.items.innerWalls);
     }
     drawBarriers(decorCtx, metadata.items.barriers, atlas);
-    drawBuildings(decorCtx, metadata.items.buildings, atlas);
+    drawBarriers(decorCtx, metadata.items.barriers, atlas);
+    // drawBuildings(decorCtx, metadata.items.buildings, atlas); // Replaced by stadiums
+    drawStadiums(decorCtx, metadata.items.stadiums);
+    drawTrees(decorCtx, metadata.items.trees, atlas);
     drawTrees(decorCtx, metadata.items.trees, atlas);
     decorCtx.restore();
 
