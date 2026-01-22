@@ -1026,8 +1026,10 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     world: null,
     trackBody: null,
     trackSegments: [],
-    innerWallSegments: [], // Inner wall segments for collision
-    innerWallBodies: [], // Planck bodies for inner walls
+    decorWallSegments: [], // All wall segments (inner + outer)
+    stadiumSegments: [],   // Stadium polygons
+    decorWallBodies: [],   // Planck bodies for walls
+    stadiumBodies: [],     // Planck bodies for stadiumPerimeter
     ppm: PLANCK_DEFAULTS.pixelsPerMeter,
     velIters: PLANCK_DEFAULTS.velIters,
     posIters: PLANCK_DEFAULTS.posIters,
@@ -1050,11 +1052,17 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       try { planckState.world.destroyBody(planckState.trackBody); } catch (_) { }
     }
     planckState.trackBody = null;
-    // Destroy inner wall bodies
-    for (const wallBody of planckState.innerWallBodies) {
-      try { planckState.world.destroyBody(wallBody); } catch (_) { }
+    planckState.trackBody = null;
+    // Destroy decor wall bodies
+    for (const b of planckState.decorWallBodies) {
+      try { planckState.world.destroyBody(b); } catch (_) { }
     }
-    planckState.innerWallBodies = [];
+    planckState.decorWallBodies = [];
+    // Destroy stadium bodies
+    for (const b of planckState.stadiumBodies) {
+      try { planckState.world.destroyBody(b); } catch (_) { }
+    }
+    planckState.stadiumBodies = [];
     planckState.world = null;
   }
 
@@ -1075,9 +1083,15 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     planckState.needsWorldBuild = true;
   }
 
-  function configureInnerWalls(wallSegments) {
-    planckState.innerWallSegments = Array.isArray(wallSegments) ? wallSegments.slice() : [];
+  function configureDecorCollision(wallSegments, stadiumSegments) {
+    planckState.decorWallSegments = Array.isArray(wallSegments) ? wallSegments.slice() : [];
+    planckState.stadiumSegments = Array.isArray(stadiumSegments) ? stadiumSegments.slice() : [];
     planckState.needsWorldBuild = true;
+  }
+
+  // Deprecated alias
+  function configureInnerWalls(wallSegments) {
+    configureDecorCollision(wallSegments, []);
   }
 
   function rebuildPlanckWorld({ cars } = {}) {
@@ -1088,26 +1102,60 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     // Wall behavior permanently disabled - cars can freely drive over curbs onto grass
     planckState.trackBody = null;
 
-    // Create inner wall physics bodies
-    planckState.innerWallBodies = [];
-    if (planckState.innerWallSegments && planckState.innerWallSegments.length > 0) {
-      const pl = window.planck;
-      if (pl && world) {
-        const ppm = planckState.ppm || PPM_DEFAULT;
-        const restitution = planckState.restitution || 0.3;
+    // Create decor wall physics bodies (inner + outer walls)
+    planckState.decorWallBodies = [];
+    planckState.stadiumBodies = [];
 
-        for (const seg of planckState.innerWallSegments) {
+    const pl = window.planck;
+    if (pl && world) {
+      const ppm = planckState.ppm || PPM_DEFAULT;
+      // Walls are rigid, slightly bouncy
+      const wallRestitution = 0.2;
+      // Stadiums are concrete, solid
+      const stadiumRestitution = 0.1;
+
+      // 1. Build Walls
+      if (planckState.decorWallSegments && planckState.decorWallSegments.length > 0) {
+        for (const seg of planckState.decorWallSegments) {
           try {
+            // Check for valid segment
+            if (!Number.isFinite(seg.x1) || !Number.isFinite(seg.y1) ||
+              !Number.isFinite(seg.x2) || !Number.isFinite(seg.y2)) continue;
+
             const wallBody = world.createBody({ type: 'static' });
             const v1 = pl.Vec2(meters(seg.x1, ppm), meters(seg.y1, ppm));
             const v2 = pl.Vec2(meters(seg.x2, ppm), meters(seg.y2, ppm));
             const edgeShape = pl.Edge(v1, v2);
             wallBody.createFixture(edgeShape, {
-              friction: 0.6,
-              restitution: restitution
+              friction: 0.5,
+              restitution: wallRestitution
             });
-            planckState.innerWallBodies.push(wallBody);
+            planckState.decorWallBodies.push(wallBody);
           } catch (_) { /* Skip invalid wall segments */ }
+        }
+      }
+
+      // 2. Build Stadiums
+      if (planckState.stadiumSegments && planckState.stadiumSegments.length > 0) {
+        for (const stadium of planckState.stadiumSegments) {
+          if (!stadium || !Array.isArray(stadium.points) || stadium.points.length < 3) continue;
+
+          try {
+            const body = world.createBody({ type: 'static' });
+            const verts = stadium.points.map(p => pl.Vec2(meters(p.x, ppm), meters(p.y, ppm)));
+
+            // Use Chain shape for the perimeter
+            // Create a loop (closed chain)
+            const chain = pl.Chain(verts, true); // true = loop
+
+            body.createFixture(chain, {
+              friction: 0.6,
+              restitution: stadiumRestitution
+            });
+            planckState.stadiumBodies.push(body);
+          } catch (err) {
+            console.warn('Failed to create stadium body', err);
+          }
         }
       }
     }
@@ -3113,6 +3161,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     injectDevTools,
     injectVehicleTweaker,
     configureTrackCollision,
+    configureDecorCollision,
     configureInnerWalls,
     rebuildPlanckWorld,
     registerPlanckCars,

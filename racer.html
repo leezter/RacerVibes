@@ -4522,21 +4522,47 @@
             const restitution = (player && player.physics && player.physics.params && player.physics.params.restitution) || 0;
             window.RacerPhysics.configureTrackCollision(planckSegments, { ppm, restitution });
 
-            // Configure inner walls for physics collision
-            if (decorLayerRef.current && decorLayerRef.current.metadata && decorLayerRef.current.metadata.items && decorLayerRef.current.metadata.items.innerWalls) {
-              const innerWalls = decorLayerRef.current.metadata.items.innerWalls;
-              const wallSegments = innerWalls.map(wall => {
-                const halfLen = wall.length * 0.5;
-                const cos = Math.cos(wall.angle);
-                const sin = Math.sin(wall.angle);
-                return {
-                  x1: wall.x - cos * halfLen,
-                  y1: wall.y - sin * halfLen,
-                  x2: wall.x + cos * halfLen,
-                  y2: wall.y + sin * halfLen
-                };
-              });
-              window.RacerPhysics.configureInnerWalls(wallSegments);
+            // Configure decor collision (walls and stadiums)
+            const decorItems = decorLayerRef.current?.metadata?.items;
+            if (decorItems) {
+              const allWallSegments = [];
+
+              // Helper to flatten polyline segments into physics edges
+              const collectSegments = (segmentList) => {
+                if (!Array.isArray(segmentList)) return;
+                for (const seg of segmentList) {
+                  if (!seg.points || seg.points.length < 2) continue;
+                  for (let i = 0; i < seg.points.length - 1; i++) {
+                    allWallSegments.push({
+                      x1: seg.points[i].x,
+                      y1: seg.points[i].y,
+                      x2: seg.points[i + 1].x,
+                      y2: seg.points[i + 1].y
+                    });
+                  }
+                }
+              };
+
+              // Collect inner walls
+              if (decorItems.innerWalls) {
+                collectSegments(decorItems.innerWalls.outerSegments);
+                collectSegments(decorItems.innerWalls.innerSegments);
+              }
+
+              // Also collect barriers if they exist and we want to collide with them?
+              // The previous code seemed to map 'innerWalls' as barriers (x,y,angle,length).
+              // If barriers are present in items.barriers, we might want them too.
+              // But strictly speaking, walls are the continuous boundaries. 
+              // Let's stick to the continuous walls for now as requested by user ("wall boundaries").
+
+              const stadiums = decorItems.stadiums || [];
+
+              if (typeof window.RacerPhysics.configureDecorCollision === 'function') {
+                window.RacerPhysics.configureDecorCollision(allWallSegments, stadiums);
+              } else {
+                // Fallback (shouldn't happen with updated physics.js)
+                window.RacerPhysics.configureInnerWalls(allWallSegments);
+              }
             }
 
             const cars = planckCars();
@@ -4847,6 +4873,9 @@
                 decorReady = !!(decorLayerRef.current && decorLayerRef.current.decorCanvas);
               }
             }
+
+            // Sync physics now that decor walls are ready
+            syncPlanckWorld();
 
             updateLoadingProgress(70);
 
@@ -6766,15 +6795,15 @@
             <h3>Graphics</h3>
             <label>
               <span>Quality</span>
-              <div className="quality-buttons" style={{display:'flex',gap:'8px',marginTop:'4px'}}>
+              <div className="quality-buttons" style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
                 <button
-                  style={{flex:1, padding:'8px 4px', background: graphicsQuality==='high' ? 'var(--accent, #ef4444)' : '#333', border:'none', borderRadius:'4px', color:'#fff', cursor:'pointer', fontSize:'12px'}}
+                  style={{ flex: 1, padding: '8px 4px', background: graphicsQuality === 'high' ? 'var(--accent, #ef4444)' : '#333', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontSize: '12px' }}
                   onClick={() => applyGraphicsQuality('high')}>High</button>
                 <button
-                  style={{flex:1, padding:'8px 4px', background: graphicsQuality==='medium' ? 'var(--accent, #ef4444)' : '#333', border:'none', borderRadius:'4px', color:'#fff', cursor:'pointer', fontSize:'12px'}}
+                  style={{ flex: 1, padding: '8px 4px', background: graphicsQuality === 'medium' ? 'var(--accent, #ef4444)' : '#333', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontSize: '12px' }}
                   onClick={() => applyGraphicsQuality('medium')}>Medium</button>
                 <button
-                  style={{flex:1, padding:'8px 4px', background: graphicsQuality==='low' ? 'var(--accent, #ef4444)' : '#333', border:'none', borderRadius:'4px', color:'#fff', cursor:'pointer', fontSize:'12px'}}
+                  style={{ flex: 1, padding: '8px 4px', background: graphicsQuality === 'low' ? 'var(--accent, #ef4444)' : '#333', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontSize: '12px' }}
                   onClick={() => applyGraphicsQuality('low')}>Low</button>
               </div>
             </label>
