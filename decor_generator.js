@@ -592,7 +592,8 @@
     // Maximum loop size to cut (as fraction of total path)
     // Larger loops are likely parallel section crossings, not sharp corners
     // Increased to 0.40 to handle very sharp hairpin corners
-    const maxLoopFraction = 0.40;
+    // Changed from 0.40 to 0.80 for wall paths to handle large hairpin loops
+    const maxLoopFraction = 0.80;
 
     while (changed && iterations < maxIterations) {
       changed = false;
@@ -1150,9 +1151,11 @@
       let nx = pt.nx;
       let ny = pt.ny;
 
+      // Recompute normal if missing or for consistency
+      const prev = edge[(i - 1 + edge.length) % edge.length];
+      const next = edge[(i + 1) % edge.length];
+
       if (nx === undefined || ny === undefined) {
-        const prev = edge[(i - 1 + edge.length) % edge.length];
-        const next = edge[(i + 1) % edge.length];
         const dx = next.x - prev.x;
         const dy = next.y - prev.y;
         const len = Math.hypot(dx, dy) || 1;
@@ -1160,9 +1163,65 @@
         ny = dx / len;
       }
 
+      // Calculate local curvature to detect sharp corners
+      // Vector from prev to curr
+      const v1x = pt.x - prev.x;
+      const v1y = pt.y - prev.y;
+      // Vector from curr to next
+      const v2x = next.x - pt.x;
+      const v2y = next.y - pt.y;
+
+      // Cross product to determine turn direction (Left > 0, Right < 0)
+      const cross = v1x * v2y - v1y * v2x; // z-component of cross product
+      const turnDir = cross > 0 ? 1 : -1; // 1 = Left, -1 = Right
+
+      // Calculate angle of turn (approximate curvature)
+      const dot = v1x * v2x + v1y * v2y;
+      const l1 = Math.hypot(v1x, v1y) || 1;
+      const l2 = Math.hypot(v2x, v2y) || 1;
+      // Cosine of angle change. close to 1 = straight, close to -1 = u-turn
+      const cosTheta = dot / (l1 * l2);
+
+      // Effective radius of curvature approx = segment_len / angle
+      // For sharp turns, we want to clamp the offset to be less than the radius
+
+      let effectiveOffset = wallOffset;
+
+      // Check if we are offsetting INTO the turn
+      // offsetDirection: 1 (Left/Outer), -1 (Right/Inner)
+      // If Turn Left (turnDir 1) and Offset Left (offsetDirection 1) -> DANGER
+      // If Turn Right (turnDir -1) and Offset Right (offsetDirection -1) -> DANGER
+
+      // Note: checking sign match is sufficient
+      // However, wallOffset already includes offsetDirection sign? 
+      // No, wallOffset is calculated as `roadWidth * 0.6 * offsetDirection`
+      // So wallOffset is Positive for Left, Negative for Right.
+
+      // If (Turn Left AND WallOffset Positive) OR (Turn Right AND WallOffset Negative)
+      // This is equivalent to: turnDir * wallOffset > 0
+
+      if (turnDir * wallOffset > 0) {
+        // We are on the inside of the turn. DANGER of overlap.
+        // Calculate safe radius
+        // Angle constraint: avoid crossing the center
+        const angle = Math.acos(Math.max(-1, Math.min(1, cosTheta)));
+        if (angle > 0.05) { // Only clamp if there is an actual turn
+          const avgLen = (l1 + l2) / 2;
+          // Radius approx = ArcLength / Angle
+          const radius = avgLen / (2 * Math.tan(angle / 2));
+          // Use a safety factor (0.8) to stay well clear of the singularity
+          const maxSafeOffset = Math.max(10, radius * 0.9);
+
+          if (Math.abs(effectiveOffset) > maxSafeOffset) {
+            // Clamp magnitude, preserve sign
+            effectiveOffset = Math.sign(effectiveOffset) * maxSafeOffset;
+          }
+        }
+      }
+
       wallPoints.push({
-        x: pt.x + nx * wallOffset,
-        y: pt.y + ny * wallOffset,
+        x: pt.x + nx * effectiveOffset,
+        y: pt.y + ny * effectiveOffset,
         edgeX: pt.x,
         edgeY: pt.y,
         nx: nx,
