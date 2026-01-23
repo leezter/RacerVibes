@@ -1,7 +1,7 @@
 // Drift mode fully removed in this release.
 // 'racer.html' is the single entry point; Grip is default.
 // Cache version bumped to evict the old drift page.
-const CACHE_VERSION = 'rv-static-v20260113-pwa-icons-fix';
+const CACHE_VERSION = 'rv-static-v20260123-track-debug4';
 const CORE_ASSETS = [
   'racer_start_menu.html',
   'racer.html',

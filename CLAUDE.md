@@ -81,6 +81,7 @@ Manual testing only - no automated test suite. Open `tests/test_runner.html` or 
 2. Physics uses pixels, not meters - don't mix units
 3. Service worker caching - bump `CACHE_VERSION` in `service-worker.js` after asset changes
 4. Script order matters - dependencies must load before dependents
+5. **Chrome GPU canvas issue**: Stadium shadows in `decor_generator.js` cause Chrome (Windows, hardware acceleration ON) to silently lose canvas content. Stadium shadows are currently **disabled** (commented out at line ~1720). Other shadows work fine. Don't re-enable without thorough Chrome testing.
 
 ## Adding Features
 

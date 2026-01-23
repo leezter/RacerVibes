@@ -2712,6 +2712,8 @@
 
 
       const trackSurfaceRef = useRef({ canvas: null });
+      // Keep strong reference to prevent GC of offscreen canvases
+      const canvasStrongRefs = useRef([]);
       const decorParamsRef = useRef({
         treeDensity,
         buildingDensity,
@@ -2889,7 +2891,10 @@
           kerbWidthScale: kerbWidthScaleParam,
           shadowStrength: getShadowStrength(),
         };
-        const dpr = (typeof window !== "undefined" && window.devicePixelRatio) ? window.devicePixelRatio : 1;
+        const rawDpr = (typeof window !== "undefined" && window.devicePixelRatio) ? window.devicePixelRatio : 1;
+        // Apply quality multiplier to dpr to reduce decor canvas size at lower quality settings
+        // This prevents Chrome GPU context loss on systems with limited GPU memory
+        const dpr = rawDpr * getQualityMultiplier();
         const worldScale = source.worldScale || 1;
         const seed = computeDecorSeed(source.trackKey, source.baseWorldWidth, source.baseWorldHeight);
         const signature = JSON.stringify({
@@ -3592,14 +3597,18 @@
           const clipY1 = Math.min(regionY + regionH, worldMaxY);
           const clipW = clipX1 - clipX0;
           const clipH = clipY1 - clipY0;
-          if (clipW <= 0 || clipH <= 0) return;
+          if (clipW <= 0 || clipH <= 0) {
+            return;
+          }
 
           const worldToTex = mapping.worldToTex || 1;
           const srcX = Math.max(0, Math.floor((clipX0 - worldMinX) * worldToTex));
           const srcY = Math.max(0, Math.floor((clipY0 - worldMinY) * worldToTex));
           const srcW = Math.min(image.width - srcX, Math.ceil(clipW * worldToTex));
           const srcH = Math.min(image.height - srcY, Math.ceil(clipH * worldToTex));
-          if (srcW <= 0 || srcH <= 0) return;
+          if (srcW <= 0 || srcH <= 0) {
+            return;
+          }
 
           ctx.drawImage(image, srcX, srcY, srcW, srcH, clipX0, clipY0, clipW, clipH);
         }
@@ -4219,7 +4228,8 @@
         }
 
         function buildTrackSurfaceCanvas() {
-          const LIMIT = 4096;
+          // Canvas size limit - 2048 works on most devices
+          const LIMIT = 2048;
           const TARGET_PPM = 4;
           const pad = Math.max(ROAD_WIDTH * 0.75, 80);
           const baseBounds = trackBounds ? {
@@ -4245,12 +4255,34 @@
             texW = Math.max(1, Math.ceil(spanW * ppm));
             texH = Math.max(1, Math.ceil(spanH * ppm));
           }
+          // Second pass: ensure dimensions stay within limit even after ppm floor
+          // This fixes rendering failures on large tracks where ppm floor of 1.5
+          // still results in canvas dimensions exceeding browser limits
+          if (texW > LIMIT || texH > LIMIT) {
+            const finalOver = Math.max(texW / LIMIT, texH / LIMIT);
+            ppm = ppm / finalOver;
+            texW = Math.max(1, Math.floor(texW / finalOver));
+            texH = Math.max(1, Math.floor(texH / finalOver));
+          }
 
           const canvas = document.createElement('canvas');
           canvas.width = texW;
           canvas.height = texH;
-          const sctx = canvas.getContext('2d');
+          let sctx = canvas.getContext('2d');
+          // Fallback: if context fails (GPU memory exhaustion), try smaller canvas
           if (!sctx) {
+            console.warn('Track surface canvas context failed at', texW, 'x', texH, '- trying fallback');
+            const fallbackSize = 1024;
+            const fallbackScale = Math.min(fallbackSize / texW, fallbackSize / texH, 1);
+            canvas.width = Math.max(1, Math.floor(texW * fallbackScale));
+            canvas.height = Math.max(1, Math.floor(texH * fallbackScale));
+            ppm = ppm * fallbackScale;
+            texW = canvas.width;
+            texH = canvas.height;
+            sctx = canvas.getContext('2d');
+          }
+          if (!sctx) {
+            console.error('Track surface canvas context failed even with fallback');
             trackSurfaceRef.current = { canvas: null, mapping: null };
             return;
           }
@@ -4338,6 +4370,13 @@
             }
           }
           sctx.restore();
+
+          // Store strong reference to prevent browser from GC'ing or clearing the canvas
+          canvasStrongRefs.current.push(canvas);
+          // Keep only last 2 canvases to prevent memory leak
+          if (canvasStrongRefs.current.length > 2) {
+            canvasStrongRefs.current.shift();
+          }
 
           trackSurfaceRef.current = {
             canvas,
@@ -4676,6 +4715,9 @@
           const aiSpawn = transformPose(rawAi, playerSpawn.angle);
 
           drawTrackMask();
+          // Compute trackBounds early so buildTrackSurfaceCanvas can use actual track bounds
+          // instead of falling back to full world bounds (which can exceed canvas limits)
+          trackBounds = bbox(centerline);
           buildTrackSurfaceCanvas();
           updateLoadingProgress(20);
           const zones = Array.isArray(T.speedZones) && T.speedZones.length ? T.speedZones : [[0, Math.max(1, Math.floor(centerline.length / 24)), 220]];

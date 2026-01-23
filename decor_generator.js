@@ -5,8 +5,9 @@
     kerbWidthScale: 1.0,
     shadowStrength: 0.55,
   };
+  // Canvas size limit - 2048 works on most devices
   const DECOR_TEXTURE_LIMITS = {
-    maxSize: 4096,
+    maxSize: 2048,
     targetPxPerMeter: 6,
   };
   const BUFFER_RADIUS = 28;
@@ -1652,133 +1653,27 @@
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Roof/Structure details (simple internal lines)
-      ctx.beginPath();
-      // Draw a line inset from the back edge to simulate roof structure
-      // For simplicity in this version, we just add some texture or noise if needed, 
-      // but a flat clean look fits the style.
-
-      // Draw audience along the FRONT edge (the track-facing side)
-      // The track facing side is the first segment of points (from construction)
-      // The stadium points are constructed as: [ ...innerPoints, ...outerPointsReversed ]
-      // So the first half of points is the inner edge (facing track)
-
-
+      // Draw simplified audience along the FRONT edge (the track-facing side)
+      // Reduced from 8+ stroke operations to just 2 to avoid Chrome GPU context loss
       if (stadium.innerPoints && stadium.innerPoints.length > 1) {
         ctx.save();
-
-        // Draw multiple rows of "seats" / "audience"
-        const rowCount = 3;
-        const rowSpacing = 4; // Spacing between rows
-        const baseWidth = 4;  // Width of each row line
-
-        // We'll draw parallel lines for the rows
-        // Since we don't have easy parallel-curve logic here for the canvas path,
-        // we'll approximate by just drawing the same path with increasing line widths
-        // and layering them, or using the offset logic if we had it.
-        // EASIER TRICK: Draw thick lines first (back rows), then thinner lines (front rows)?
-        // No, that stacks them on top of each other.
-        // We really want distinct bands.
-
-        // Let's just draw the "Audience Area" as a thick colored band first
         ctx.lineCap = "butt";
         ctx.lineJoin = "round";
+
         ctx.beginPath();
         ctx.moveTo(stadium.innerPoints[0].x, stadium.innerPoints[0].y);
         for (let j = 1; j < stadium.innerPoints.length; j++) {
           ctx.lineTo(stadium.innerPoints[j].x, stadium.innerPoints[j].y);
         }
 
-        // Draw 3 distinct bands for the crowd
-        const colors = ["#d1d5db", "#9ca3af", "#6b7280"]; // Seat backings (Greys)
-
-        // Draw the "structure" of the stands first
-        ctx.strokeStyle = "#475569"; // Stands base
-        ctx.lineWidth = 26;
+        // Single "stands" band - simplified from 8 strokes to avoid GPU context loss
+        ctx.strokeStyle = "#475569"; // Stands base (slate-600)
+        ctx.lineWidth = 20;
         ctx.stroke();
 
-        // Now draw the "people" as stippled dots on top
-        // We use the same path but with offsets? 
-        // Canvas doesn't support "offset path" natively well without 2d context filter hacks.
-        // We will just draw the same path multiple times with different line widths, 
-        // relying on the fact that the 'innerPoints' are the FRONT of the stadium (closest to track).
-        // Actually, the innerPoints are the wall boundary. 
-        // The stadium expands OUTWARDS from there.
-        // So we want the first row to be close to the wall, second row further back, etc.
-        // Since we are stroking the centerline, a thick line grows both ways.
-        // We want to grow ONLY away from the track? 
-        // No, `innerPoints` defines the edge. If we stroke it, half the stroke is on the track side!
-        // We need to CLIP or OFFSET.
-
-        // Since we can't easily clip to "outside only" without complex paths,
-        // let's assume the wall thickness covers the "inner" half of the stroke,
-        // or we just accept a bit of overhang (which might look like the upper deck hanging over).
-        // Actually, let's just use the `outerPath` logic from `createStadiums` to derive parallel lines?
-        // Too expensive to recompute here.
-
-        // SIMPLE FIX: Draw the audience dots on the path itself, 
-        // but assume the path is the "front row".
-
-        const crowdColors = ["#ef4444", "#3b82f6", "#eab308", "#f0fdf4"];
-
-        // Draw 3 rows by using transparency and line dashes
-        for (let r = 0; r < 3; r++) {
-          ctx.beginPath();
-          // We can manually offset the points slightly if we access the normals?
-          // We don't have normals here easily.
-          // Let's just draw one THICK band of "crowd" 
-
-          // Randomize color for this pass
-          ctx.strokeStyle = crowdColors[r % crowdColors.length];
-          ctx.lineWidth = 4;
-
-          // Magic: Use lineDashOffset to scramble visual pattern
-          ctx.setLineDash([3, 4]); // dots
-          ctx.lineDashOffset = r * 13; // scramble
-
-          // We can't offset the position easily without normals.
-          // BUT, we can just draw ONE rich band of crowd.
-          // Let's try drawing it WIDE with a "pattern"
-
-          // Re-stroke each time? No, expensive.
-        }
-
-        // Better Approach:
-        // Create a pattern? No.
-        // Let's just draw high-contrast "confetti" on the edge.
-
-        ctx.strokeStyle = "#e2e8f0"; // Background for seats
-        ctx.lineWidth = 18;
-        ctx.stroke();
-
-        // Row 1 (Back)
-        ctx.strokeStyle = "#64748b";
-        ctx.lineWidth = 14;
-        ctx.setLineDash([2, 2]);
-        ctx.stroke();
-
-        // Row 2 (Middle)
-        ctx.strokeStyle = "#94a3b8";
+        // Single "crowd" band on top
+        ctx.strokeStyle = "#94a3b8"; // Crowd (slate-400)
         ctx.lineWidth = 8;
-        ctx.setLineDash([3, 3]);
-        ctx.lineDashOffset = 2;
-        ctx.stroke();
-
-        // Row 3 (Front - People)
-        // We'll iterate colors to make it look alive
-        ctx.lineWidth = 4;
-        ctx.setLineDash([2, 5]);
-
-        ctx.strokeStyle = "#ef4444"; // Red shirts
-        ctx.lineDashOffset = 0;
-        ctx.stroke();
-
-        ctx.strokeStyle = "#3b82f6"; // Blue shirts
-        ctx.lineDashOffset = 3;
-        ctx.stroke();
-
-        ctx.strokeStyle = "#eab308"; // Yellow shirts
-        ctx.lineDashOffset = 6;
         ctx.stroke();
 
         ctx.restore();
@@ -1822,7 +1717,11 @@
     }
     shadowCtx.fillStyle = "rgba(12, 12, 12, 0.32)";
 
-    // Shadow for stadiums
+    // DISABLED: Stadium shadows cause Chrome (Windows, hardware acceleration ON) to silently
+    // lose all canvas content. The large polygon fills combined with other shadow operations
+    // trigger GPU context loss. Tree shadows and mask shadows below work fine.
+    // See CLAUDE.md "Common Gotchas" for details. Don't re-enable without Chrome testing.
+    /*
     if (metadata.items.stadiums) {
       for (const stadium of metadata.items.stadiums) {
         if (!stadium.points || stadium.points.length < 3) continue;
@@ -1841,6 +1740,7 @@
         shadowCtx.restore();
       }
     }
+    */
 
     if (maskCanvas) {
       shadowCtx.save();
