@@ -1385,6 +1385,7 @@
 
     const truckSprite = loadSpriteAsset("truck", "assets/vehicles/truck_orange.png");
     const truckSpriteMeta = { sx: 408, sy: 73, sw: 357, sh: 744 };
+    const audienceSprite = loadSpriteAsset("audience", "assets/decor/audience.png");
     const bubbleSprite = loadSpriteAsset("bubble", "assets/vehicles/Bubble.png");
     const bubbleSpriteMeta = { sx: 586, sy: 46, sw: 299, sh: 630 };
     const COLLIDER_VIS_STORAGE_KEY = "vehicleColliderOverlay";
@@ -2375,6 +2376,7 @@
       const initialAIDifficulty = getPayloadDifficulty() || loadStoredDifficulty() || sanitizeDifficulty(modeDefault) || sanitizeDifficulty("hard") || AVAILABLE_AI_DIFFICULTIES[0];
       const canvasRef = useRef(null);
       const trackMapRef = useRef(null);
+      const audienceSpriteRef = useRef(null);
       const [running, setRunning] = useState(false);
       const runningRef = useRef(running);
       const [status, setStatus] = useState("");
@@ -4768,6 +4770,7 @@
             trackKey: name,
             track: activeTrack,
             isCustom: isCustomTrack,
+            audienceImage: audienceSpriteRef.current,
             bounds: trackBounds ? { minX: trackBounds.minX, minY: trackBounds.minY, maxX: trackBounds.maxX, maxY: trackBounds.maxY } : null,
           };
           scheduleDecorGeneration(false);

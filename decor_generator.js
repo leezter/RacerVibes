@@ -1627,7 +1627,7 @@
     ctx.restore();
   }
 
-  function drawStadiums(ctx, stadiums) {
+  function drawStadiums(ctx, stadiums, audienceImage) {
     if (!stadiums || stadiums.length === 0) return;
 
     ctx.save();
@@ -1653,30 +1653,118 @@
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Draw simplified audience along the FRONT edge (the track-facing side)
-      // Reduced from 8+ stroke operations to just 2 to avoid Chrome GPU context loss
+      // Draw audience along the FRONT edge (the track-facing side)
       if (stadium.innerPoints && stadium.innerPoints.length > 1) {
-        ctx.save();
-        ctx.lineCap = "butt";
-        ctx.lineJoin = "round";
+        // If we have an audience image, tiling it along the path
+        if (audienceImage) {
+          ctx.save();
+          // Clip to the "stands" area to ensure clean edges
+          // We'll create a clipping path that is slightly wider than the image to handle corners
+          ctx.beginPath();
+          const clipWidth = 24; // Width of the audience strip
+          // We need to build a polygon for clipping or just draw carefully
+          // Simple tiling approach: transform to each segment
 
-        ctx.beginPath();
-        ctx.moveTo(stadium.innerPoints[0].x, stadium.innerPoints[0].y);
-        for (let j = 1; j < stadium.innerPoints.length; j++) {
-          ctx.lineTo(stadium.innerPoints[j].x, stadium.innerPoints[j].y);
+          // Clip to the stadium polygon so we can fill it with audience without spilling
+          ctx.save();
+          if (stadium.points && stadium.points.length > 2) {
+            ctx.beginPath();
+            ctx.moveTo(stadium.points[0].x, stadium.points[0].y);
+            for (let k = 1; k < stadium.points.length; k++) {
+              ctx.lineTo(stadium.points[k].x, stadium.points[k].y);
+            }
+            ctx.closePath();
+            ctx.clip();
+          }
+
+          // Initialize distance tracking before the loop
+          if (stadium.innerPoints) stadium.distFlown = 0;
+
+          for (let j = 0; j < stadium.innerPoints.length - 1; j++) {
+            const p1 = stadium.innerPoints[j];
+            const p2 = stadium.innerPoints[j + 1];
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const len = Math.hypot(dx, dy);
+            const angle = Math.atan2(dy, dx);
+
+            if (len < 1) continue;
+
+            ctx.save();
+            ctx.translate(p1.x, p1.y);
+            ctx.rotate(angle);
+
+            // Draw tiles
+            // Increased from 18 to 60 per user request
+            const targetHeight = 60;
+            const imgAspect = audienceImage.width / audienceImage.height;
+            const tileWidth = targetHeight * imgAspect;
+            // Shift "inward" (positive Y) so it sits on the stadium structure.
+            // Using -5 to have a slight overhang covering the edge line, but mostly inside.
+            const yOffset = -5;
+
+            let currentSegX = 0;
+            // Draw chunks that fit within the texture wrapping
+            while (currentSegX < len) {
+              const currentGlobalDist = (stadium.distFlown || 0) + currentSegX;
+              const texOffset = currentGlobalDist % tileWidth;
+              const remainingInTile = tileWidth - texOffset;
+              const drawLen = Math.min(len - currentSegX, remainingInTile);
+
+              const srcX = (texOffset / tileWidth) * audienceImage.width;
+              // Ensure we don't sample past image width due to floating point
+              const safeSrcX = Math.min(srcX, audienceImage.width - 1);
+              const srcW = (drawLen / tileWidth) * audienceImage.width;
+
+              // Draw multiple rows to fill the stadium depth
+              // 4 rows * 60px = 240px depth, usually enough to fill most stadiums
+              // The clipping path ensures we don't draw outside the back
+              for (let row = 0; row < 5; row++) {
+                // Offset each row by 30% of image width in texture space to break up patterns
+                // (Optional, but looks better)
+                // For now, keep it aligned for continuity
+
+                const rowY = yOffset + (row * targetHeight);
+                ctx.drawImage(
+                  audienceImage,
+                  safeSrcX, 0, srcW, audienceImage.height,
+                  currentSegX, rowY, drawLen, targetHeight
+                );
+              }
+
+              currentSegX += drawLen;
+            }
+            if (stadium.distFlown !== undefined) stadium.distFlown += len;
+
+            ctx.restore();
+          }
+          ctx.restore(); // Undo clip
+          // End loop for segments
+          ctx.restore();
+        } else {
+          // Fallback to simple colored bands
+          ctx.save();
+          ctx.lineCap = "butt";
+          ctx.lineJoin = "round";
+
+          ctx.beginPath();
+          ctx.moveTo(stadium.innerPoints[0].x, stadium.innerPoints[0].y);
+          for (let j = 1; j < stadium.innerPoints.length; j++) {
+            ctx.lineTo(stadium.innerPoints[j].x, stadium.innerPoints[j].y);
+          }
+
+          // Single "stands" band - simplified from 8 strokes to avoid GPU context loss
+          ctx.strokeStyle = "#475569"; // Stands base (slate-600)
+          ctx.lineWidth = 20;
+          ctx.stroke();
+
+          // Single "crowd" band on top
+          ctx.strokeStyle = "#94a3b8"; // Crowd (slate-400)
+          ctx.lineWidth = 8;
+          ctx.stroke();
+
+          ctx.restore();
         }
-
-        // Single "stands" band - simplified from 8 strokes to avoid GPU context loss
-        ctx.strokeStyle = "#475569"; // Stands base (slate-600)
-        ctx.lineWidth = 20;
-        ctx.stroke();
-
-        // Single "crowd" band on top
-        ctx.strokeStyle = "#94a3b8"; // Crowd (slate-400)
-        ctx.lineWidth = 8;
-        ctx.stroke();
-
-        ctx.restore();
       }
     }
     ctx.restore();
@@ -1725,11 +1813,11 @@
     if (metadata.items.stadiums) {
       for (const stadium of metadata.items.stadiums) {
         if (!stadium.points || stadium.points.length < 3) continue;
-
+  
         shadowCtx.save();
         // Offset shadow
         shadowCtx.translate(16, 16);
-
+  
         shadowCtx.beginPath();
         shadowCtx.moveTo(stadium.points[0].x, stadium.points[0].y);
         for (let i = 1; i < stadium.points.length; i++) {
@@ -1846,7 +1934,7 @@
     drawBarriers(decorCtx, metadata.items.barriers, atlas);
     drawBarriers(decorCtx, metadata.items.barriers, atlas);
     // drawBuildings(decorCtx, metadata.items.buildings, atlas); // Replaced by stadiums
-    drawStadiums(decorCtx, metadata.items.stadiums);
+    drawStadiums(decorCtx, metadata.items.stadiums, options.audienceImage);
     drawTrees(decorCtx, metadata.items.trees, atlas);
     drawTrees(decorCtx, metadata.items.trees, atlas);
     decorCtx.restore();
@@ -1953,6 +2041,7 @@
       shadowCtx,
       atlas: options.atlas || getAtlas(),
       maskCanvas: options.maskCanvas,
+      audienceImage: options.audienceImage,
       mapping,
     });
 
