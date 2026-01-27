@@ -125,9 +125,9 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
         maxSteerLowSpeed: 0.75,
         maxSteerHighSpeed: 0.10,
         falloffSpeed: 350,
-        baseSteerRate: 5.4,
-        steerRateFalloff: 0.0032,
-        returnGain: 0,
+        baseSteerRate: 12.0,
+        steerRateFalloff: 0.0100,
+        returnGain: 6.0,
         filterTau: 0.40
       }
     },
