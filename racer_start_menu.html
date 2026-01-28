@@ -305,11 +305,15 @@
       background: var(--bg-card);
       border: 1px solid rgba(255, 255, 255, 0.05);
       border-radius: 12px;
-      padding: 24px;
+      padding: 16px;
       cursor: pointer;
       transition: all 0.2s;
       position: relative;
       overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
     }
 
     .card:hover {
@@ -341,12 +345,20 @@
       font-size: 24px;
       font-weight: 700;
       margin-bottom: 8px;
+      position: relative;
+      z-index: 1;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+      /* Add shadow for readability */
     }
 
     .card-desc {
       font-size: 14px;
       color: var(--text-muted);
       line-height: 1.5;
+      position: relative;
+      z-index: 1;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+      /* Add shadow for readability */
     }
 
     .card-badge {
@@ -359,6 +371,10 @@
       padding: 4px 8px;
       background: rgba(255, 255, 255, 0.1);
       border-radius: 4px;
+      z-index: 2;
+      /* Ensure badge is on top */
+      backdrop-filter: blur(4px);
+      /* Blur background behind badge */
     }
 
     /* Track Card Action Buttons */
@@ -1325,15 +1341,22 @@
     }
 
     /* Track Thumbnail */
+    /* Track Thumbnail */
     .card-thumbnail {
+      flex: 1;
       width: 100%;
-      height: 120px;
+      min-height: 80px;
+      max-height: 140px;
       background-size: contain;
       background-position: center;
       background-repeat: no-repeat;
       margin-bottom: 12px;
-      /* Add slight drop shadow to make the track line pop */
+      margin-top: 32px;
+      /* Increased margin to clear badges */
       filter: drop-shadow(0 0 10px rgba(239, 68, 68, 0.3));
+      position: relative;
+      opacity: 1;
+      z-index: 0;
     }
 
     /* =========================================
