@@ -1807,6 +1807,6 @@
     return new TrackBuilder(options);
   }
 
-  global.TrackBuilder = { create };
+  global.TrackBuilder = { create, makeThumbnail };
 
 })(typeof window !== 'undefined' ? window : this);
