@@ -175,7 +175,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     },
     Truck: {
       ...PLANCK_DEFAULTS,
-      angularDamp: 4.50,
+      angularDamp: 5.00,
       restitution: 0.40,
       mass: 2.20,
       wheelbase: 57,
@@ -185,7 +185,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       accelDurationMult: 3.5,
       maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
       gearCount: 6, // number of forward gears
-      brakeForce: 950,
+      brakeForce: 850,
       maxSteer: 0.40,
       steerSpeed: 3.5,
       muLatRoad: 1.40,
