@@ -380,24 +380,30 @@
     /* Track Card Action Buttons */
     .card-actions {
       display: flex;
-      gap: 8px;
-      margin-top: 12px;
-      width: 100%;
-      justify-content: center;
+      flex-direction: column;
+      gap: 4px;
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      margin: 0;
+      width: auto;
+      z-index: 10;
     }
 
     .card-action-btn {
       background: rgba(255, 255, 255, 0.1);
       border: 1px solid rgba(255, 255, 255, 0.2);
       color: var(--text-muted);
-      padding: 6px 12px;
+      padding: 0;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       border-radius: 6px;
-      font-size: 11px;
-      font-weight: 600;
+      font-size: 12px;
       cursor: pointer;
       transition: all 0.2s ease;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
     }
 
     .card-action-btn:hover {
@@ -2683,9 +2689,9 @@
             // Action buttons for custom tracks
             const actionButtons = `
               <div class="card-actions">
-                <button class="card-action-btn export" onclick="handleExportTrack('${t.id}', event)">Export</button>
-                <button class="card-action-btn rename" onclick="handleRenameTrack('${t.id}', '${t.name.replace(/'/g, "\\'")}', event)">Rename</button>
-                <button class="card-action-btn delete" onclick="handleDeleteTrack('${t.id}', '${t.name.replace(/'/g, "\\'")}', event)">Delete</button>
+                <button class="card-action-btn export" title="Export" onclick="handleExportTrack('${t.id}', event)">📤</button>
+                <button class="card-action-btn rename" title="Rename" onclick="handleRenameTrack('${t.id}', '${t.name.replace(/'/g, "\\'")}', event)">✏️</button>
+                <button class="card-action-btn delete" title="Delete" onclick="handleDeleteTrack('${t.id}', '${t.name.replace(/'/g, "\\'")}', event)">🗑️</button>
               </div>
             `;
 
