@@ -662,25 +662,58 @@
     thumb.height = THUMB_H;
     const ctx = thumb.getContext('2d');
 
-    // Slick Background: Deep/Dark charcoal with subtle vignette
     const cx = thumb.width / 2;
     const cy = thumb.height / 2;
-    const radius = Math.max(thumb.width, thumb.height) * 0.8;
-    const grad = ctx.createRadialGradient(cx, cy, radius * 0.5, cx, cy, radius);
-    grad.addColorStop(0, '#1a1a1a'); // Dark Grey center
-    grad.addColorStop(1, '#050505'); // Almost Black edges
 
-    ctx.fillStyle = grad;
+    // === LUSH GRASS BACKGROUND ===
+    // Base grass green gradient
+    const grassGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(thumb.width, thumb.height) * 0.9);
+    grassGrad.addColorStop(0, '#2d5a27');    // Rich grass green center
+    grassGrad.addColorStop(0.4, '#1e4620');  // Deeper green
+    grassGrad.addColorStop(0.7, '#0f2f12');  // Dark green shadow
+    grassGrad.addColorStop(1, '#081a0a');    // Very dark edges (night feel)
+    ctx.fillStyle = grassGrad;
+    ctx.fillRect(0, 0, thumb.width, thumb.height);
+
+    // Add grass texture with noise pattern
+    ctx.save();
+    const grassNoise = ctx.createImageData(thumb.width, thumb.height);
+    for (let i = 0; i < grassNoise.data.length; i += 4) {
+      const noise = Math.random() * 30 - 15;
+      grassNoise.data[i] = Math.max(0, Math.min(255, noise));     // R
+      grassNoise.data[i + 1] = Math.max(0, Math.min(255, 20 + noise * 2)); // G (more green)
+      grassNoise.data[i + 2] = Math.max(0, Math.min(255, noise));  // B
+      grassNoise.data[i + 3] = 40; // Low alpha for subtle texture
+    }
+    ctx.putImageData(grassNoise, 0, 0);
+    ctx.restore();
+
+    // Warm stadium flood light glow (top-left)
+    const floodLight1 = ctx.createRadialGradient(
+      thumb.width * 0.15, thumb.height * 0.1, 0,
+      thumb.width * 0.15, thumb.height * 0.1, thumb.width * 0.5
+    );
+    floodLight1.addColorStop(0, 'rgba(255, 247, 230, 0.15)');  // Warm white
+    floodLight1.addColorStop(0.3, 'rgba(255, 220, 180, 0.08)'); // Warm yellow
+    floodLight1.addColorStop(1, 'transparent');
+    ctx.fillStyle = floodLight1;
+    ctx.fillRect(0, 0, thumb.width, thumb.height);
+
+    // Second flood light (top-right)
+    const floodLight2 = ctx.createRadialGradient(
+      thumb.width * 0.85, thumb.height * 0.15, 0,
+      thumb.width * 0.85, thumb.height * 0.15, thumb.width * 0.45
+    );
+    floodLight2.addColorStop(0, 'rgba(255, 247, 230, 0.12)');
+    floodLight2.addColorStop(0.4, 'rgba(255, 220, 180, 0.05)');
+    floodLight2.addColorStop(1, 'transparent');
+    ctx.fillStyle = floodLight2;
     ctx.fillRect(0, 0, thumb.width, thumb.height);
 
     const scaleX = thumb.width / worldWidth;
     const scaleY = thumb.height / worldHeight;
+    const trackWidth = Math.max(4, (roadWidth || 120) * scaleX);
 
-    // Scale track width EXACTLY as it appears in game
-    // scaleX converts world units (meters*PPM) to thumbnail pixels
-    const trackWidth = Math.max(3, (roadWidth || 120) * scaleX);
-
-    // Draw Settings
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
@@ -695,30 +728,112 @@
       ctx.closePath();
     }
 
-    // Pass 1: Drop Shadow (Floating Effect)
+    // === CROWD SILHOUETTES along track edges ===
+    // Draw subtle crowd silhouette outlines along the track
     ctx.save();
-    ctx.shadowBlur = 12;
+    ctx.globalAlpha = 0.25;
+    const crowdWidth = trackWidth * 1.8;
+
+    // Outer crowd glow (warm atmospheric)
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = 'rgba(255, 200, 150, 0.3)';
+    ctx.strokeStyle = '#1a1208';
+    ctx.lineWidth = crowdWidth + 6;
+    drawPath();
+    ctx.stroke();
+    ctx.restore();
+
+    // Crowd silhouette layer
+    ctx.save();
+    ctx.globalAlpha = 0.4;
+    // Create a subtle pattern for crowd
+    const crowdGrad = ctx.createLinearGradient(0, 0, thumb.width, thumb.height);
+    crowdGrad.addColorStop(0, '#2a1810');
+    crowdGrad.addColorStop(0.3, '#1f1208');
+    crowdGrad.addColorStop(0.6, '#2a1810');
+    crowdGrad.addColorStop(1, '#1a0f08');
+    ctx.strokeStyle = crowdGrad;
+    ctx.lineWidth = crowdWidth;
+    drawPath();
+    ctx.stroke();
+    ctx.restore();
+
+    // === TRACK KERBS (red-white stripes at edges) ===
+    ctx.save();
+    ctx.strokeStyle = '#dc2626'; // Red kerb
+    ctx.lineWidth = trackWidth + 2;
+    drawPath();
+    ctx.stroke();
+    ctx.restore();
+
+    // White kerb stripe
+    ctx.save();
+    ctx.setLineDash([6, 6]);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = trackWidth + 2;
+    ctx.lineDashOffset = 3;
+    drawPath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // === ASPHALT TRACK SURFACE ===
+    // Base asphalt - dark grey
+    ctx.save();
+    ctx.shadowBlur = 6;
     ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-    ctx.shadowOffsetY = 4;
-    ctx.strokeStyle = '#111';
+    ctx.shadowOffsetY = 2;
+    ctx.strokeStyle = '#1f2937'; // Gray-800
     ctx.lineWidth = trackWidth;
     drawPath();
     ctx.stroke();
-    // Reinforce shadow
-    ctx.strokeStyle = 'transparent';
-    ctx.shadowBlur = 20;
-    ctx.stroke();
     ctx.restore();
 
-    // Pass 2: Main Track Surface
+    // Asphalt surface with subtle texture gradient
     ctx.save();
-    ctx.strokeStyle = '#e2e8f0'; // Slate-200 (Clean White-ish)
-    ctx.lineWidth = trackWidth;
+    const asphaltGrad = ctx.createLinearGradient(0, 0, thumb.width, thumb.height);
+    asphaltGrad.addColorStop(0, '#374151');    // Gray-700
+    asphaltGrad.addColorStop(0.3, '#4b5563');  // Gray-600
+    asphaltGrad.addColorStop(0.6, '#3f4a59');  // Mixed
+    asphaltGrad.addColorStop(1, '#374151');    // Gray-700
+    ctx.strokeStyle = asphaltGrad;
+    ctx.lineWidth = trackWidth * 0.92;
     drawPath();
     ctx.stroke();
     ctx.restore();
 
-    // Start Line Marker
+    // Asphalt texture overlay (subtle noise)
+    ctx.save();
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.globalAlpha = 0.15;
+    ctx.strokeStyle = '#6b7280';
+    ctx.lineWidth = trackWidth * 0.85;
+    ctx.setLineDash([1, 2]);
+    drawPath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // Racing line (subtle lighter path in center)
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    ctx.strokeStyle = '#9ca3af'; // Gray-400
+    ctx.lineWidth = trackWidth * 0.3;
+    drawPath();
+    ctx.stroke();
+    ctx.restore();
+
+    // === CENTER LINE MARKINGS ===
+    ctx.save();
+    ctx.setLineDash([8, 12]);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = 1;
+    drawPath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // === START/FINISH LINE ===
     if (centerline.length > 2) {
       const p0 = centerline[0];
       const p1 = centerline[1];
@@ -733,14 +848,70 @@
       ctx.translate(startX, startY);
       ctx.rotate(angle);
 
-      // Draw red start line across the track
-      ctx.fillStyle = '#ef4444'; // Red-500
-      ctx.shadowBlur = 4;
-      ctx.shadowColor = '#ef4444';
-      ctx.fillRect(-2, -trackWidth * 0.6, 4, trackWidth * 1.2);
+      const halfTrack = trackWidth * 0.5;
+      const squareSize = Math.max(2, trackWidth / 8);
+
+      // White base
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowBlur = 6;
+      ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
+      ctx.fillRect(-4, -halfTrack, 8, trackWidth);
+
+      // Checkered pattern
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#000000';
+      for (let row = 0; row < Math.ceil(trackWidth / squareSize); row++) {
+        for (let col = 0; col < 4; col++) {
+          if ((row + col) % 2 === 0) {
+            ctx.fillRect(
+              -4 + col * 2,
+              -halfTrack + row * squareSize,
+              2,
+              squareSize
+            );
+          }
+        }
+      }
 
       ctx.restore();
     }
+
+    // === FLOOD LIGHT SPOTS on track (realistic lighting) ===
+    if (centerline.length > 6) {
+      ctx.save();
+      const spotCount = Math.min(4, Math.floor(centerline.length / 15));
+      for (let s = 0; s < spotCount; s++) {
+        const idx = Math.floor((s + 0.5) * centerline.length / spotCount);
+        const p = centerline[idx % centerline.length];
+        const x = p.x * scaleX;
+        const y = p.y * scaleY;
+
+        const spotGrad = ctx.createRadialGradient(x, y, 0, x, y, trackWidth * 1.5);
+        spotGrad.addColorStop(0, 'rgba(255, 250, 240, 0.08)');
+        spotGrad.addColorStop(0.5, 'rgba(255, 245, 230, 0.03)');
+        spotGrad.addColorStop(1, 'transparent');
+        ctx.fillStyle = spotGrad;
+        ctx.beginPath();
+        ctx.arc(x, y, trackWidth * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // === ATMOSPHERIC VIGNETTE ===
+    const vignetteGrad = ctx.createRadialGradient(cx, cy, thumb.width * 0.25, cx, cy, thumb.width * 0.75);
+    vignetteGrad.addColorStop(0, 'transparent');
+    vignetteGrad.addColorStop(0.7, 'rgba(0, 0, 0, 0.15)');
+    vignetteGrad.addColorStop(1, 'rgba(0, 0, 0, 0.4)');
+    ctx.fillStyle = vignetteGrad;
+    ctx.fillRect(0, 0, thumb.width, thumb.height);
+
+    // === SUBTLE TOP HIGHLIGHT (stage lighting) ===
+    const topLight = ctx.createLinearGradient(0, 0, 0, thumb.height * 0.3);
+    topLight.addColorStop(0, 'rgba(255, 250, 245, 0.05)');
+    topLight.addColorStop(1, 'transparent');
+    ctx.fillStyle = topLight;
+    ctx.fillRect(0, 0, thumb.width, thumb.height * 0.3);
 
     return { width: thumb.width, height: thumb.height, pngData: thumb.toDataURL('image/png') };
   }
