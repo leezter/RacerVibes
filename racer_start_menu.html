@@ -693,6 +693,11 @@
       .settings-form {
         grid-template-columns: 1fr 1fr;
       }
+
+      /* Scale wizard title for tablet */
+      .wizard-title {
+        font-size: 26px;
+      }
     }
 
     /* Small Tablet / Large Phone (481px - 768px) */
@@ -972,6 +977,11 @@
         display: none;
         /* Hide descriptions on very small screens */
       }
+
+      /* Even smaller wizard title for small screens */
+      .wizard-title {
+        font-size: 16px;
+      }
     }
 
     /* Landscape mobile - important for phones rotated horizontal */
@@ -1014,37 +1024,60 @@
         margin-bottom: 4px;
       }
 
-      /* Selection Grid: 3 columns to save vertical space */
-      .selection-grid {
-        grid-template-columns: repeat(3, 1fr);
-        max-height: calc(100vh - 90px);
-        padding-bottom: 50px;
-        gap: 6px;
+      /* Smaller wizard title for landscape */
+      .wizard-title {
+        font-size: 20px;
       }
 
-      /* Cards: Compact */
-      .card {
+      /* Selection Grid: auto-fit square cards */
+      .selection-grid {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        grid-auto-rows: auto;
         max-height: none;
+        padding-bottom: 50px;
+        gap: 6px;
+        overflow-y: visible;
+      }
+
+      /* Square cards - maintain aspect ratio */
+      .card {
+        aspect-ratio: 1;
+        max-height: none;
+        min-height: 0;
         height: auto;
         padding: 6px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
       }
 
       .card-icon {
-        font-size: 16px;
+        font-size: 14px;
         margin-bottom: 2px;
       }
 
       .card-title {
-        font-size: 11px;
+        font-size: 10px;
         margin-bottom: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
       .card-desc {
-        font-size: 9px;
-        line-height: 1.1;
-        margin-top: 2px;
-        -webkit-line-clamp: 2;
-        line-clamp: 2;
+        display: none;
+        /* Hide description to save space in square cards */
+      }
+
+      /* Thumbnail: scale to fill square card */
+      .card-thumbnail {
+        flex: 1;
+        min-height: 0;
+        max-height: none;
+        margin-top: 8px;
+        margin-bottom: 4px;
+        background-size: contain;
+        background-position: center;
       }
 
       /* Connected, centered and compact slider layout */
@@ -1157,6 +1190,79 @@
       .start-btn {
         padding: 8px 24px;
         font-size: 14px;
+      }
+    }
+
+    /* Short screens (height-based only, for better DevTools compatibility) */
+    /* Scale entire track cards to fit 2 full rows on screen */
+    @media (max-height: 500px) {
+      .wizard-title {
+        font-size: 20px;
+      }
+
+      .wizard-header {
+        margin-bottom: 8px;
+      }
+
+      /* Selection grid: auto-fit square cards */
+      .selection-grid {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        grid-auto-rows: auto;
+        gap: 6px;
+        overflow-y: visible;
+        max-height: none;
+        padding-bottom: 50px;
+      }
+
+      /* Square cards - maintain aspect ratio */
+      .card {
+        aspect-ratio: 1;
+        padding: 4px;
+        max-height: none;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .card-icon {
+        font-size: 12px;
+        margin-bottom: 2px;
+      }
+
+      .card-title {
+        font-size: 9px;
+        margin-bottom: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .card-desc {
+        display: none;
+        /* Hide description in square cards */
+      }
+
+      .card-badge {
+        font-size: 6px;
+        padding: 2px 4px;
+        top: 2px;
+        right: 2px;
+      }
+
+      /* Thumbnail: scale within square card */
+      .card-thumbnail {
+        flex: 1;
+        min-height: 0;
+        max-height: none;
+        margin-top: 6px;
+        margin-bottom: 2px;
+        background-size: contain;
+        background-position: center;
+      }
+
+      .wizard-container {
+        overflow-y: auto;
       }
     }
 
