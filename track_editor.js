@@ -1,4 +1,4 @@
-(function(global){
+(function (global) {
   const CANVAS_WIDTH = 960;
   const CANVAS_HEIGHT = 640;
   const GRID_SPACING = 40;
@@ -10,13 +10,13 @@
   const SCALE_RANGE = [0.6, 2.5];
   const ERASE_RADIUS = 24;
   const SAMPLING_SPACING = 10;
-  
+
   // Width scale used in racer.html - must match for proper minimum radius calculation
   // This value is used to calculate the VISUAL road width that will appear in the game
   const RACE_WIDTH_SCALE_DEFAULT = 2.5;
   const RACE_WIDTH_SCALE_MIN = 0.5;
   const RACE_WIDTH_SCALE_MAX = 3.0;
-  
+
   // Read width scale from localStorage (same key as racer.html)
   function readWidthScale() {
     try {
@@ -26,7 +26,7 @@
       if (Number.isFinite(parsed)) {
         return Math.min(RACE_WIDTH_SCALE_MAX, Math.max(RACE_WIDTH_SCALE_MIN, parsed));
       }
-    } catch (_) {}
+    } catch (_) { }
     return RACE_WIDTH_SCALE_DEFAULT;
   }
 
@@ -38,19 +38,19 @@
     { id: 'night', name: 'Night Race' }
   ];
 
-  function clamp(v, min, max){ return Math.min(max, Math.max(min, v)); }
+  function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
 
-  function distance(a, b){
+  function distance(a, b) {
     const dx = a.x - b.x;
     const dy = a.y - b.y;
     return Math.hypot(dx, dy);
   }
 
-  function copyPoints(points){
+  function copyPoints(points) {
     return points.map((p) => ({ x: p.x, y: p.y }));
   }
 
-  function ensureClosed(points, tolerance = 12){
+  function ensureClosed(points, tolerance = 12) {
     if (!points.length) return points;
     const first = points[0];
     const last = points[points.length - 1];
@@ -64,7 +64,7 @@
     return closed;
   }
 
-  function simplifyPath(points, tolerance){
+  function simplifyPath(points, tolerance) {
     if (points.length < 3) return points;
     const closed = ensureClosed(points);
     const pts = closed.slice(0, -1); // avoid duplicate last point for algorithm
@@ -73,7 +73,7 @@
     return result;
   }
 
-  function rdpSimplify(points, epsilon){
+  function rdpSimplify(points, epsilon) {
     if (points.length <= 2) return points.slice();
     const first = points[0];
     const last = points[points.length - 1];
@@ -96,13 +96,13 @@
     return [first, last];
   }
 
-  function pointLineDistance(point, a, b){
+  function pointLineDistance(point, a, b) {
     const num = Math.abs((b.y - a.y) * point.x - (b.x - a.x) * point.y + b.x * a.y - b.y * a.x);
     const den = Math.hypot(b.y - a.y, b.x - a.x) || 1;
     return num / den;
   }
 
-  function smoothPath(points, iterations){
+  function smoothPath(points, iterations) {
     let pts = ensureClosed(points);
     for (let k = 0; k < iterations; k++) {
       const next = [];
@@ -132,22 +132,22 @@
     let pts = ensureClosed(points).map(p => ({ x: p.x, y: p.y }));
     const n = pts.length;
     if (n < 4) return pts;
-    
+
     for (let k = 0; k < iterations; k++) {
       const next = new Array(n);
-      
+
       for (let i = 0; i < n - 1; i++) {
         const prevIdx = (i - 1 + n - 1) % (n - 1);
         const nextIdx = (i + 1) % (n - 1);
-        
+
         const prev = pts[prevIdx];
         const curr = pts[i];
         const nextPt = pts[nextIdx];
-        
+
         // Move towards midpoint of neighbors
         const midX = (prev.x + nextPt.x) / 2;
         const midY = (prev.y + nextPt.y) / 2;
-        
+
         next[i] = {
           x: curr.x + (midX - curr.x) * strength,
           y: curr.y + (midY - curr.y) * strength
@@ -168,16 +168,16 @@
     const v1y = curr.y - prev.y;
     const v2x = next.x - curr.x;
     const v2y = next.y - curr.y;
-    
+
     const cross = v1x * v2y - v1y * v2x;
     const dot = v1x * v2x + v1y * v2y;
     const len1 = Math.hypot(v1x, v1y) || 1;
     const len2 = Math.hypot(v2x, v2y) || 1;
-    
+
     // Curvature approximation: angle change / arc length
     const angle = Math.atan2(cross, dot);
     const avgLen = (len1 + len2) / 2;
-    
+
     return angle / avgLen;
   }
 
@@ -190,47 +190,47 @@
     let pts = ensureClosed(points).map(p => ({ x: p.x, y: p.y }));
     const n = pts.length;
     if (n < 4) return pts;
-    
+
     const maxCurvature = 1 / minRadius;
-    
+
     for (let iter = 0; iter < maxIterations; iter++) {
       let maxViolation = 0;
       const next = pts.map(p => ({ x: p.x, y: p.y }));
-      
+
       for (let i = 0; i < n - 1; i++) {
         const prevIdx = (i - 1 + n - 1) % (n - 1);
         const nextIdx = (i + 1) % (n - 1);
-        
+
         const prev = pts[prevIdx];
         const curr = pts[i];
         const nextPt = pts[nextIdx];
-        
+
         const curvature = Math.abs(calcCurvature(prev, curr, nextPt));
-        
+
         if (curvature > maxCurvature) {
           // This point is too sharp - smooth it more aggressively
           const violation = curvature / maxCurvature;
           maxViolation = Math.max(maxViolation, violation);
-          
+
           // EXTREMELY aggressive blend - higher violations get moved almost all the way
           const blend = Math.min(0.95, 0.5 + 0.3 * violation);
           const midX = (prev.x + nextPt.x) / 2;
           const midY = (prev.y + nextPt.y) / 2;
-          
+
           next[i] = {
             x: curr.x + (midX - curr.x) * blend,
             y: curr.y + (midY - curr.y) * blend
           };
         }
       }
-      
+
       next[n - 1] = { ...next[0] };
       pts = next;
-      
+
       // Must be BELOW 1.0 to stop - no tolerance!
       if (maxViolation <= 1.0) break;
     }
-    
+
     return pts;
   }
 
@@ -242,52 +242,52 @@
     const pts = ensureClosed(centerline);
     const result = [];
     const n = pts.length;
-    
+
     for (let i = 0; i < n - 1; i++) {
       // Compute normal at this point using average of adjacent segment normals
       const prev = pts[(i - 1 + n - 1) % (n - 1)];
       const curr = pts[i];
       const next = pts[(i + 1) % (n - 1)];
-      
+
       // Normal from prev->curr segment
       const dx1 = curr.x - prev.x;
       const dy1 = curr.y - prev.y;
       const len1 = Math.hypot(dx1, dy1) || 1;
       const nx1 = -dy1 / len1;
       const ny1 = dx1 / len1;
-      
+
       // Normal from curr->next segment  
       const dx2 = next.x - curr.x;
       const dy2 = next.y - curr.y;
       const len2 = Math.hypot(dx2, dy2) || 1;
       const nx2 = -dy2 / len2;
       const ny2 = dx2 / len2;
-      
+
       // Average normal (bisector direction)
       let avgNx = (nx1 + nx2) / 2;
       let avgNy = (ny1 + ny2) / 2;
       const avgLen = Math.hypot(avgNx, avgNy) || 1;
       avgNx /= avgLen;
       avgNy /= avgLen;
-      
+
       // For sharp corners, we need to adjust the offset distance
       // to prevent the miter from extending too far
       const dot = nx1 * nx2 + ny1 * ny2;
       // Clamp the miter factor to avoid extreme extensions at sharp corners
       const miterFactor = Math.max(0.5, Math.min(2.0, 1 / Math.sqrt((1 + dot) / 2 + 0.01)));
       const adjustedOffset = offset * Math.min(miterFactor, 1.5);
-      
+
       result.push({
         x: curr.x + avgNx * adjustedOffset,
         y: curr.y + avgNy * adjustedOffset
       });
     }
-    
+
     // Close the curve
     result.push({ ...result[0] });
     return result;
   }
-  
+
   /**
    * Check if an offset curve (track edge) has self-intersections.
    */
@@ -310,7 +310,7 @@
     }
     return false;
   }
-  
+
   /**
    * Calculate maximum curvature in a path
    */
@@ -318,7 +318,7 @@
     const pts = ensureClosed(points);
     const n = pts.length;
     if (n < 4) return 0;
-    
+
     let maxCurv = 0;
     for (let i = 0; i < n - 1; i++) {
       const prevIdx = (i - 1 + n - 1) % (n - 1);
@@ -328,30 +328,30 @@
     }
     return maxCurv;
   }
-  
+
   /**
    * Aggressively smooth the entire track until maximum curvature is below threshold.
    * This is the nuclear option - guarantees no sharp corners.
    */
   function smoothUntilSafe(points, maxAllowedCurvature, maxPasses = 50) {
     let pts = ensureClosed(points).map(p => ({ x: p.x, y: p.y }));
-    
+
     for (let pass = 0; pass < maxPasses; pass++) {
       const currentMaxCurv = getMaxCurvature(pts);
-      
+
       // If we're under the threshold, we're done
       if (currentMaxCurv <= maxAllowedCurvature) {
         break;
       }
-      
+
       // Apply whole-track Laplacian smoothing
       pts = relaxPath(pts, 20, 0.5);
       pts = resamplePath(pts, 10);
     }
-    
+
     return pts;
   }
-  
+
   /**
    * Prevent edge overlap by iteratively smoothing the ENTIRE track
    * until the inner edge no longer self-intersects.
@@ -360,16 +360,16 @@
   function preventEdgeOverlap(points, visualRoadWidth, maxIterations = 200) {
     let pts = ensureClosed(points).map(p => ({ x: p.x, y: p.y }));
     const halfWidth = visualRoadWidth * 0.5;
-    
+
     // The minimum radius needed to prevent overlap is slightly more than halfWidth
     // We use 1.2x to have safety margin
     const safeMinRadius = halfWidth * 1.2;
     const maxAllowedCurvature = 1 / safeMinRadius;
-    
+
     for (let iter = 0; iter < maxIterations; iter++) {
       // Compute inner edge (negative offset)
       const innerEdge = computeOffsetCurve(pts, -halfWidth);
-      
+
       // Check if inner edge has self-intersections
       if (!hasEdgeSelfIntersection(innerEdge)) {
         // Also verify max curvature is under threshold
@@ -378,18 +378,18 @@
           break;
         }
       }
-      
+
       // Apply aggressive whole-track smoothing
       pts = relaxPath(pts, 10, 0.6);
       pts = resamplePath(pts, 8);
-      
+
       // Also enforce minimum radius
       pts = enforceMinimumRadius(pts, safeMinRadius, 50);
     }
-    
+
     return pts;
   }
-  
+
   /**
    * The ultimate smoothing function - guarantees no edge overlaps are possible.
    * Uses multiple passes and verification.
@@ -397,48 +397,48 @@
   function guaranteeNoOverlap(points, visualRoadWidth) {
     let pts = ensureClosed(points).map(p => ({ x: p.x, y: p.y }));
     const halfWidth = visualRoadWidth * 0.5;
-    
+
     // Step 1: Calculate the minimum radius we need
     // For no overlap, centerline radius must be > halfWidth
     // We use 2.5x for a VERY comfortable margin - this makes corners much wider than
     // the road, ensuring there's zero chance of inner edge overlap
     const requiredMinRadius = halfWidth * 2.5;
     const maxAllowedCurvature = 1 / requiredMinRadius;
-    
+
     // Step 2: First pass - aggressive relaxation
     pts = relaxPath(pts, 100, 0.6);
     pts = resamplePath(pts, 8);
-    
+
     // Step 3: Enforce minimum radius strictly with MANY iterations
     pts = enforceMinimumRadius(pts, requiredMinRadius, 1000);
     pts = resamplePath(pts, 8);
-    
+
     // Step 4: Smooth until curvature is safe
     pts = smoothUntilSafe(pts, maxAllowedCurvature, 50);
-    
+
     // Step 5: Final verification and fix loop
     for (let verify = 0; verify < 100; verify++) {
       const innerEdge = computeOffsetCurve(pts, -halfWidth);
       const hasOverlap = hasEdgeSelfIntersection(innerEdge);
       const maxCurv = getMaxCurvature(pts);
-      
+
       if (!hasOverlap && maxCurv <= maxAllowedCurvature) {
         break; // Success!
       }
-      
+
       // Still has issues - apply more smoothing
       pts = relaxPath(pts, 30, 0.7);
       pts = resamplePath(pts, 8);
       pts = enforceMinimumRadius(pts, requiredMinRadius, 200);
     }
-    
+
     // Step 6: Final resample for even spacing
     pts = resamplePath(pts, 10);
-    
+
     return pts;
   }
 
-  function resamplePath(points, spacing){
+  function resamplePath(points, spacing) {
     const pts = ensureClosed(points);
     if (pts.length < 2) return pts;
     const result = [];
@@ -471,7 +471,7 @@
     return result;
   }
 
-  function segmentIntersection(a1, a2, b1, b2){
+  function segmentIntersection(a1, a2, b1, b2) {
     const det = (a2.x - a1.x) * (b2.y - b1.y) - (a2.y - a1.y) * (b2.x - b1.x);
     if (Math.abs(det) < 1e-6) return null;
     const ua = ((b2.x - b1.x) * (a1.y - b1.y) - (b2.y - b1.y) * (a1.x - b1.x)) / det;
@@ -483,7 +483,7 @@
     };
   }
 
-  function findSelfIntersections(points){
+  function findSelfIntersections(points) {
     const pts = ensureClosed(points);
     const intersections = [];
     for (let i = 0; i < pts.length - 1; i++) {
@@ -501,21 +501,21 @@
     return intersections;
   }
 
-  function normalFromSegment(a, b){
+  function normalFromSegment(a, b) {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const len = Math.hypot(dx, dy) || 1;
     return { x: -dy / len, y: dx / len };
   }
 
-  function tangentFromSegment(a, b){
+  function tangentFromSegment(a, b) {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const len = Math.hypot(dx, dy) || 1;
     return { x: dx / len, y: dy / len, len };
   }
 
-  function computeTrackMeta(centerline, roadWidth){
+  function computeTrackMeta(centerline, roadWidth) {
     const first = centerline[0];
     const second = centerline[1] || first;
     const tangent = tangentFromSegment(first, second);
@@ -546,7 +546,7 @@
     };
   }
 
-  function boundingBox(points){
+  function boundingBox(points) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const p of points) {
       if (p.x < minX) minX = p.x;
@@ -557,7 +557,7 @@
     return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
   }
 
-  function buildCheckpoints(centerline, roadWidth){
+  function buildCheckpoints(centerline, roadWidth) {
     const checkpoints = [];
     const total = Math.max(6, Math.floor(centerline.length / 12));
     const spacing = Math.floor(centerline.length / total);
@@ -576,7 +576,7 @@
     return checkpoints;
   }
 
-  function makeMask(centerline, roadWidth, worldWidth, worldHeight){
+  function makeMask(centerline, roadWidth, worldWidth, worldHeight) {
     const canvas = document.createElement("canvas");
     canvas.width = worldWidth;
     canvas.height = worldHeight;
@@ -605,7 +605,7 @@
     };
   }
 
-  function makeThumbnail(centerline, worldWidth, worldHeight){
+  function makeThumbnail(centerline, worldWidth, worldHeight, roadWidth) {
     const thumb = document.createElement("canvas");
     const THUMB_W = 320;
     const aspect = worldWidth / worldHeight || 1;
@@ -613,24 +613,62 @@
     thumb.width = THUMB_W;
     thumb.height = THUMB_H;
     const ctx = thumb.getContext("2d");
-    ctx.fillStyle = "#0f172a";
+
+    // Slick Background: Deep/Dark charcoal with subtle vignette
+    const cx = thumb.width / 2;
+    const cy = thumb.height / 2;
+    const radius = Math.max(thumb.width, thumb.height) * 0.8;
+    const grad = ctx.createRadialGradient(cx, cy, radius * 0.5, cx, cy, radius);
+    grad.addColorStop(0, '#1a1a1a'); // Dark Grey center
+    grad.addColorStop(1, '#050505'); // Almost Black edges
+
+    ctx.fillStyle = grad;
     ctx.fillRect(0, 0, thumb.width, thumb.height);
+
+    ctx.restore();
+
     const scaleX = thumb.width / worldWidth;
     const scaleY = thumb.height / worldHeight;
+
+    // Scale track width to look like a road, not a wire
+    // Real road is ~120 units. We multiply by 3.5 to make it visible and chunky on the small thumbnail
+    const trackWidth = Math.max(8, (120 * scaleX) * 3.5);
+
+    // Draw Path Helper
+    function drawPath() {
+      ctx.beginPath();
+      for (let i = 0; i < centerline.length; i++) {
+        const p = centerline[i];
+        const x = p.x * scaleX;
+        const y = p.y * scaleY;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+    }
+
+    // Pass 1: Outer Glow (Neon Effect)
     ctx.save();
-    ctx.strokeStyle = "#60a5fa";
-    ctx.lineWidth = Math.max(2, (thumb.width / worldWidth) * 6);
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
-    ctx.beginPath();
-    for (let i = 0; i < centerline.length; i++) {
-      const p = centerline[i];
-      const x = p.x * scaleX;
-      const y = p.y * scaleY;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = "#3b82f6"; // Blue-500 glow
+    ctx.strokeStyle = "#3b82f6"; // Blue-500
+    ctx.lineWidth = Math.max(3, lineWidthBase * 1.5);
+    drawPath();
     ctx.stroke();
     ctx.restore();
+
+    // Pass 2: Inner Core (Bright)
+    ctx.save();
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "#e0f2fe"; // Sky-100 (almost white)
+    ctx.lineWidth = Math.max(1.5, lineWidthBase);
+    drawPath();
+    ctx.stroke();
+    ctx.restore();
+
     return {
       width: thumb.width,
       height: thumb.height,
@@ -638,11 +676,11 @@
     };
   }
 
-  function TrackEditor(options){
+  function TrackEditor(options) {
     this.options = options || {};
     this.trackSelect = options.trackSelect || null;
-    this.onSaved = typeof options.onSaved === "function" ? options.onSaved : () => {};
-    this.onTestDrive = typeof options.onTestDrive === "function" ? options.onTestDrive : () => {};
+    this.onSaved = typeof options.onSaved === "function" ? options.onSaved : () => { };
+    this.onTestDrive = typeof options.onTestDrive === "function" ? options.onTestDrive : () => { };
     this.state = {
       tool: "pen",
       points: [],
@@ -659,16 +697,16 @@
     this.init();
   }
 
-  TrackEditor.prototype.init = function(){
+  TrackEditor.prototype.init = function () {
     this.buildUI();
     this.attachEvents();
     this.pushHistory();
     this.render();
   };
 
-  TrackEditor.prototype.buildUI = function(){
+  TrackEditor.prototype.buildUI = function () {
     // Build texture options HTML
-    const textureOptionsHtml = TEXTURE_OPTIONS.map(opt => 
+    const textureOptionsHtml = TEXTURE_OPTIONS.map(opt =>
       `<option value="${opt.id}"${opt.id === DEFAULT_TEXTURE ? ' selected' : ''}>${opt.name}</option>`
     ).join('');
 
@@ -743,7 +781,7 @@
     this.testActions = overlay.querySelector("[data-test-actions]");
   };
 
-  TrackEditor.prototype.attachEvents = function(){
+  TrackEditor.prototype.attachEvents = function () {
     const overlay = this.overlay;
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay) {
@@ -756,7 +794,7 @@
     overlay.querySelector('[data-action="clear"]').addEventListener("click", () => this.clear());
     overlay.querySelector('[data-action="bake"]').addEventListener("click", () => this.bake());
     overlay.querySelector('[data-action="export"]').addEventListener("click", () => this.exportBundle());
-  overlay.querySelector('[data-action="test-grip"]').addEventListener("click", () => this.testDrive("grip"));
+    overlay.querySelector('[data-action="test-grip"]').addEventListener("click", () => this.testDrive("grip"));
 
     const toolButtons = overlay.querySelectorAll(".te-tool");
     toolButtons.forEach((btn) => {
@@ -806,19 +844,19 @@
     }, { passive: false });
   };
 
-  TrackEditor.prototype.open = function(){
+  TrackEditor.prototype.open = function () {
     this.overlay.classList.remove("hidden");
     this.canvas.focus();
     this.render();
   };
 
-  TrackEditor.prototype.close = function(){
+  TrackEditor.prototype.close = function () {
     this.overlay.classList.add("hidden");
     this.state.isDrawing = false;
     this.state.pointerId = null;
   };
 
-  TrackEditor.prototype.reset = function(){
+  TrackEditor.prototype.reset = function () {
     this.state.points = [];
     this.state.history = [];
     this.state.historyIndex = -1;
@@ -838,7 +876,7 @@
     this.render();
   };
 
-  TrackEditor.prototype.onPointerDown = function(e){
+  TrackEditor.prototype.onPointerDown = function (e) {
     e.preventDefault();
     this.canvas.setPointerCapture(e.pointerId);
     const pos = this.getCanvasPos(e);
@@ -854,7 +892,7 @@
     this.render();
   };
 
-  TrackEditor.prototype.onPointerMove = function(e){
+  TrackEditor.prototype.onPointerMove = function (e) {
     if (this.state.pointerId !== e.pointerId) return;
     const pos = this.getCanvasPos(e);
     if (this.state.tool === "pen" && this.state.isDrawing) {
@@ -871,7 +909,7 @@
     }
   };
 
-  TrackEditor.prototype.onPointerUp = function(e){
+  TrackEditor.prototype.onPointerUp = function (e) {
     if (this.state.pointerId !== e.pointerId) return;
     if (this.state.tool === "pen" && this.state.isDrawing) {
       this.state.isDrawing = false;
@@ -881,15 +919,15 @@
         // CRITICAL: Use visual width (with widthScale) for minimum radius calculation
         const widthScale = readWidthScale();
         const visualRoadWidth = this.state.roadWidth * widthScale;
-        
+
         // Initial simplify and resample
         this.state.points = simplifyPath(this.state.points, 2.0);
         this.state.points = resamplePath(this.state.points, 8);
-        
+
         // Use the guaranteed no-overlap function - this is the nuclear option
         // It will keep smoothing until edge overlap is IMPOSSIBLE
         this.state.points = guaranteeNoOverlap(this.state.points, visualRoadWidth);
-        
+
         // Final closure
         this.state.points = ensureClosed(this.state.points, 32);
       }
@@ -901,14 +939,14 @@
     this.state.pointerId = null;
   };
 
-  TrackEditor.prototype.getCanvasPos = function(e){
+  TrackEditor.prototype.getCanvasPos = function (e) {
     const rect = this.canvas.getBoundingClientRect();
     const x = (e.clientX - rect.left) * (this.canvas.width / rect.width);
     const y = (e.clientY - rect.top) * (this.canvas.height / rect.height);
     return { x, y };
   };
 
-  TrackEditor.prototype.addPoint = function(point, force){
+  TrackEditor.prototype.addPoint = function (point, force) {
     const pts = this.state.points;
     if (!pts.length || force) {
       pts.push({ x: point.x, y: point.y });
@@ -920,7 +958,7 @@
     }
   };
 
-  TrackEditor.prototype.eraseAt = function(point){
+  TrackEditor.prototype.eraseAt = function (point) {
     const pts = this.state.points;
     if (!pts.length) return;
     const next = pts.filter((p) => distance(p, point) > ERASE_RADIUS);
@@ -930,21 +968,21 @@
     }
   };
 
-  TrackEditor.prototype.undo = function(){
+  TrackEditor.prototype.undo = function () {
     if (this.state.historyIndex <= 0) return;
     this.state.historyIndex -= 1;
     this.state.points = copyPoints(this.state.history[this.state.historyIndex]);
     this.render();
   };
 
-  TrackEditor.prototype.redo = function(){
+  TrackEditor.prototype.redo = function () {
     if (this.state.historyIndex >= this.state.history.length - 1) return;
     this.state.historyIndex += 1;
     this.state.points = copyPoints(this.state.history[this.state.historyIndex]);
     this.render();
   };
 
-  TrackEditor.prototype.clear = function(){
+  TrackEditor.prototype.clear = function () {
     this.state.points = [];
     this.state.history = [];
     this.state.historyIndex = -1;
@@ -955,14 +993,14 @@
     this.render();
   };
 
-  TrackEditor.prototype.pushHistory = function(){
+  TrackEditor.prototype.pushHistory = function () {
     const snapshot = copyPoints(this.state.points);
     this.state.history = this.state.history.slice(0, this.state.historyIndex + 1);
     this.state.history.push(snapshot);
     this.state.historyIndex = this.state.history.length - 1;
   };
 
-  TrackEditor.prototype.render = function(){
+  TrackEditor.prototype.render = function () {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.fillStyle = "#050914";
@@ -971,7 +1009,7 @@
     this.drawPath(ctx);
   };
 
-  TrackEditor.prototype.drawGrid = function(ctx){
+  TrackEditor.prototype.drawGrid = function (ctx) {
     ctx.save();
     ctx.strokeStyle = "rgba(148,163,184,0.15)";
     ctx.lineWidth = 1;
@@ -990,7 +1028,7 @@
     ctx.restore();
   };
 
-  TrackEditor.prototype.drawPath = function(ctx){
+  TrackEditor.prototype.drawPath = function (ctx) {
     const pts = this.state.points;
     if (!pts.length) return;
     ctx.save();
@@ -1019,18 +1057,18 @@
     ctx.restore();
   };
 
-  TrackEditor.prototype.setStatus = function(message, tone){
+  TrackEditor.prototype.setStatus = function (message, tone) {
     this.statusEl.textContent = message || "";
     this.statusEl.dataset.tone = tone || "";
   };
 
-  TrackEditor.prototype.validate = function(){
+  TrackEditor.prototype.validate = function () {
     if (this.state.points.length < MIN_POINTS) {
       throw new Error("Need more detail. Draw a longer loop before baking.");
     }
   };
 
-  TrackEditor.prototype.bake = async function(){
+  TrackEditor.prototype.bake = async function () {
     try {
       this.validate();
     } catch (err) {
@@ -1041,21 +1079,21 @@
     const name = rawName || "Custom Circuit";
     const closedRaw = ensureClosed(copyPoints(this.state.points));
     const roadWidth = this.state.roadWidth;
-    
+
     // CRITICAL: Use visual width (with widthScale) for minimum radius calculation
     const widthScale = readWidthScale();
     const visualRoadWidth = roadWidth * widthScale;
-    
+
     // Initial processing
     let processed = simplifyPath(closedRaw, 2.0);
     processed = resamplePath(processed, 8);
-    
+
     // Use the guaranteed no-overlap function - this is the nuclear option
     // It will keep smoothing until edge overlap is IMPOSSIBLE
     processed = guaranteeNoOverlap(processed, visualRoadWidth);
-    
+
     processed = resamplePath(processed, SAMPLING_SPACING);
-    
+
     const intersections = findSelfIntersections(processed);
     const scaled = processed.map((p) => ({
       x: p.x * this.state.scale,
@@ -1065,7 +1103,7 @@
     const worldHeight = Math.round(this.canvas.height * this.state.scale);
     const meta = computeTrackMeta(scaled, roadWidth);
     const mask = makeMask(scaled, roadWidth, worldWidth, worldHeight);
-    const thumbnail = makeThumbnail(scaled, worldWidth, worldHeight);
+    const thumbnail = makeThumbnail(scaled, worldWidth, worldHeight, visualRoadWidth);
     const racingLine = (window.RacerAI && typeof window.RacerAI.buildRacingLine === "function")
       ? window.RacerAI.buildRacingLine(scaled, roadWidth)
       : [];
@@ -1108,7 +1146,7 @@
     this.onSaved(entry);
   };
 
-  TrackEditor.prototype.exportBundle = function(){
+  TrackEditor.prototype.exportBundle = function () {
     if (this.state.lastBakeResult) {
       TrackStore.downloadBundle(this.state.lastBakeResult);
       return;
@@ -1116,7 +1154,7 @@
     this.setStatus("Bake the track before exporting.", "info");
   };
 
-  TrackEditor.prototype.testDrive = function(mode){
+  TrackEditor.prototype.testDrive = function (mode) {
     if (!this.state.lastBakeResult) {
       this.setStatus("Bake the track first.", "info");
       return;
@@ -1124,7 +1162,7 @@
     this.onTestDrive(mode, this.state.lastBakeResult);
   };
 
-  function create(options){
+  function create(options) {
     return new TrackEditor(options);
   }
 

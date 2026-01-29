@@ -1359,7 +1359,6 @@
       margin-bottom: 12px;
       margin-top: 32px;
       /* Increased margin to clear badges */
-      filter: drop-shadow(0 0 10px rgba(239, 68, 68, 0.3));
       position: relative;
       opacity: 1;
       z-index: 0;
@@ -2644,7 +2643,9 @@
         let thumbUrl = '';
         try {
           if (window.TrackBuilder && TrackBuilder.makeThumbnail) {
-            const thumb = await TrackBuilder.makeThumbnail(t.points, t.world.width, t.world.height);
+            // Calculate visual width (default scale 2.5x) to match game appearance
+            const visualWidth = (t.roadWidth || 120) * 2.5;
+            const thumb = await TrackBuilder.makeThumbnail(t.points, t.world.width, t.world.height, visualWidth);
             thumbUrl = thumb.pngData;
           }
         } catch (e) {

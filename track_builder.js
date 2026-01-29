@@ -653,7 +653,7 @@
     return { width: canvas.width, height: canvas.height, pngData: canvas.toDataURL('image/png') };
   }
 
-  function makeThumbnail(centerline, worldWidth, worldHeight) {
+  function makeThumbnail(centerline, worldWidth, worldHeight, roadWidth) {
     const thumb = document.createElement('canvas');
     const THUMB_W = 320;
     const aspect = worldWidth / worldHeight || 1;
@@ -661,24 +661,87 @@
     thumb.width = THUMB_W;
     thumb.height = THUMB_H;
     const ctx = thumb.getContext('2d');
-    ctx.fillStyle = '#0f172a';
+
+    // Slick Background: Deep/Dark charcoal with subtle vignette
+    const cx = thumb.width / 2;
+    const cy = thumb.height / 2;
+    const radius = Math.max(thumb.width, thumb.height) * 0.8;
+    const grad = ctx.createRadialGradient(cx, cy, radius * 0.5, cx, cy, radius);
+    grad.addColorStop(0, '#1a1a1a'); // Dark Grey center
+    grad.addColorStop(1, '#050505'); // Almost Black edges
+
+    ctx.fillStyle = grad;
     ctx.fillRect(0, 0, thumb.width, thumb.height);
+
     const scaleX = thumb.width / worldWidth;
     const scaleY = thumb.height / worldHeight;
-    ctx.save();
-    ctx.strokeStyle = '#60a5fa';
-    ctx.lineWidth = Math.max(2, (thumb.width / worldWidth) * 6);
-    ctx.lineJoin = 'round';
+
+    // Scale track width EXACTLY as it appears in game
+    // scaleX converts world units (meters*PPM) to thumbnail pixels
+    const trackWidth = Math.max(3, (roadWidth || 120) * scaleX);
+
+    // Draw Settings
     ctx.lineCap = 'round';
-    ctx.beginPath();
-    for (let i = 0; i < centerline.length; i++) {
-      const p = centerline[i];
-      const x = p.x * scaleX;
-      const y = p.y * scaleY;
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    ctx.lineJoin = 'round';
+
+    function drawPath() {
+      ctx.beginPath();
+      for (let i = 0; i < centerline.length; i++) {
+        const p = centerline[i];
+        const x = p.x * scaleX;
+        const y = p.y * scaleY;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
     }
+
+    // Pass 1: Drop Shadow (Floating Effect)
+    ctx.save();
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+    ctx.shadowOffsetY = 4;
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = trackWidth;
+    drawPath();
+    ctx.stroke();
+    // Reinforce shadow
+    ctx.strokeStyle = 'transparent';
+    ctx.shadowBlur = 20;
     ctx.stroke();
     ctx.restore();
+
+    // Pass 2: Main Track Surface
+    ctx.save();
+    ctx.strokeStyle = '#e2e8f0'; // Slate-200 (Clean White-ish)
+    ctx.lineWidth = trackWidth;
+    drawPath();
+    ctx.stroke();
+    ctx.restore();
+
+    // Start Line Marker
+    if (centerline.length > 2) {
+      const p0 = centerline[0];
+      const p1 = centerline[1];
+      const dx = (p1.x - p0.x) * scaleX;
+      const dy = (p1.y - p0.y) * scaleY;
+      const angle = Math.atan2(dy, dx);
+
+      const startX = p0.x * scaleX;
+      const startY = p0.y * scaleY;
+
+      ctx.save();
+      ctx.translate(startX, startY);
+      ctx.rotate(angle);
+
+      // Draw red start line across the track
+      ctx.fillStyle = '#ef4444'; // Red-500
+      ctx.shadowBlur = 4;
+      ctx.shadowColor = '#ef4444';
+      ctx.fillRect(-2, -trackWidth * 0.6, 4, trackWidth * 1.2);
+
+      ctx.restore();
+    }
+
     return { width: thumb.width, height: thumb.height, pngData: thumb.toDataURL('image/png') };
   }
 
@@ -1688,7 +1751,7 @@
 
     const meta = computeTrackMeta(offsetPoints, roadWidth);
     const mask = makeMask(offsetPoints, roadWidth, worldWidth, worldHeight);
-    const thumbnail = makeThumbnail(offsetPoints, worldWidth, worldHeight);
+    const thumbnail = makeThumbnail(offsetPoints, worldWidth, worldHeight, visualRoadWidth);
     const racingLine = (window.RacerAI && typeof window.RacerAI.buildRacingLine === 'function')
       ? window.RacerAI.buildRacingLine(offsetPoints, roadWidth)
       : [];
