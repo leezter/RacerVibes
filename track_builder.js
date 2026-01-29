@@ -655,7 +655,7 @@
 
   function makeThumbnail(centerline, worldWidth, worldHeight, roadWidth) {
     const thumb = document.createElement('canvas');
-    const THUMB_W = 320;
+    const THUMB_W = 1024; // Very high resolution for crystal clear thumbnails
     const aspect = worldWidth / worldHeight || 1;
     const THUMB_H = Math.round(THUMB_W / aspect);
     thumb.width = THUMB_W;
@@ -710,9 +710,30 @@
     ctx.fillStyle = floodLight2;
     ctx.fillRect(0, 0, thumb.width, thumb.height);
 
-    const scaleX = thumb.width / worldWidth;
-    const scaleY = thumb.height / worldHeight;
-    const trackWidth = Math.max(4, (roadWidth || 120) * scaleX);
+    // === CALCULATE TRACK BOUNDING BOX FOR TIGHT FIT ===
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of centerline) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    const trackBoundsWidth = maxX - minX;
+    const trackBoundsHeight = maxY - minY;
+
+    // Calculate scale to fill 88% of thumbnail (leaving small margin)
+    const fillRatio = 0.88;
+    const availWidth = thumb.width * fillRatio;
+    const availHeight = thumb.height * fillRatio;
+    const scaleToFit = Math.min(availWidth / trackBoundsWidth, availHeight / trackBoundsHeight);
+
+    // Calculate offset to center the track
+    const scaledWidth = trackBoundsWidth * scaleToFit;
+    const scaledHeight = trackBoundsHeight * scaleToFit;
+    const offsetX = (thumb.width - scaledWidth) / 2 - minX * scaleToFit;
+    const offsetY = (thumb.height - scaledHeight) / 2 - minY * scaleToFit;
+
+    const trackWidth = Math.max(4, (roadWidth || 120) * scaleToFit);
 
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -721,8 +742,8 @@
       ctx.beginPath();
       for (let i = 0; i < centerline.length; i++) {
         const p = centerline[i];
-        const x = p.x * scaleX;
-        const y = p.y * scaleY;
+        const x = p.x * scaleToFit + offsetX;
+        const y = p.y * scaleToFit + offsetY;
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
       ctx.closePath();
@@ -837,12 +858,12 @@
     if (centerline.length > 2) {
       const p0 = centerline[0];
       const p1 = centerline[1];
-      const dx = (p1.x - p0.x) * scaleX;
-      const dy = (p1.y - p0.y) * scaleY;
+      const dx = (p1.x - p0.x) * scaleToFit;
+      const dy = (p1.y - p0.y) * scaleToFit;
       const angle = Math.atan2(dy, dx);
 
-      const startX = p0.x * scaleX;
-      const startY = p0.y * scaleY;
+      const startX = p0.x * scaleToFit + offsetX;
+      const startY = p0.y * scaleToFit + offsetY;
 
       ctx.save();
       ctx.translate(startX, startY);
@@ -883,8 +904,8 @@
       for (let s = 0; s < spotCount; s++) {
         const idx = Math.floor((s + 0.5) * centerline.length / spotCount);
         const p = centerline[idx % centerline.length];
-        const x = p.x * scaleX;
-        const y = p.y * scaleY;
+        const x = p.x * scaleToFit + offsetX;
+        const y = p.y * scaleToFit + offsetY;
 
         const spotGrad = ctx.createRadialGradient(x, y, 0, x, y, trackWidth * 1.5);
         spotGrad.addColorStop(0, 'rgba(255, 250, 240, 0.08)');
