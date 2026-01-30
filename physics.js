@@ -308,6 +308,10 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       ? bridge.listKinds
       : (() => Object.keys(VEHICLE_DEFAULTS));
     const kinds = (listKinds() || []).filter((k) => VEHICLE_DEFAULTS[k]);
+    // Ensure Bubble is included if defined (fixes missing Bubble issue)
+    if (!kinds.includes('Bubble') && VEHICLE_DEFAULTS['Bubble']) {
+      kinds.push('Bubble');
+    }
     if (!kinds.length) return;
     const artState = {};
     const artDefaults = {};
@@ -2215,7 +2219,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
         </div>
         <div class="rv-row"><label for="rv-kind"><span class="rv-name"${tipAttr('vehicle')}>Vehicle</span></label>
           <select id="rv-kind">
-            <option>F1</option><option selected>GT</option><option>Rally</option><option>Truck</option>
+            ${Object.keys(VEHICLE_DEFAULTS).map(k => `<option${k === 'GT' ? ' selected' : ''}>${k}</option>`).join('')}
           </select>
           <label class="small" for="rv-apply-ai"><input type="checkbox" id="rv-apply-ai"> <span class="rv-name"${tipAttr('applyToAI')}>Apply to AI</span></label>
         </div>
