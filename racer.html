@@ -1510,7 +1510,7 @@
     const QUALITY_LOW = 0.5;
 
     function getQualityMultiplier() {
-      const quality = localStorage.getItem('graphicsQuality') || 'high';
+      const quality = localStorage.getItem('graphicsQuality') || 'low';
       switch (quality) {
         case 'low': return QUALITY_LOW;
         case 'medium': return QUALITY_MEDIUM;

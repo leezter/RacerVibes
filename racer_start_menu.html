@@ -2513,7 +2513,7 @@
               <div class="card-badge"
                 style="color:#fb923c; border:1px solid rgba(251,146,60,0.3); background:rgba(251,146,60,0.1);">WIP ⚠️
               </div>
-              <div class="card-icon">🫧</div>
+              <div class="card-icon"><img src="assets/icons/Bubble_Icon.png" alt="Bubble Class"></div>
               <div class="card-title">Bubble Class</div>
               <div class="card-desc">Fun bubbly racing. Physics that bounce and float.</div>
             </div>
@@ -2698,7 +2698,7 @@
 
       ,
     {
-      id: 'Bubble', name: 'Bubble Car', class: 'bubble', icon: '🫧'
+      id: 'Bubble', name: 'Bubble Car', class: 'bubble', icon: '<img src="assets/icons/Bubble_Icon.png" alt="Bubble Car">'
     }
 
     ];
@@ -3244,8 +3244,8 @@
         const sfx = localStorage.getItem('sfxEnabled') !== 'false';
         document.getElementById('optSfx').checked = sfx;
 
-        // Load Graphics Quality (default to 'high')
-        const graphicsQuality = localStorage.getItem('graphicsQuality') || 'high';
+        // Load Graphics Quality (default to 'low')
+        const graphicsQuality = localStorage.getItem('graphicsQuality') || 'low';
         updateGraphicsQualityUI(graphicsQuality);
       }, 200);
     }
