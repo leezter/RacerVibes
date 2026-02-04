@@ -2431,13 +2431,13 @@
           <div class="menu-icon">🏎️</div>
           <div class="menu-label">Free Play</div>
         </div>
-        <div class="menu-item locked">
-          <div class="menu-icon">🏆</div>
-          <div class="menu-label">Career Mode</div>
-        </div>
         <div class="menu-item" onclick="switchToTimeTrial(this)">
           <div class="menu-icon">⏱️</div>
           <div class="menu-label">Time-Trial</div>
+        </div>
+        <div class="menu-item locked">
+          <div class="menu-icon">🏆</div>
+          <div class="menu-label">Career Mode</div>
         </div>
         <div class="menu-item locked">
           <div class="menu-icon">🌍</div>
@@ -2484,10 +2484,10 @@
               <div class="card-title">GT Class</div>
               <div class="card-desc">High performance touring cars. Excellent grip and acceleration.</div>
             </div>
-            <div class="card" onclick="selectClass('truck', this)">
+            <div class="card recommended" onclick="selectClass('truck', this)">
               <div class="card-badge"
-                style="color:#facc15; border:1px solid rgba(250,204,21,0.3); background:rgba(250,204,21,0.1);">Needs
-                finalizing ⚠️</div>
+                style="color:#4ade80; border:1px solid rgba(74,222,128,0.3); background:rgba(74,222,128,0.1);">Optimized
+                ✅</div>
               <div class="card-icon"><img src="assets/icons/Beast.png" alt="Truck Class"></div>
               <div class="card-title">Truck Class</div>
               <div class="card-desc">Heavy metal behemoths. High torque and intimidation factor.</div>
@@ -2964,8 +2964,10 @@
 
 
       // Built-ins
-      // Need to iterate using keys if BUILTIN_TRACKS is an object
-      const trackKeys = Object.keys(window.BUILTIN_TRACKS || {});
+      // Custom sort: Bendy_Vibes first
+      const allKeys = Object.keys(window.BUILTIN_TRACKS || {});
+      const trackKeys = allKeys.sort((a, b) => (a === 'Bendy_Vibes' ? -1 : (b === 'Bendy_Vibes' ? 1 : 0)));
+
       const promises = trackKeys.map(async key => {
         const t = window.BUILTIN_TRACKS[key];
         const div = document.createElement('div');
@@ -2974,14 +2976,16 @@
         const trackId = key;
 
         div.className = `card ${state.track === trackId ? 'selected' : ''}`;
-        if (trackId === 'Test') {
+
+        // Add recommended style to Test and Bendy Vibes
+        if (trackId === 'Test' || trackId === 'Bendy_Vibes') {
           div.className += ' recommended';
         }
 
         div.onclick = () => selectTrack(trackId, div);
 
         let badge = '';
-        if (trackId === 'Test') {
+        if (trackId === 'Test' || trackId === 'Bendy_Vibes') {
           badge = `<div class="card-badge" style="color:#4ade80; border:1px solid rgba(74,222,128,0.3); background:rgba(74,222,128,0.1);">Optimized ✅</div>`;
         } else if (trackId === 'Sharp_Corners') {
           badge = `<div class="card-badge" style="color:#ef4444; border:1px solid rgba(239,68,68,0.3); background:rgba(239,68,68,0.1);">Difficult ⚠️</div>`;
