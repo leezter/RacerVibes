@@ -2471,6 +2471,28 @@
     .card-icon img[src*="Bubble_Icon.png"] {
       transform: scale(3.0);
     }
+
+    /* =========================================
+       USER REQUEST: FIX TITLE POSITIONING
+       Always at bottom, Icon centered in remaining space.
+       ========================================= */
+    .card {
+      justify-content: flex-start !important;
+    }
+
+    .card-icon {
+      margin-top: auto !important;
+      margin-bottom: auto !important;
+    }
+
+    .card-title {
+      margin-top: 0 !important;
+      margin-bottom: 4px !important;
+      /* Small padding from bottom edge */
+      z-index: 10;
+      /* Ensure text is visible if icon overlaps */
+      position: relative;
+    }
   </style>
 
   <script src="builtin_tracks.js"></script>
