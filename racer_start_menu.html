@@ -2459,10 +2459,17 @@
     }
 
     /* =========================================
-       USER REQUEST: FIX BUBBLE ICON SIZE
+       USER REQUEST: MAGNIFY SPECIFIC ICONS (GT, Truck, Bubble)
+       Base size is approx 2x. We want 3x visual size.
+       Bubble needs extra scaling (3.0 vs 1.5) to match the others.
        ========================================= */
+    .card-icon img[src*="Clipper_icon.png"],
+    .card-icon img[src*="Beast.png"] {
+      transform: scale(1.5);
+    }
+
     .card-icon img[src*="Bubble_Icon.png"] {
-      transform: scale(2.0);
+      transform: scale(3.0);
     }
   </style>
 
