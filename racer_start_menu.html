@@ -2383,6 +2383,87 @@
         overflow: hidden;
       }
     }
+
+    /* =========================================
+       USER REQUEST: LARGER VEHICLE ICONS
+       For 'Select Class' (#step1) and 'Select Vehicle' (#step2)
+       ========================================= */
+
+    #step1 .card-icon,
+    #step2 .card-icon {
+      font-size: calc(var(--icon-size) * 2);
+    }
+
+    /* 
+       Note: The base var(--icon-size) is clamp(28px, 6vw, 48px).
+       Doubled: clamp(56px, 12vw, 96px).
+    */
+
+    /* Override for specific breakpoints where fixed pixels are used */
+
+    /* Small Tablet / Large Phone */
+    @media (max-width: 768px) and (min-width: 481px) {
+
+      #step1 .card-icon,
+      #step2 .card-icon {
+        font-size: 44px;
+        /* Default was 22px */
+      }
+    }
+
+    /* Mobile */
+    @media (max-width: 480px) {
+
+      #step1 .card-icon,
+      #step2 .card-icon {
+        font-size: 32px;
+        /* Default was 16px */
+      }
+    }
+
+    /* Landscape Mobile (General/Tablet-ish) */
+    @media screen and (max-height: 500px) and (orientation: landscape) {
+
+      #step1 .card-icon,
+      #step2 .card-icon {
+        font-size: 56px;
+        /* Default was 28px */
+      }
+    }
+
+    /* Very small landscape */
+    @media screen and (max-height: 420px) and (orientation: landscape) {
+
+      #step1 .card-icon,
+      #step2 .card-icon {
+        font-size: 48px;
+        /* Default was 24px */
+      }
+    }
+
+    /* Tablet Landscape */
+    @media screen and (min-height: 501px) and (max-height: 700px) and (orientation: landscape) {
+
+      #step1 .card-icon,
+      #step2 .card-icon {
+        font-size: 72px;
+        /* Default was 36px */
+      }
+    }
+
+    /* =========================================
+       USER REQUEST: REMOVE DESCRIPTIONS
+       ========================================= */
+    .card-desc {
+      display: none !important;
+    }
+
+    /* =========================================
+       USER REQUEST: FIX BUBBLE ICON SIZE
+       ========================================= */
+    .card-icon img[src*="Bubble_Icon.png"] {
+      transform: scale(2.0);
+    }
   </style>
 
   <script src="builtin_tracks.js"></script>
