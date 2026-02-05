@@ -2,7 +2,7 @@
 
 This project now includes basic Android compatibility via PWA features, touch controls, motion steering, and a service worker for installability/offline.
 
-What’s included
+What's included
 - Touch HUD: On-screen buttons for throttle/brake and left/right
 - Motion steering: DeviceOrientation-based analog steering (enabled after first tap)
 - Auto audio unlock on first interaction (WebAudio)

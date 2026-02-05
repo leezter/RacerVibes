@@ -165,11 +165,139 @@ Configured in `.prettierrc`:
 ## How to Add/Modify Features
 
 ### Adding a New Vehicle
-1. **Physics**: Add entry to `VEHICLE_DEFAULTS` in `physics.js`
-2. **Rendering**: Add to `CarProfiles` in `racer.html`
-3. **Sprite**: Add image to `assets/vehicles/`
-4. **Caching**: Update `CORE_ASSETS` in `service-worker.js`
-5. **Gearbox** (optional): Add ratios to `gearboxDefaults` in `src/gearbox.js`
+
+To add a new vehicle with a PNG sprite to the game, follow ALL these steps:
+
+#### 1. Prepare the Vehicle Sprite
+- Place PNG file in `assets/vehicles/` (e.g., `MyNewCar.png`)
+- Sprite should be a top-down view of the vehicle
+- **CRITICAL**: Do NOT include a dark oval shadow in the sprite — shadows are rendered separately
+
+#### 2. Update `racer_start_menu.html`
+Add entry to `VEHICLES` array (~line 2790):
+
+```javascript
+{
+  id: 'MyNewCar',           // Must match physics.js and racer.html
+  name: 'My New Car',        // Display name in menu
+  class: 'newclass',         // Vehicle class (gt, rally, truck, etc.)
+  icon: '<img src="assets/vehicles/MyNewCar.png" alt="My New Car">'
+}
+```
+
+#### 3. Update `physics.js`
+Add to `VEHICLE_DEFAULTS` object (~line 131):
+
+```javascript
+MyNewCar: {
+  ...PLANCK_DEFAULTS,
+  mass: 2.20,                    // Vehicle mass
+  wheelbase: 34,                 // Distance between axles
+  cgToFront: 16,                 // CG to front axle
+  cgToRear: 18,                  // CG to rear axle
+  enginePowerMult: 1.65,         // Engine power multiplier
+},
+```
+
+#### 4. Update `racer.html` - Multiple Changes Required
+
+**4a. Add to CarProfiles (~line 1370)**
+```javascript
+"MyNewCar": { 
+  width: 18,              // Visual width
+  length: 34,             // Visual length
+  colliderWidth: 18,      // Physics hitbox width
+  colliderLength: 34,     // Physics hitbox length
+  maxK: 0.95,             // Max speed multiplier
+  accelK: 1.05,           // Acceleration multiplier
+  brakeK: 1.05,           // Braking multiplier
+  turnK: 1.15,            // Turning multiplier
+  color: "#2e7d32"        // Fallback color if sprite fails
+},
+```
+
+**4b. Load sprite (~line 1388)**
+```javascript
+const myNewCarSprite = loadSpriteAsset("mynewcar", "assets/vehicles/MyNewCar.png");
+```
+
+**4c. Add to warmup sprite checks (~line 4881)**
+Add sprite to BOTH sprite readiness checks:
+```javascript
+let spritesReady = [clipperSprite, truckSprite, bubbleSprite, rallycrossSprite, myNewCarSprite].every(
+  img => !img || (img.complete && img.naturalWidth > 0)
+);
+```
+
+**4d. Add warmup draw call (~line 4909)**
+```javascript
+if (myNewCarSprite && myNewCarSprite.complete) {
+  ctx.drawImage(myNewCarSprite, -99999, -99999, 1, 1);
+}
+```
+
+**4e. Create draw functions (~line 5382+)**
+```javascript
+function drawMyNewCarSprite() {
+  const img = myNewCarSprite;
+  if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return false;
+  const drawLength = L;
+  const aspect = img.naturalWidth / img.naturalHeight;
+  const drawWidth = drawLength * aspect;
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(img, -drawWidth / 2, -drawLength / 2, drawWidth, drawLength);
+  ctx.restore();
+  return true;
+}
+
+function drawMyNewCar() {
+  if (drawMyNewCarSprite()) return;
+  drawGT(); // Fallback if sprite not ready
+}
+```
+
+**4f. Update drawCarDetailed switch (~line 5380)**
+```javascript
+case 'MyNewCar': drawMyNewCar(); break;
+```
+
+**4g. CRITICAL: Shadow exclusion (~line 5110)**
+Add vehicle to shadow exclusion to prevent dark oval:
+```javascript
+if (!(car.kind === 'Truck' || car.kind === 'Bubble' || car.kind === 'Rallycross' || car.kind === 'MyNewCar' || clipperReady)) {
+  // Shadow rendering code...
+}
+```
+
+#### 5. Update `service-worker.js` (Optional)
+Add sprite to `CORE_ASSETS` for offline caching:
+```javascript
+'./assets/vehicles/MyNewCar.png',
+```
+
+#### 6. AI Spawning Behavior
+**NO CHANGES NEEDED** — AI spawning adapts automatically:
+- **Class-specific modes** (GT Class, Rally Class, etc.): All AI cars match player's vehicle
+- **Mixed mode** (`mode: 'grip'`): AI randomly selects from ALL `CarProfiles` keys
+
+The `getRandomCarKind()` function (~line 4765) uses `Object.keys(CarProfiles)`, so new vehicles are auto-included.
+
+#### Testing Checklist
+1. Start server: `npx http-server -p 8080 .`
+2. Open `http://localhost:8080/racer_start_menu.html`
+3. Verify:
+   - ✅ Vehicle appears in selection menu
+   - ✅ Sprite renders correctly in-game
+   - ✅ NO dark oval shadow appears
+   - ✅ Physics feel appropriate
+   - ✅ In Mixed mode, vehicle appears randomly among AI
+
+#### Common Issues
+- **Sprite not showing**: Check console for 404, verify file path case-sensitivity
+- **Dark shadow visible**: Missing shadow exclusion in step 4g
+- **AI all same type in Mixed**: Check `isMixedMode()` detects `mode === 'grip'`
+- **Collision issues**: Adjust `colliderWidth`/`colliderLength` to match visual bounds
 
 ### Adding a New Game Mode
 1. Create `modes/mymode.js`:
