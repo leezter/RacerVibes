@@ -1367,7 +1367,7 @@
     const CarProfiles = {
       "F1": { width: 18, length: 44, colliderWidth: 18, colliderLength: 44, maxK: 1.18, accelK: 1.10, brakeK: 1.05, turnK: 1.20, color: "#d32f2f" },
       "GT": { width: 24, length: 45, colliderWidth: 20, colliderLength: 39, maxK: 1.00, accelK: 1.00, brakeK: 1.00, turnK: 1.00, color: "#3949ab" },
-      "Rally": { width: 18, length: 34, colliderWidth: 18, colliderLength: 34, maxK: 0.95, accelK: 1.05, brakeK: 1.05, turnK: 1.15, color: "#2e7d32" },
+      "Rallycross": { width: 18, length: 34, colliderWidth: 18, colliderLength: 34, maxK: 0.95, accelK: 1.05, brakeK: 1.05, turnK: 1.15, color: "#2e7d32" },
       "Truck": { width: 29, length: 60, colliderWidth: 22, colliderLength: 58, maxK: 0.82, accelK: 0.85, brakeK: 0.90, turnK: 0.70, color: "#f97316" },
       "Bubble": { width: 16, length: 40, colliderWidth: 16, colliderLength: 38, maxK: 1.00, accelK: 1.00, brakeK: 1.00, turnK: 1.05, color: "#06b6d4" }
     };
@@ -1389,6 +1389,7 @@
     const audienceSprite = loadSpriteAsset("audience", "assets/decor/audience.png");
     const bubbleSprite = loadSpriteAsset("bubble", "assets/vehicles/Bubble.png");
     const bubbleSpriteMeta = { sx: 586, sy: 46, sw: 299, sh: 630 };
+    const rallycrossSprite = loadSpriteAsset("rallycross", "assets/vehicles/Rallycross.png");
     const COLLIDER_VIS_STORAGE_KEY = "vehicleColliderOverlay";
     function readColliderOverlaySetting() {
       try {
@@ -4745,6 +4746,56 @@
           const base = aiSpawn || pSpawn;
           const baseAngle = typeof rawAi.angle === "number" ? rawAi.angle : base.angle;
 
+          // Helper functions to build AI cars
+          // Check if we're in "mixed" mode (where AI should have varied vehicles)
+          // In the start menu, when all vehicle classes are shown, state.mode === 'grip'
+          const isMixedMode = () => {
+            // Check if START_PAYLOAD has a mode/class indicator
+            if (START_PAYLOAD && START_PAYLOAD.mode) {
+              const mode = (START_PAYLOAD.mode || '').toLowerCase();
+              // 'grip' is the mode used for "Mixed (for development)" where all vehicle types are available
+              return mode === 'grip' || mode === 'mixed' || mode.includes('mixed') || mode === 'dev' || mode.includes('development');
+            }
+            // If no mode specified, default to class-specific (match player)
+            return false;
+          };
+
+          const getRandomCarKind = () => {
+            const kinds = Object.keys(CarProfiles);
+            return kinds[Math.floor(Math.random() * kinds.length)];
+          };
+
+          const buildAICarsFromSlots = (slots) => {
+            const useMixed = isMixedMode();
+            return slots.map((slot) => {
+              return makeCar({
+                x: slot.x,
+                y: slot.y,
+                angle: slot.angle,
+                color: null, // Will use the default color for the car kind
+                kind: useMixed ? getRandomCarKind() : player.kind // Random in mixed mode, match player otherwise
+              });
+            });
+          };
+
+          const buildLegacyAICars = (count, spawn, angle) => {
+            const useMixed = isMixedMode();
+            const cars = [];
+            for (let i = 0; i < count; i++) {
+              const offset = (i + 1) * -40;
+              const dx = Math.cos(angle) * offset;
+              const dy = Math.sin(angle) * offset;
+              cars.push(makeCar({
+                x: spawn.x + dx,
+                y: spawn.y + dy,
+                angle,
+                color: null, // Will use the default color for the car kind
+                kind: useMixed ? getRandomCarKind() : player.kind // Random in mixed mode, match player otherwise
+              }));
+            }
+            return cars;
+          };
+
           if (gridSlots && gridSlots.length) {
             let pIdx = (PLAYER_GRID_POS || 1) - 1;
             // Fallback: clamps to last slot if gridPos > total slots
@@ -4883,12 +4934,12 @@
             // 5. Check if critical sprites are loaded - wait for them
             const spriteMaxWait = 3000;
             const spriteWaitStart = performance.now();
-            let spritesReady = [clipperSprite, truckSprite, bubbleSprite].every(
+            let spritesReady = [clipperSprite, truckSprite, bubbleSprite, rallycrossSprite].every(
               img => !img || (img.complete && img.naturalWidth > 0)
             );
             while (!spritesReady && (performance.now() - spriteWaitStart) < spriteMaxWait) {
               await new Promise(resolve => setTimeout(resolve, 50));
-              spritesReady = [clipperSprite, truckSprite, bubbleSprite].every(
+              spritesReady = [clipperSprite, truckSprite, bubbleSprite, rallycrossSprite].every(
                 img => !img || (img.complete && img.naturalWidth > 0)
               );
             }
@@ -4913,7 +4964,7 @@
             if (ctx && spritesReady) {
               ctx.save();
               ctx.globalAlpha = 0; // Invisible
-              [clipperSprite, truckSprite, bubbleSprite].forEach(img => {
+              [clipperSprite, truckSprite, bubbleSprite, rallycrossSprite].forEach(img => {
                 if (img && img.complete && img.naturalWidth) {
                   try { ctx.drawImage(img, -1000, -1000, 1, 1); } catch (_) { }
                 }
@@ -5113,7 +5164,7 @@
           }
 
           // Shadow (skip for sprite-based trucks/bubble that include baked shading or have clean sprites)
-          if (!(car.kind === 'Truck' || car.kind === 'Bubble' || clipperReady)) {
+          if (!(car.kind === 'Truck' || car.kind === 'Bubble' || car.kind === 'Rallycross' || clipperReady)) {
             ctx.save();
             ctx.globalAlpha = 0.28;
             ctx.fillStyle = '#000';
@@ -5387,10 +5438,29 @@
             wheel(t, axR, 0, ww, ll);
           }
 
+          function drawRallycross() {
+            if (drawRallycrossSprite()) return;
+            drawRally();
+          }
+
+          function drawRallycrossSprite() {
+            const img = rallycrossSprite;
+            if (!img || !img.complete || !img.naturalWidth || !img.naturalHeight) return false;
+            const drawLength = L;
+            const aspect = img.naturalWidth / img.naturalHeight;
+            const drawWidth = drawLength * aspect;
+            ctx.save();
+            ctx.imageSmoothingEnabled = true;
+            // No cropping needed as per instructions
+            ctx.drawImage(img, -drawWidth / 2, -drawLength / 2, drawWidth, drawLength);
+            ctx.restore();
+            return true;
+          }
+
           switch (car.kind) {
             case 'F1': drawF1(); break;
             case 'Truck': drawTruck(); break;
-            case 'Rally': drawRally(); break;
+            case 'Rallycross': drawRallycross(); break;
             case 'Bubble': drawBubble(); break;
             default: drawGT(); break;
           }

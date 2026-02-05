@@ -131,7 +131,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
         filterTau: 0.40
       }
     },
-    Rally: {
+    Rallycross: {
       ...PLANCK_DEFAULTS,
       mass: 2.20,
       wheelbase: 34,
