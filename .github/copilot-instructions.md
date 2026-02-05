@@ -173,6 +173,14 @@ To add a new vehicle with a PNG sprite to the game, follow ALL these steps:
 - Sprite should be a top-down view of the vehicle
 - **CRITICAL**: Do NOT include a dark oval shadow in the sprite — shadows are rendered separately
 
+**⚠️ IMPORTANT - Vehicle Sizing:**
+The game renders a dark oval shadow under non-sprite vehicles (see line ~5171 in `racer.html`). When you exclude a vehicle from shadow rendering (step 4g below), you MUST compensate by making the sprite dimensions LARGER in `CarProfiles` to maintain visual size parity.
+
+**Rule of thumb**: If your sprite has no shadow/ground effect baked in, make the `width` and `length` in `CarProfiles` approximately **40-50% larger** than the sprite's actual car body dimensions to compensate for the missing shadow visual bulk.
+
+**Example**: The Rallycross sprite actual car is small, but CarProfiles has `width: 26, length: 48` (not 18×34) to match the visual size of cars with shadows. Compare to GT which has shadow: `width: 24, length: 45`.
+
+
 #### 2. Update `racer_start_menu.html`
 Add entry to `VEHICLES` array (~line 2790):
 
