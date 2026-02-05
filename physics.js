@@ -133,18 +133,20 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
     },
     Rallycross: {
       ...PLANCK_DEFAULTS,
-      mass: 2.20,
+      restitution: 0.40,
+      angularDamp: 8.00,
+      mass: 1.75,
       wheelbase: 34,
       cgToFront: 16,
       cgToRear: 18,
-      enginePowerMult: 1.65,
+      enginePowerMult: 2.00,
       accelDurationMult: 3.5,
       maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
       gearCount: 6, // number of forward gears
       brakeForce: 600,
       maxSteer: 0.58,
       steerSpeed: 6.5,
-      muLatRoad: 1.40,
+      muLatRoad: 1.80,
       muLongRoad: 1.80,
       muLatGrass: 0.46,
       muLongGrass: 0.38,
@@ -166,11 +168,11 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       touchSteer: {
         maxSteerLowSpeed: 0.75,
         maxSteerHighSpeed: 0.10,
-        falloffSpeed: 220,
-        baseSteerRate: 6.8,
-        steerRateFalloff: 0.0038,
-        returnGain: 0,
-        filterTau: 0.12
+        falloffSpeed: 350,
+        baseSteerRate: 12.0,
+        steerRateFalloff: 0.0100,
+        returnGain: 6.0,
+        filterTau: 0.40
       }
     },
     Truck: {
