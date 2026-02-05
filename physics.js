@@ -138,7 +138,7 @@ import { Gearbox, gearboxDefaults, updateGearbox, getDriveForce, GEARBOX_CONFIG,
       cgToFront: 16,
       cgToRear: 18,
       enginePowerMult: 1.65,
-      accelDurationMult: 5.0,
+      accelDurationMult: 3.5,
       maxSpeed: 10000, // px/s - top speed cap (default: effectively unlimited)
       gearCount: 6, // number of forward gears
       brakeForce: 600,
