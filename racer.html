@@ -1509,6 +1509,10 @@
     const QUALITY_HIGH = 1.0;
     const QUALITY_MEDIUM = 0.75;
     const QUALITY_LOW = 0.5;
+    // Preserve legacy 1920x1080 camera distance while keeping distance consistent
+    // across all backbuffer sizes.
+    const CAMERA_REFERENCE_BASE_SCALE = 1920 / 1000;
+    const CAMERA_SCALE_NORMALIZER = 1 / (CAMERA_REFERENCE_BASE_SCALE * CAMERA_REFERENCE_BASE_SCALE);
 
     function getQualityMultiplier() {
       const quality = localStorage.getItem('graphicsQuality') || 'low';
@@ -2398,6 +2402,11 @@
       const [zoomResponseRate, setZoomResponseRate] = useState(() => ZOOM_INIT.response);
       const [zoomStartSpeed, setZoomStartSpeed] = useState(() => ZOOM_INIT.start);
       const [zoomFullSpeed, setZoomFullSpeed] = useState(() => ZOOM_INIT.full);
+      const cameraDistanceRef = useRef(cameraDistance);
+      const zoomMaxDeltaRef = useRef(zoomMaxDelta);
+      const zoomResponseRateRef = useRef(zoomResponseRate);
+      const zoomStartSpeedRef = useRef(zoomStartSpeed);
+      const zoomFullSpeedRef = useRef(zoomFullSpeed);
 
       function readDecorSetting(key, fallback) {
         try {
@@ -2751,6 +2760,13 @@
       useEffect(() => {
         runRebuildAiControllers();
       }, [aiControls.difficulty, aiControls.lookaheadBase, aiControls.lookaheadSpeed, aiControls.steerP, aiControls.steerD, aiControls.maxThrottle, aiControls.brakeAggro, aiControls.brakingLookaheadFactor, aiControls.searchWindow, aiControls.corneringGrip, aiControls.slipThreshold]);
+      useEffect(() => {
+        cameraDistanceRef.current = cameraDistance;
+        zoomMaxDeltaRef.current = zoomMaxDelta;
+        zoomResponseRateRef.current = zoomResponseRate;
+        zoomStartSpeedRef.current = zoomStartSpeed;
+        zoomFullSpeedRef.current = zoomFullSpeed;
+      }, [cameraDistance, zoomMaxDelta, zoomResponseRate, zoomStartSpeed, zoomFullSpeed]);
       function reloadTrack() {
         const loader = loadTrackRef.current;
         if (typeof loader === "function") {
@@ -2789,6 +2805,7 @@
         if (!Number.isFinite(parsed)) return;
         const clamped = clampCamera(parsed);
         setCameraDistance(clamped);
+        cameraDistanceRef.current = clamped;
         writeCameraDistance(clamped);
       }
 
@@ -2835,6 +2852,7 @@
         if (!Number.isFinite(parsed)) return;
         const clamped = clampZoomDelta(parsed);
         setZoomMaxDelta(clamped);
+        zoomMaxDeltaRef.current = clamped;
         writeZoomSetting('maxDelta', clamped);
       }
 
@@ -2845,6 +2863,7 @@
         const maxAllowed = Math.max(ZOOM_SPEED_MIN, zoomFullSpeed - ZOOM_SPEED_GAP);
         if (clamped > maxAllowed) clamped = maxAllowed;
         setZoomStartSpeed(clamped);
+        zoomStartSpeedRef.current = clamped;
         writeZoomSetting('startSpeed', clamped);
       }
 
@@ -2855,6 +2874,7 @@
         const minAllowed = Math.min(ZOOM_SPEED_MAX, zoomStartSpeed + ZOOM_SPEED_GAP);
         if (clamped < minAllowed) clamped = minAllowed;
         setZoomFullSpeed(clamped);
+        zoomFullSpeedRef.current = clamped;
         writeZoomSetting('fullSpeed', clamped);
       }
 
@@ -2863,6 +2883,7 @@
         if (!Number.isFinite(parsed)) return;
         const clamped = clampZoomResponse(parsed);
         setZoomResponseRate(clamped);
+        zoomResponseRateRef.current = clamped;
         writeZoomSetting('response', clamped);
       }
 
@@ -2961,21 +2982,24 @@
 
       function computeCameraZoom(speed) {
         const rawMax = 1.10;
-        const startPx = mphToPx(clampZoomSpeed(zoomStartSpeed));
-        const endPx = mphToPx(clampZoomSpeed(zoomFullSpeed));
+        const startSetting = zoomStartSpeedRef.current;
+        const fullSetting = zoomFullSpeedRef.current;
+        const maxDeltaSetting = zoomMaxDeltaRef.current;
+        const startPx = mphToPx(clampZoomSpeed(startSetting));
+        const endPx = mphToPx(clampZoomSpeed(fullSetting));
         const start = Math.min(startPx, endPx);
         const end = Math.max(startPx, endPx);
         const range = Math.max(1, end - start);
         const normalized = speed <= start ? 0 : Math.min(1, (speed - start) / range);
-        const span = resolveZoomSpan(zoomMaxDelta);
+        const span = resolveZoomSpan(maxDeltaSetting);
         const rawMin = Math.max(ZOOM_RAW_MIN_FLOOR, rawMax - span);
         const desired = rawMax - normalized * span;
         const rawTarget = Math.max(rawMin, Math.min(rawMax, desired));
         // Scale camera zoom with backbuffer width so visible world size stays constant
         // across viewport sizes, DPR, and graphics quality levels.
         const baseDisplayScale = baseDisplayScaleRef.current || 1;
-        const zoomFactor = cameraDistance || CAMERA_DEFAULT;
-        const zoomBase = (CAM_BASE_ZOOM * zoomFactor) * ((baseDisplayScale > 0) ? baseDisplayScale : 1);
+        const zoomFactor = cameraDistanceRef.current || CAMERA_DEFAULT;
+        const zoomBase = (CAM_BASE_ZOOM * zoomFactor) * ((baseDisplayScale > 0) ? baseDisplayScale : 1) * CAMERA_SCALE_NORMALIZER;
         const minZoom = rawMin * zoomBase;
         const maxZoom = rawMax * zoomBase;
         const targetZoom = Math.max(minZoom, Math.min(maxZoom, rawTarget * zoomBase));
@@ -6652,7 +6676,7 @@
             }
 
             cam.targetScale = Math.max(minZoom, Math.min(maxZoom * CAMERA_INTRO_ZOOM_MULTIPLIER, effectiveTargetZoom));
-            const zoomEase = clampZoomResponse(zoomResponseRate);
+            const zoomEase = clampZoomResponse(zoomResponseRateRef.current);
             cam.scale += (cam.targetScale - cam.scale) * Math.min(1, dt * zoomEase);
 
             // Smooth interpolation of camera look-ahead offset
