@@ -754,13 +754,13 @@
         max-height: calc(100vh - 120px);
         gap: 8px;
         padding-bottom: 60px;
-        overflow: hidden;
+        overflow-y: auto;
       }
 
       /* Compact cards with hidden descriptions */
       .card {
         min-height: 0;
-        max-height: calc((100vh - 220px) / 3);
+        max-height: none;
         padding: 8px 10px;
         display: flex;
         flex-direction: column;
@@ -777,6 +777,15 @@
       .card-title {
         font-size: 13px;
         margin-bottom: 0;
+      }
+
+      /* Flexible thumbnail sizing — prevent cutoff */
+      .card-thumbnail {
+        flex: 1;
+        min-height: 80px;
+        max-height: 160px;
+        margin-top: 10px;
+        margin-bottom: 4px;
       }
 
       /* Hide descriptions to save space */
@@ -857,13 +866,13 @@
         max-height: calc(100vh - 100px);
         gap: 5px;
         padding-bottom: 50px;
-        overflow: hidden;
+        overflow-y: auto;
       }
 
       /* Very compact cards for mobile - hide descriptions to fit 6 in view */
       .card {
         min-height: 0;
-        max-height: calc((100vh - 180px) / 3);
+        max-height: none;
         padding: 5px 6px;
         display: flex;
         flex-direction: column;
@@ -880,6 +889,15 @@
       .card-title {
         font-size: 10px;
         margin-bottom: 0;
+      }
+
+      /* Flexible thumbnail sizing — prevent cutoff */
+      .card-thumbnail {
+        flex: 1;
+        min-height: 60px;
+        max-height: 140px;
+        margin-top: 8px;
+        margin-bottom: 2px;
       }
 
       /* Hide descriptions on mobile to save space */
@@ -2222,9 +2240,11 @@
         width: 120px;
         min-width: 120px;
         max-width: 120px;
-        min-height: 100px;
+        min-height: 0;
+        max-height: none;
         padding: 10px 8px;
         flex-shrink: 0;
+        overflow: hidden;
       }
 
       .card-icon {
@@ -2253,6 +2273,17 @@
         right: 4px;
         font-size: 7px;
         padding: 2px 4px;
+      }
+
+      /* Thumbnail: flex within compact card */
+      .card-thumbnail {
+        flex: 1;
+        min-height: 0;
+        max-height: none;
+        margin-top: 6px;
+        margin-bottom: 2px;
+        background-size: contain;
+        background-position: center;
       }
 
       /* Track card action buttons */
@@ -2310,8 +2341,10 @@
         width: 105px;
         min-width: 105px;
         max-width: 105px;
-        min-height: 85px;
+        min-height: 0;
+        max-height: none;
         padding: 8px 6px;
+        overflow: hidden;
       }
 
       .card-icon {
@@ -2331,6 +2364,17 @@
       .card-badge {
         font-size: 6px;
         padding: 2px 3px;
+      }
+
+      /* Thumbnail: flex within compact card */
+      .card-thumbnail {
+        flex: 1;
+        min-height: 0;
+        max-height: none;
+        margin-top: 4px;
+        margin-bottom: 2px;
+        background-size: contain;
+        background-position: center;
       }
     }
 
