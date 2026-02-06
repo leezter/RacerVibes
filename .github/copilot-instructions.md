@@ -192,6 +192,44 @@ Quick verification after edits:
 - localStorage/IndexedDB access wrapped in try-catch
 - Console warnings for non-critical failures
 
+### Start Menu UI / Card Scaling Safety Rules (CRITICAL)
+
+All card-based UI in `racer_start_menu.html` (Select Class, Select Vehicle, Select Track) uses a **unified responsive scaling system**. See [`docs/start-menu-ui-architecture.md`](../docs/start-menu-ui-architecture.md) for the full reference.
+
+**Key contracts:**
+
+1. **All wizard steps share the same `.card` element structure** — `.card-icon` (Steps 1 & 2) and `.card-thumbnail` (Step 3) both use `flex: 1; min-height: 0` to fill available card space.
+
+2. **Global layout overrides use `!important`** — at the bottom of the `<style>` block, these rules enforce consistent card layout across ALL breakpoints:
+   - `.card { justify-content: flex-start !important }` — content stacks from top
+   - `.card-icon { margin-top: auto !important; margin-bottom: auto !important }` — icon vertically centered
+   - `.card-title { margin-top: 0 !important; margin-bottom: 4px !important }` — title pinned to bottom
+   - `.card-desc { display: none !important }` — descriptions globally hidden
+   
+   ⚠️ Because of these `!important` rules, setting `margin-bottom`, `margin-top`, or `justify-content` on `.card-icon`, `.card-title`, or `.card` inside media queries **will have no effect**. Only `font-size`, `flex`, `min-height`, `display`, `align-items`, `justify-content` (on `.card-icon` itself) are useful in responsive overrides.
+
+3. **`.card-thumbnail` and `.card-icon` scale identically** — both use `flex: 1; display: flex; align-items: center; justify-content: center` at each responsive breakpoint. In **portrait** breakpoints, both share the same `min-height` values (120px base, 80px at 481–768px, 60px at ≤480px) so cards are the same height regardless of step. In **landscape** breakpoints, both use `min-height: 0` to allow compact square cards.
+
+4. **Landscape breakpoints have multiple purpose-separated media queries** for the same `(max-height: 500px) and (orientation: landscape)` condition:
+   - **First block** (~line 986): Menu grid + settings form + slider layout only
+   - **Second block** (~line 2035): Card/grid/thumbnail/wizard layout (the primary landscape card rules)
+   - **Third block** (~line 2373): `#step1`/`#step2` icon size overrides only
+   
+   These are intentionally separate for organizational clarity. Do NOT merge them or add card rules to the first block.
+
+5. **Never re-add `overflow: hidden` to `.selection-grid`** — use `overflow-y: auto` instead. Grid-level clipping causes thumbnail cutoff on small screens.
+
+6. **Never use rigid `max-height: calc(...)` on `.card`** in portrait breakpoints — use `max-height: none` and let the flex layout handle sizing. Rigid card heights combined with `overflow: hidden` silently clip thumbnails.
+
+**Quick verification after UI edits:**
+
+1. Hard reload (bump `CACHE_VERSION` in `service-worker.js` or Ctrl+Shift+R).
+2. Test Select Class, Select Vehicle, and Select Track screens.
+3. Check portrait mode at 480px, 768px, and 1024px widths.
+4. Check landscape mode at 412px, 500px heights.
+5. Verify thumbnails are NOT clipped at bottom on any screen size.
+6. Verify icons are vertically centered and titles are at the bottom.
+
 ---
 
 ## How to Add/Modify Features

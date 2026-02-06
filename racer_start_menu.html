@@ -329,8 +329,12 @@
     }
 
     .card-icon {
+      flex: 1;
+      min-height: 120px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       font-size: 48px;
-      margin-bottom: 20px;
     }
 
     .card-icon img {
@@ -616,12 +620,10 @@
 
     .card-icon {
       font-size: var(--icon-size);
-      margin-bottom: clamp(10px, 2vw, 20px);
     }
 
     .card-title {
       font-size: clamp(16px, 3vw, 24px);
-      margin-bottom: clamp(4px, 1vw, 8px);
     }
 
     .card-desc {
@@ -759,7 +761,7 @@
 
       /* Compact cards with hidden descriptions */
       .card {
-        min-height: 0;
+        min-height: 120px;
         max-height: none;
         padding: 8px 10px;
         display: flex;
@@ -770,13 +772,16 @@
       }
 
       .card-icon {
+        flex: 1;
+        min-height: 80px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         font-size: 22px;
-        margin-bottom: 4px;
       }
 
       .card-title {
         font-size: 13px;
-        margin-bottom: 0;
       }
 
       /* Flexible thumbnail sizing — prevent cutoff */
@@ -786,19 +791,6 @@
         max-height: 160px;
         margin-top: 10px;
         margin-bottom: 4px;
-      }
-
-      /* Hide descriptions to save space */
-      /* Show description but limit lines */
-      .card-desc {
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-        margin-top: 4px;
-        font-size: 10px;
-        line-height: 1.2;
       }
 
       .settings-form {
@@ -871,7 +863,7 @@
 
       /* Very compact cards for mobile - hide descriptions to fit 6 in view */
       .card {
-        min-height: 0;
+        min-height: 100px;
         max-height: none;
         padding: 5px 6px;
         display: flex;
@@ -882,13 +874,16 @@
       }
 
       .card-icon {
+        flex: 1;
+        min-height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         font-size: 16px;
-        margin-bottom: 2px;
       }
 
       .card-title {
         font-size: 10px;
-        margin-bottom: 0;
       }
 
       /* Flexible thumbnail sizing — prevent cutoff */
@@ -898,19 +893,6 @@
         max-height: 140px;
         margin-top: 8px;
         margin-bottom: 2px;
-      }
-
-      /* Hide descriptions on mobile to save space */
-      /* Show description but limit lines */
-      .card-desc {
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-        margin-top: 2px;
-        font-size: 9px;
-        line-height: 1.1;
       }
 
       .card-badge {
@@ -987,37 +969,21 @@
         gap: 4px;
       }
 
-      .card-icon {
-        margin-bottom: 8px;
-      }
-
-      .card-desc {
-        display: none;
-        /* Hide descriptions on very small screens */
-      }
-
       /* Even smaller wizard title for small screens */
       .wizard-title {
         font-size: 16px;
       }
     }
 
-    /* Landscape mobile - important for phones rotated horizontal */
+    /* =========================================
+       LANDSCAPE: Short screens + landscape orientation
+       Consolidates all landscape-mobile card, grid, thumbnail,
+       settings-form, and slider rules in one place.
+       ========================================= */
+    /* NOTE: The primary landscape card/grid/thumbnail rules are in the
+       "Mobile Landscape Responsive Styles" section further below.
+       This block handles menu-grid, settings-form, and slider layout. */
     @media (max-height: 500px) and (orientation: landscape) {
-      header {
-        padding: 4px var(--header-padding);
-        display: flex;
-        align-items: center;
-      }
-
-      .logo {
-        font-size: clamp(16px, 4vw, 24px);
-      }
-
-      .screen {
-        padding-top: clamp(60px, 12vh, 80px);
-      }
-
       .menu-grid {
         grid-template-columns: repeat(4, 1fr);
         gap: 6px;
@@ -1030,72 +996,6 @@
 
       .menu-label {
         font-size: clamp(10px, 2vw, 14px);
-      }
-
-      /* Wizard Container - scrollable if needed */
-      .wizard-container {
-        max-height: none;
-        overflow-y: auto;
-      }
-
-      .wizard-header {
-        margin-bottom: 4px;
-      }
-
-      /* Smaller wizard title for landscape */
-      .wizard-title {
-        font-size: 20px;
-      }
-
-      /* Selection Grid: auto-fit square cards */
-      .selection-grid {
-        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-        grid-auto-rows: auto;
-        max-height: none;
-        padding-bottom: 50px;
-        gap: 6px;
-        overflow-y: visible;
-      }
-
-      /* Square cards - maintain aspect ratio */
-      .card {
-        aspect-ratio: 1;
-        max-height: none;
-        min-height: 0;
-        height: auto;
-        padding: 6px;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-      }
-
-      .card-icon {
-        font-size: 14px;
-        margin-bottom: 2px;
-      }
-
-      .card-title {
-        font-size: 10px;
-        margin-bottom: 0;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      .card-desc {
-        display: none;
-        /* Hide description to save space in square cards */
-      }
-
-      /* Thumbnail: scale to fill square card */
-      .card-thumbnail {
-        flex: 1;
-        min-height: 0;
-        max-height: none;
-        margin-top: 8px;
-        margin-bottom: 4px;
-        background-size: contain;
-        background-position: center;
       }
 
       /* Connected, centered and compact slider layout */
@@ -1111,7 +1011,6 @@
       input[type=range] {
         height: 4px;
         flex: 0 0 120px;
-        /* Fixed length */
         width: 120px;
       }
 
@@ -1124,34 +1023,26 @@
       .range-val {
         font-size: 13px;
         color: var(--accent);
-        /* Highlight value */
         width: 130px;
-        /* Fixed space for long labels */
         text-align: left;
         white-space: nowrap;
       }
 
-      /* Settings Form: 2 columns, centered items with toggle space */
-      /* Settings Form: Confined width for better centering */
+      /* Settings Form: 2 columns, confined width */
       .settings-form {
         grid-template-columns: 1fr 1fr;
         gap: 12px;
         align-items: start;
         padding-bottom: 80px;
-        /* Ensure space for overlapping Action Bar */
         max-width: 560px;
-        /* Bring sliders closer to center */
         margin: 0 auto;
       }
-
-
 
       .form-group {
         margin-bottom: 10px;
         display: flex;
         flex-direction: column;
         align-items: flex-start;
-        /* Left-align labels and inputs for consistency */
       }
 
       .form-label {
@@ -1159,18 +1050,14 @@
         margin-bottom: 4px;
         color: #aaa;
         width: 260px;
-        /* Match content width */
         text-align: left;
-        /* Left align to setting */
         transform: none;
       }
 
-      /* Ensure range-wrap matches label width for alignment */
       .form-group .range-wrap {
         width: 260px;
       }
 
-      /* Game Options below left sliders */
       .form-group:last-child {
         grid-column: auto;
         margin-top: 10px;
@@ -1178,16 +1065,12 @@
 
       .form-group:last-child>div {
         width: 260px;
-        /* Match slider group width */
         box-sizing: border-box;
         padding: 0 !important;
-        /* Remove excessive padding */
         background: none !important;
         border: none !important;
       }
 
-      /* Force Sound Effects layout: Text Left, Checkbox Right */
-      /* Exclude #ghostToggleLbl to respect its JavaScript-controlled display */
       .form-group:last-child>div label:not(#ghostToggleLbl) {
         display: flex !important;
         justify-content: space-between;
@@ -1195,19 +1078,9 @@
         width: 100%;
       }
 
-      /* Style Ghost toggle when visible (Time Trial mode) */
       #ghostToggleLbl {
         justify-content: space-between;
         width: 100%;
-      }
-
-      .action-bar {
-        padding: 8px var(--screen-padding);
-      }
-
-      .start-btn {
-        padding: 8px 24px;
-        font-size: 14px;
       }
     }
 
@@ -1244,21 +1117,19 @@
       }
 
       .card-icon {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         font-size: 12px;
-        margin-bottom: 2px;
       }
 
       .card-title {
         font-size: 9px;
-        margin-bottom: 0;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-      }
-
-      .card-desc {
-        display: none;
-        /* Hide description in square cards */
       }
 
       .card-badge {
@@ -2248,8 +2119,12 @@
       }
 
       .card-icon {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         font-size: 28px;
-        margin-bottom: 8px;
       }
 
       .card-icon img {
@@ -2259,13 +2134,8 @@
 
       .card-title {
         font-size: 12px;
-        margin-bottom: 4px;
         text-align: center;
         line-height: 1.2;
-      }
-
-      .card-desc {
-        display: none;
       }
 
       .card-badge {
@@ -2348,8 +2218,12 @@
       }
 
       .card-icon {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         font-size: 24px;
-        margin-bottom: 6px;
       }
 
       .card-icon img {
@@ -2405,32 +2279,76 @@
         width: 160px;
         min-width: 160px;
         max-width: 160px;
-        min-height: 130px;
+        min-height: 0;
+        max-height: none;
         padding: 12px;
+        overflow: hidden;
       }
 
       .card-icon {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         font-size: 36px;
-        margin-bottom: 12px;
+      }
+
+      .card-thumbnail {
+        flex: 1;
+        min-height: 0;
+        max-height: none;
+        margin-top: 6px;
+        margin-bottom: 2px;
+        background-size: contain;
+        background-position: center;
       }
 
       .card-title {
         font-size: 16px;
       }
-
-      .card-desc {
-        font-size: 11px;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        line-clamp: 2;
-        overflow: hidden;
-      }
     }
 
     /* =========================================
-       USER REQUEST: LARGER VEHICLE ICONS
-       For 'Select Class' (#step1) and 'Select Vehicle' (#step2)
+       GLOBAL CARD LAYOUT OVERRIDES
+       Applied to all wizard steps. These use !important
+       to enforce consistent card layout regardless of breakpoint.
+       
+       Card layout contract:
+         .card        → flex-start (icon+title stack from top)
+         .card-icon   → auto margins (vertically centered in remaining space)
+         .card-title  → pinned to bottom of card
+         .card-desc   → globally hidden
+       ========================================= */
+
+    /* Hide all card descriptions globally */
+    .card-desc {
+      display: none !important;
+    }
+
+    /* Cards stack content from the top */
+    .card {
+      justify-content: flex-start !important;
+    }
+
+    /* Icon centered in remaining space between badge and title */
+    .card-icon {
+      margin-top: auto !important;
+      margin-bottom: auto !important;
+    }
+
+    /* Title pinned to bottom */
+    .card-title {
+      margin-top: 0 !important;
+      margin-bottom: 4px !important;
+      z-index: 10;
+      position: relative;
+    }
+
+    /* =========================================
+       STEP 1 & 2: LARGER VEHICLE/CLASS ICONS
+       Icons in Select Class and Select Vehicle
+       are doubled from the base card-icon size.
        ========================================= */
 
     #step1 .card-icon,
@@ -2438,75 +2356,47 @@
       font-size: calc(var(--icon-size) * 2);
     }
 
-    /* 
-       Note: The base var(--icon-size) is clamp(28px, 6vw, 48px).
-       Doubled: clamp(56px, 12vw, 96px).
-    */
-
-    /* Override for specific breakpoints where fixed pixels are used */
-
-    /* Small Tablet / Large Phone */
     @media (max-width: 768px) and (min-width: 481px) {
-
       #step1 .card-icon,
       #step2 .card-icon {
         font-size: 44px;
-        /* Default was 22px */
       }
     }
 
-    /* Mobile */
     @media (max-width: 480px) {
-
       #step1 .card-icon,
       #step2 .card-icon {
         font-size: 32px;
-        /* Default was 16px */
       }
     }
 
-    /* Landscape Mobile (General/Tablet-ish) */
     @media screen and (max-height: 500px) and (orientation: landscape) {
-
       #step1 .card-icon,
       #step2 .card-icon {
         font-size: 56px;
-        /* Default was 28px */
       }
     }
 
-    /* Very small landscape */
     @media screen and (max-height: 420px) and (orientation: landscape) {
-
       #step1 .card-icon,
       #step2 .card-icon {
         font-size: 48px;
-        /* Default was 24px */
       }
     }
 
-    /* Tablet Landscape */
     @media screen and (min-height: 501px) and (max-height: 700px) and (orientation: landscape) {
-
       #step1 .card-icon,
       #step2 .card-icon {
         font-size: 72px;
-        /* Default was 36px */
       }
     }
 
     /* =========================================
-       USER REQUEST: REMOVE DESCRIPTIONS
+       STEP 1 & 2: SPRITE ICON SCALING
+       Specific sprite-based icons need extra
+       transform scaling to match emoji sizes.
        ========================================= */
-    .card-desc {
-      display: none !important;
-    }
 
-    /* =========================================
-       USER REQUEST: MAGNIFY SPECIFIC ICONS (GT, Truck, Bubble)
-       Base size is approx 2x. We want 3x visual size.
-       Bubble needs extra scaling (3.0 vs 1.5) to match the others.
-       ========================================= */
     .card-icon img[src*="Clipper_icon.png"],
     .card-icon img[src*="Beast.png"],
     .card-icon img[src*="Rallycross_icon.png"] {
@@ -2515,28 +2405,6 @@
 
     .card-icon img[src*="Bubble_Icon.png"] {
       transform: scale(3.0);
-    }
-
-    /* =========================================
-       USER REQUEST: FIX TITLE POSITIONING
-       Always at bottom, Icon centered in remaining space.
-       ========================================= */
-    .card {
-      justify-content: flex-start !important;
-    }
-
-    .card-icon {
-      margin-top: auto !important;
-      margin-bottom: auto !important;
-    }
-
-    .card-title {
-      margin-top: 0 !important;
-      margin-bottom: 4px !important;
-      /* Small padding from bottom edge */
-      z-index: 10;
-      /* Ensure text is visible if icon overlaps */
-      position: relative;
     }
   </style>
 
