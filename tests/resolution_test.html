@@ -97,7 +97,6 @@
     <div><span>Canvas:</span> <strong id="infoCanvas">-</strong></div>
     <div><span>CSS Size:</span> <strong id="infoCss">-</strong></div>
     <div><span>DPR:</span> <strong id="infoDpr">-</strong></div>
-    <div><span>Pixel Ratio:</span> <strong id="infoPixelRatio">-</strong></div>
     <div><span>Base Display Scale:</span> <strong id="infoBaseScale">-</strong></div>
     <div><span>Zoom:</span> <strong id="infoZoom">-</strong></div>
     <div><span>Visible Region:</span> <strong id="infoRegion">-</strong></div>
@@ -122,8 +121,9 @@
     let currentQuality = 'high';
     let displayScale = 1;
     let baseDisplayScale = 1;
-    let pixelRatio = 1;
     let currentZoom = 1;
+    let currentScaledW = BASE_WORLD_W;
+    let currentScaledH = BASE_WORLD_H;
 
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
@@ -137,12 +137,7 @@
       }
     }
 
-    function sizeCanvas() {
-      const vpW = window.innerWidth - 40;
-      const vpH = window.innerHeight - 200;
-      const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-      const qualityMult = getQualityMultiplier();
-
+    function computeMetrics(vpW, vpH, dpr, qualityMult) {
       const TARGET_ASPECT = 16 / 9;
       const viewportAspect = vpW / vpH;
 
@@ -155,37 +150,54 @@
         scaledH = Math.max(240, Math.round(vpH));
       }
 
-      // Apply quality multiplier to canvas dimensions
-      canvas.width = Math.min(Math.round(scaledW * dpr * qualityMult), MAXW);
-      canvas.height = Math.min(Math.round(scaledH * dpr * qualityMult), MAXH);
-      canvas.style.width = scaledW + 'px';
-      canvas.style.height = scaledH + 'px';
-
-      // Calculate scales (matching racer.html logic)
-      displayScale = canvas.width / BASE_WORLD_W;
-      // Use full-quality canvas width (scaledW * dpr, excluding qualityMult) for camera calculations
-      const fullQualityWidth = scaledW * dpr;
-      baseDisplayScale = fullQualityWidth / BASE_WORLD_W;
-      // pixelRatio = qualityMult (ratio of actual canvas to full-quality canvas)
-      pixelRatio = canvas.width / fullQualityWidth;
-
-      // Calculate zoom (simplified version of computeCameraZoom)
+      const canvasWidth = Math.min(Math.round(scaledW * dpr * qualityMult), MAXW);
+      const canvasHeight = Math.min(Math.round(scaledH * dpr * qualityMult), MAXH);
+      const baseScale = canvasWidth / BASE_WORLD_W;
       const zoomFactor = CAMERA_DEFAULT;
-      const zoomBase = (CAM_BASE_ZOOM * zoomFactor) / baseDisplayScale;
-      currentZoom = zoomBase * pixelRatio;
+      const zoomBase = (CAM_BASE_ZOOM * zoomFactor) * baseScale;
+      const zoom = zoomBase;
+      const regionW = canvasWidth / zoom;
+      const regionH = canvasHeight / zoom;
+
+      return {
+        scaledW,
+        scaledH,
+        canvasWidth,
+        canvasHeight,
+        baseScale,
+        zoom,
+        regionW,
+        regionH,
+      };
+    }
+
+    function sizeCanvas() {
+      const vpW = window.innerWidth - 40;
+      const vpH = window.innerHeight - 200;
+      const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+      const qualityMult = getQualityMultiplier();
+      const metrics = computeMetrics(vpW, vpH, dpr, qualityMult);
+
+      currentScaledW = metrics.scaledW;
+      currentScaledH = metrics.scaledH;
+      canvas.width = metrics.canvasWidth;
+      canvas.height = metrics.canvasHeight;
+      canvas.style.width = metrics.scaledW + 'px';
+      canvas.style.height = metrics.scaledH + 'px';
+
+      displayScale = metrics.canvasWidth / BASE_WORLD_W;
+      baseDisplayScale = metrics.baseScale;
+      currentZoom = metrics.zoom;
 
       // Update info panel
       document.getElementById('infoQuality').textContent = currentQuality;
       document.getElementById('infoCanvas').textContent = `${canvas.width} x ${canvas.height}`;
-      document.getElementById('infoCss').textContent = `${scaledW} x ${scaledH}`;
+      document.getElementById('infoCss').textContent = `${currentScaledW} x ${currentScaledH}`;
       document.getElementById('infoDpr').textContent = dpr.toFixed(2);
-      document.getElementById('infoPixelRatio').textContent = pixelRatio.toFixed(3);
       document.getElementById('infoBaseScale').textContent = baseDisplayScale.toFixed(3);
       document.getElementById('infoZoom').textContent = currentZoom.toFixed(3);
 
-      const regionW = canvas.width / currentZoom;
-      const regionH = canvas.height / currentZoom;
-      document.getElementById('infoRegion').textContent = `${regionW.toFixed(1)} x ${regionH.toFixed(1)} world units`;
+      document.getElementById('infoRegion').textContent = `${metrics.regionW.toFixed(1)} x ${metrics.regionH.toFixed(1)} world units`;
 
       draw();
     }
@@ -284,16 +296,17 @@
       testResults = {};
       const qualities = ['high', 'medium', 'low'];
 
-      for (const q of qualities) {
-        currentQuality = q;
-        sizeCanvas();
+      const vpW = window.innerWidth - 40;
+      const vpH = window.innerHeight - 200;
+      const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
 
-        const regionW = canvas.width / currentZoom;
-        const regionH = canvas.height / currentZoom;
-        testResults[q] = { regionW, regionH };
+      for (const q of qualities) {
+        const qualityMult = (q === 'low') ? QUALITY_LOW : (q === 'medium' ? QUALITY_MEDIUM : QUALITY_HIGH);
+        const metrics = computeMetrics(vpW, vpH, dpr, qualityMult);
+        testResults[q] = { regionW: metrics.regionW, regionH: metrics.regionH };
       }
 
-      // Check consistency
+      // Check quality consistency.
       const highRegion = testResults.high;
       const tolerance = 1; // Allow 1 world unit difference
       let passed = true;
@@ -307,17 +320,39 @@
         }
       }
 
+      // Check simulated viewport-size consistency at high quality.
+      const simulatedViewports = [
+        { w: 360, h: 640 },
+        { w: 844, h: 390 },
+        { w: 1280, h: 720 },
+        { w: 1920, h: 1080 },
+      ];
+      const simulated = simulatedViewports.map(({ w, h }) => {
+        const metrics = computeMetrics(w, h, dpr, QUALITY_HIGH);
+        return { label: `${w}x${h}`, regionW: metrics.regionW, regionH: metrics.regionH };
+      });
+      const baseSimRegion = simulated[0];
+      for (const entry of simulated.slice(1)) {
+        const diff = Math.abs(entry.regionW - baseSimRegion.regionW);
+        if (diff > tolerance) {
+          passed = false;
+          message += `viewport ${entry.label}: Region width differs by ${diff.toFixed(2)} world units. `;
+        }
+      }
+
       const resultDiv = document.getElementById('testResult');
       if (passed) {
         resultDiv.innerHTML = `<div class="test-result">PASS: Camera view is consistent across all quality settings!<br>
           High: ${testResults.high.regionW.toFixed(1)} x ${testResults.high.regionH.toFixed(1)}<br>
           Medium: ${testResults.medium.regionW.toFixed(1)} x ${testResults.medium.regionH.toFixed(1)}<br>
-          Low: ${testResults.low.regionW.toFixed(1)} x ${testResults.low.regionH.toFixed(1)}</div>`;
+          Low: ${testResults.low.regionW.toFixed(1)} x ${testResults.low.regionH.toFixed(1)}<br>
+          Simulated viewports: ${simulated.map(s => `${s.label}=${s.regionW.toFixed(1)}w`).join(', ')}</div>`;
       } else {
         resultDiv.innerHTML = `<div class="test-result fail">FAIL: ${message}<br>
           High: ${testResults.high.regionW.toFixed(1)} x ${testResults.high.regionH.toFixed(1)}<br>
           Medium: ${testResults.medium.regionW.toFixed(1)} x ${testResults.medium.regionH.toFixed(1)}<br>
-          Low: ${testResults.low.regionW.toFixed(1)} x ${testResults.low.regionH.toFixed(1)}</div>`;
+          Low: ${testResults.low.regionW.toFixed(1)} x ${testResults.low.regionH.toFixed(1)}<br>
+          Simulated viewports: ${simulated.map(s => `${s.label}=${s.regionW.toFixed(1)}w`).join(', ')}</div>`;
       }
 
       // Restore current quality

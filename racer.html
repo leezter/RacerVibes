@@ -2737,7 +2737,6 @@
       const camOffsetRef = useRef({ x: 0, y: 0, targetX: 0, targetY: 0 });
       const displayScaleRef = useRef(1);
       const baseDisplayScaleRef = useRef(1);
-      const pixelRatioRef = useRef(1);
       const camInitRef = useRef(false);
       const cameraIntroRef = useRef({ active: false, startTime: null }); // Intro zoom state
       const loadTrackRef = useRef(() => { });
@@ -2972,15 +2971,14 @@
         const rawMin = Math.max(ZOOM_RAW_MIN_FLOOR, rawMax - span);
         const desired = rawMax - normalized * span;
         const rawTarget = Math.max(rawMin, Math.min(rawMax, desired));
-        // Use base display scale (computed from logical CSS width) for consistent camera distance
+        // Scale camera zoom with backbuffer width so visible world size stays constant
+        // across viewport sizes, DPR, and graphics quality levels.
         const baseDisplayScale = baseDisplayScaleRef.current || 1;
-        const pixelRatio = pixelRatioRef.current || 1;
         const zoomFactor = cameraDistance || CAMERA_DEFAULT;
-        const zoomBase = (CAM_BASE_ZOOM * zoomFactor) / ((baseDisplayScale > 0) ? baseDisplayScale : 1);
-        // Apply pixel ratio to maintain consistent world view across quality settings
-        const minZoom = rawMin * zoomBase * pixelRatio;
-        const maxZoom = rawMax * zoomBase * pixelRatio;
-        const targetZoom = Math.max(minZoom, Math.min(maxZoom, rawTarget * zoomBase * pixelRatio));
+        const zoomBase = (CAM_BASE_ZOOM * zoomFactor) * ((baseDisplayScale > 0) ? baseDisplayScale : 1);
+        const minZoom = rawMin * zoomBase;
+        const maxZoom = rawMax * zoomBase;
+        const targetZoom = Math.max(minZoom, Math.min(maxZoom, rawTarget * zoomBase));
         return { minZoom, maxZoom, targetZoom };
       }
 
@@ -3080,13 +3078,10 @@
           canvas.style.transform = 'translate(-50%, -50%)';
           const pixelPerWorld = W > 0 ? (canvas.width / W) : 1;
           displayScaleRef.current = pixelPerWorld > 0 ? pixelPerWorld : 1;
-          // Use full-quality canvas width (scaledW * dpr, excluding qualityMult) for camera calculations
-          // This maintains original screen-size-based scaling while keeping view consistent across quality settings
-          const fullQualityWidth = scaledW * dpr;
-          const pixelPerBaseWorld = BASE_WORLD_W > 0 ? (fullQualityWidth / BASE_WORLD_W) : 1;
+          // Camera zoom references actual backbuffer width so distance is stable regardless
+          // of viewport size, device pixel ratio, and quality scaling.
+          const pixelPerBaseWorld = BASE_WORLD_W > 0 ? (canvas.width / BASE_WORLD_W) : 1;
           baseDisplayScaleRef.current = pixelPerBaseWorld > 0 ? pixelPerBaseWorld : 1;
-          // pixelRatio = qualityMult (ratio of actual canvas to full-quality canvas)
-          pixelRatioRef.current = fullQualityWidth > 0 ? (canvas.width / fullQualityWidth) : 1;
         }
 
         function adjustCanvasSize() {
