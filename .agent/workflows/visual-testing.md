@@ -38,36 +38,41 @@ This workflow describes how to test the racing game visually, including how to z
 
 5. Wait for the countdown to finish
 
-## Zooming Out to See the Full Track
+## Camera and Resolution Testing (Critical)
 
-The game has a `CAM_BASE_ZOOM` global variable that controls the camera zoom level. You can manipulate this via the browser console or JavaScript execution:
+Use the in-game camera controls. Do **not** rely on mutating `CAM_BASE_ZOOM` from console.
 
-### Via Browser Console (Manual Testing)
-1. Open browser DevTools (F12)
-2. In the Console tab, run:
-   ```javascript
-   CAM_BASE_ZOOM = 0.2;  // Very zoomed out - see entire track
-   ```
-3. Adjust the value as needed:
-   - `0.2` = Very zoomed out (full track view)
-   - `0.5` = Medium zoom
-   - `1.0` = Default zoom
-   - Higher values = More zoomed in
+### Manual path
+1. Click the "Dev" button in the top-left corner during a race.
+2. Click "Scales".
+3. Use "Camera distance" slider to control zoom.
 
-### Via JavaScript Execution (Automated Testing)
-When using browser automation, execute this JavaScript:
+### Automated path
+Use localStorage + cache-busting reload so values are applied reliably:
 ```javascript
 (() => {
-  CAM_BASE_ZOOM = 0.2;
-  return 'Set CAM_BASE_ZOOM to 0.2';
+  localStorage.setItem('cameraDistance', '1.6');
+  localStorage.setItem('graphicsQuality', 'high');
+  window.location.href = 'http://localhost:8080/racer.html?v=' + Date.now();
+  return 'Applied cameraDistance/high quality and reloading';
 })()
 ```
 
-## Using the In-Game Dev Menu
+## Resolution Change Regression Checklist
 
-1. Click the "Dev" button in the top-left corner during a race
-2. Click "Scales" to access camera/zoom settings
-3. Adjust "Camera distance" slider for zoom control
+When testing a change to resolution or quality logic, verify all of these:
+
+1. Set graphics quality to `high`; set camera distance to a known value (for example `1.6`).
+2. Capture a baseline screenshot at 1920x1080 (or the largest practical viewport).
+3. Switch quality between `high`, `medium`, and `low` and confirm camera distance stays the same.
+4. Test multiple viewport sizes (for example 360x640, 844x390, 1280x720, 1920x1080) and confirm camera distance stays the same.
+5. Open `http://localhost:8080/tests/resolution_test.html` and click "Run Camera Test".
+
+If any check fails, inspect these runtime contracts in `racer.html`:
+
+- `sizeBackbufferToViewport()` must derive `baseDisplayScaleRef` from `canvas.width / BASE_WORLD_W`.
+- `computeCameraZoom()` must use `CAMERA_SCALE_NORMALIZER` (1920x1080 baseline) and current ref values (`cameraDistanceRef`, `zoom*Ref`).
+- Frame-loop camera updates must read ref-backed settings (to avoid stale closure behavior).
 
 ## Teleporting the Car
 
@@ -84,9 +89,10 @@ To quickly test different parts of the track:
 
 | Variable | Purpose |
 |----------|---------|
-| `CAM_BASE_ZOOM` | Camera zoom level (lower = more zoomed out) |
 | `playerCar` | Player car object with x, y, speed, angle properties |
 | `TrackStore` | Track data storage |
+| `localStorage.cameraDistance` | Persisted camera distance slider value |
+| `localStorage.graphicsQuality` | Persisted quality setting (`high`/`medium`/`low`) |
 
 ## Quick Test Sequence for Track Visuals
 
@@ -94,5 +100,5 @@ To quickly test different parts of the track:
 1. Navigate to http://localhost:8080/racer.html
 2. Click "TAP TO CONTINUE"
 3. Wait 5 seconds for race to start
-4. Execute JavaScript: `CAM_BASE_ZOOM = 0.2`
-5. Capture screenshot to verify track boundaries
+4. Open Dev > Scales, set camera distance to max
+5. Capture screenshot to verify camera framing and track boundaries

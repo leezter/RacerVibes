@@ -155,6 +155,38 @@ Configured in `.prettierrc`:
 - **Config objects** for tunable params: `AI_RECOVERY_CFG`, `SKILL_PRESETS`, `VEHICLE_DEFAULTS`
 - **Inline JSX** in `racer.html` via `<script type="text/babel">`
 
+### Resolution/Camera Safety Rules (CRITICAL)
+
+When changing graphics quality or resolution behavior, maintain all of the following:
+
+1. Camera distance must be consistent across viewport size and DPR.
+2. Camera distance must be consistent across quality settings (`high`/`medium`/`low`).
+3. Distance should remain calibrated to legacy 1920x1080 behavior.
+
+Current contract in `racer.html`:
+
+- Resolution scaling: `sizeBackbufferToViewport()` sets `canvas.width/height` from `scaled * dpr * qualityMult`.
+- Camera scale source: `baseDisplayScaleRef.current = canvas.width / BASE_WORLD_W`.
+- Camera zoom baseline: `computeCameraZoom()` uses
+  `CAM_BASE_ZOOM * cameraDistanceRef.current * baseDisplayScaleRef.current * CAMERA_SCALE_NORMALIZER`.
+
+Do not regress to older formulas:
+
+- Do not divide camera zoom by display scale.
+- Do not add a second quality compensation term (for example an extra `pixelRatio` zoom multiplier).
+
+React closure caveat:
+
+- The frame loop is inside `useEffect(..., [trackName])`. Camera/zoom values used inside the loop must come from refs (`cameraDistanceRef`, `zoomMaxDeltaRef`, `zoomResponseRateRef`, `zoomStartSpeedRef`, `zoomFullSpeedRef`) so runtime slider changes take effect immediately.
+
+Quick verification after edits:
+
+1. Hard reload (or bump `CACHE_VERSION` in `service-worker.js`) before testing.
+2. In race, move "Camera distance" slider and confirm zoom changes instantly.
+3. Switch quality high/medium/low and verify same camera distance.
+4. Resize viewport (or test different devices) and verify same camera distance.
+5. Open `tests/resolution_test.html` and run the camera test.
+
 ### Error Handling
 - Defensive checks with fallbacks: `const value = stored ?? DEFAULT`
 - localStorage/IndexedDB access wrapped in try-catch
@@ -354,6 +386,7 @@ Open: `http://localhost:8080/racer_start_menu.html`
 3. **Script order matters** — `planck.min.js` → `physics.js`
 4. **Service worker caching** — bump `CACHE_VERSION` in `service-worker.js` after asset changes
 5. **Mobile testing** — use Dev Tools gyro emulation or real device on same network
+6. **Camera/resolution regressions are easy to miss with stale cache** — if behavior seems unchanged after code edits, force a cache-busting reload before debugging formulas
 
 ---
 

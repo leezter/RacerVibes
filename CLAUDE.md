@@ -67,6 +67,33 @@ Manual testing only - no automated test suite. Open `tests/test_runner.html` or 
 - Top speed relationship: `sqrt(enginePowerMult / dragK)`
 - Mobile uses lower physics iterations for performance
 
+## Resolution & Camera Contract (Critical)
+
+When changing render resolution or graphics quality in `racer.html`, preserve these invariants:
+
+1. **Camera distance must be screen-size invariant** (same world-space distance on different viewport sizes/DPRs).
+2. **Camera distance must be quality invariant** (same at low/medium/high graphics quality).
+3. **1920x1080 legacy distance is the calibration baseline**.
+
+Implementation details that must stay aligned:
+
+- Resolution scaling happens in `sizeBackbufferToViewport()` via:
+  - `canvas.width/height = scaled * dpr * qualityMult` (with caps)
+- Camera scaling depends on **actual backbuffer width**:
+  - `baseDisplayScaleRef.current = canvas.width / BASE_WORLD_W`
+- Camera zoom baseline in `computeCameraZoom()`:
+  - `zoomBase = CAM_BASE_ZOOM * cameraDistance * baseDisplayScale * CAMERA_SCALE_NORMALIZER`
+  - `CAMERA_SCALE_NORMALIZER` preserves the old 1920x1080 behavior.
+
+Do **not** reintroduce prior broken patterns:
+
+- Do not divide zoom by display scale for camera distance.
+- Do not apply a separate `pixelRatio` multiplier to camera zoom to "compensate" quality.
+
+Live update caveat:
+
+- The frame loop is created inside a `useEffect(..., [trackName])`, so camera/zoom settings read in-frame must use refs (`cameraDistanceRef`, `zoom*Ref`) to avoid stale closures.
+
 ## Coding Conventions
 
 - **Files**: `snake_case.js` for scripts, `camelCase.js` in `src/`
@@ -82,6 +109,7 @@ Manual testing only - no automated test suite. Open `tests/test_runner.html` or 
 3. Service worker caching - bump `CACHE_VERSION` in `service-worker.js` after asset changes
 4. Script order matters - dependencies must load before dependents
 5. **Chrome GPU canvas issue**: Stadium shadows in `decor_generator.js` cause Chrome (Windows, hardware acceleration ON) to silently lose canvas content. Stadium shadows are currently **disabled** (commented out at line ~1720). Other shadows work fine. Don't re-enable without thorough Chrome testing.
+6. **Camera/resolution changes can appear "ignored" if stale JS is cached**: hard reload and/or bump `CACHE_VERSION` before judging camera behavior.
 
 ## Adding Features
 
