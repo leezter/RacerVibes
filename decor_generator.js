@@ -991,36 +991,402 @@
     const maxStadiumDepth = 300; // Cap depth
     const minStadiumLength = 100; // Minimum length of wall to form a stadium
 
-    // Helper to check depth at a point with a given normal
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    // Helper to check depth at a point with a given normal.
     function checkDepth(x, y, nx, ny) {
       const step = 20;
       let depth = 0;
-      // March outward from the wall
       for (let d = 20; d < maxStadiumDepth; d += step) {
         const tx = x + nx * d;
         const ty = y + ny * d;
 
-        // Convert to mask coordinates
         const ix = Math.round(tx - offsetX);
         const iy = Math.round(ty - offsetY);
 
-        // Out of bounds
         if (ix < 0 || iy < 0 || ix >= width || iy >= height) return d;
-
-        // Hit something not green (road buffer or other track)
-        // greenMask is 1 for green, 0 for buffer/road
-        if (!greenMask[iy * width + ix]) {
-          return d;
-        }
+        if (!greenMask[iy * width + ix]) return d;
 
         depth = d;
       }
       return depth;
     }
 
+    function isFinitePoint(point) {
+      return !!point && Number.isFinite(point.x) && Number.isFinite(point.y);
+    }
+
+    function pointDistance(a, b) {
+      if (!isFinitePoint(a) || !isFinitePoint(b)) return Number.POSITIVE_INFINITY;
+      return Math.hypot(b.x - a.x, b.y - a.y);
+    }
+
+    function getStableNormal(points, index) {
+      const point = points[index] || {};
+      let nx = point.nx;
+      let ny = point.ny;
+
+      if (!Number.isFinite(nx) || !Number.isFinite(ny)) {
+        const prev = points[Math.max(0, index - 1)] || point;
+        const next = points[Math.min(points.length - 1, index + 1)] || point;
+        const dx = next.x - prev.x;
+        const dy = next.y - prev.y;
+        const len = Math.hypot(dx, dy) || 1;
+        nx = -dy / len;
+        ny = dx / len;
+      }
+
+      const len = Math.hypot(nx, ny) || 1;
+      return { x: nx / len, y: ny / len };
+    }
+
+    function dedupeConsecutivePoints(points, epsilon = 0.5, dropClosingDuplicate = false) {
+      if (!Array.isArray(points) || points.length === 0) return [];
+      const out = [];
+      for (const point of points) {
+        if (!isFinitePoint(point)) continue;
+        if (out.length === 0 || pointDistance(out[out.length - 1], point) > epsilon) {
+          out.push({ x: point.x, y: point.y });
+        }
+      }
+      if (dropClosingDuplicate && out.length > 2 && pointDistance(out[0], out[out.length - 1]) <= epsilon) {
+        out.pop();
+      }
+      return out;
+    }
+
+    function dedupeConsecutiveSamples(samples, epsilon = 0.5) {
+      if (!Array.isArray(samples) || samples.length === 0) return [];
+      const out = [];
+      for (const sample of samples) {
+        if (!sample || !Number.isFinite(sample.outerX) || !Number.isFinite(sample.outerY)) continue;
+        if (out.length === 0) {
+          out.push(sample);
+          continue;
+        }
+        const prev = out[out.length - 1];
+        const dist = Math.hypot(sample.outerX - prev.outerX, sample.outerY - prev.outerY);
+        if (dist > epsilon) {
+          out.push(sample);
+        }
+      }
+      return out;
+    }
+
+    function medianWindow5(values) {
+      if (!Array.isArray(values) || values.length === 0) return [];
+      if (values.length <= 2) return values.slice();
+      const out = new Array(values.length);
+      for (let i = 0; i < values.length; i++) {
+        const window = [];
+        for (let j = i - 2; j <= i + 2; j++) {
+          const idx = clamp(j, 0, values.length - 1);
+          window.push(values[idx]);
+        }
+        window.sort((a, b) => a - b);
+        out[i] = window[Math.floor(window.length / 2)];
+      }
+      return out;
+    }
+
+    function boxWindow3(values) {
+      if (!Array.isArray(values) || values.length === 0) return [];
+      if (values.length <= 2) return values.slice();
+      const out = new Array(values.length);
+      for (let i = 0; i < values.length; i++) {
+        const a = values[clamp(i - 1, 0, values.length - 1)];
+        const b = values[i];
+        const c = values[clamp(i + 1, 0, values.length - 1)];
+        out[i] = (a + b + c) / 3;
+      }
+      return out;
+    }
+
+    function clampDepthDeltas(values, maxDelta = 35) {
+      const out = values.slice();
+      if (out.length <= 1) return out;
+
+      for (let pass = 0; pass < 2; pass++) {
+        for (let i = 1; i < out.length; i++) {
+          const hi = out[i - 1] + maxDelta;
+          const lo = out[i - 1] - maxDelta;
+          if (out[i] > hi) out[i] = hi;
+          if (out[i] < lo) out[i] = lo;
+        }
+        for (let i = out.length - 2; i >= 0; i--) {
+          const hi = out[i + 1] + maxDelta;
+          const lo = out[i + 1] - maxDelta;
+          if (out[i] > hi) out[i] = hi;
+          if (out[i] < lo) out[i] = lo;
+        }
+      }
+
+      return out;
+    }
+
+    function smoothDepthProfile(depths) {
+      if (!Array.isArray(depths) || depths.length === 0) return [];
+      const median = medianWindow5(depths);
+      const boxed = boxWindow3(median);
+      return clampDepthDeltas(boxed, 35);
+    }
+
+    function medianValue(values) {
+      if (!Array.isArray(values) || values.length === 0) return 0;
+      const sorted = values.slice().sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      if ((sorted.length % 2) === 0) {
+        return (sorted[mid - 1] + sorted[mid]) * 0.5;
+      }
+      return sorted[mid];
+    }
+
+    function subdivideLongSegments(points, maxLen) {
+      if (!Array.isArray(points) || points.length < 2 || !Number.isFinite(maxLen) || maxLen <= 0) {
+        return Array.isArray(points) ? points.slice() : [];
+      }
+      const out = [points[0]];
+      for (let i = 1; i < points.length; i++) {
+        const prev = out[out.length - 1];
+        const curr = points[i];
+        const len = pointDistance(prev, curr);
+        if (!Number.isFinite(len) || len <= maxLen) {
+          out.push(curr);
+          continue;
+        }
+        const steps = Math.max(1, Math.ceil(len / maxLen));
+        for (let step = 1; step <= steps; step++) {
+          const t = step / steps;
+          out.push({
+            x: prev.x + (curr.x - prev.x) * t,
+            y: prev.y + (curr.y - prev.y) * t,
+          });
+        }
+      }
+      return out;
+    }
+
+    function vertexAngleDegrees(prev, curr, next) {
+      const ux = prev.x - curr.x;
+      const uy = prev.y - curr.y;
+      const vx = next.x - curr.x;
+      const vy = next.y - curr.y;
+      const ul = Math.hypot(ux, uy) || 1;
+      const vl = Math.hypot(vx, vy) || 1;
+      const dot = clamp((ux * vx + uy * vy) / (ul * vl), -1, 1);
+      return Math.acos(dot) * 180 / Math.PI;
+    }
+
+    function sanitizeOuterSamples(samples, maxPasses = 8) {
+      let working = dedupeConsecutiveSamples(samples, 0.5);
+      if (working.length < 3) return working;
+
+      for (let pass = 0; pass < maxPasses; pass++) {
+        const flagged = new Set();
+
+        for (let i = 0; i < working.length - 1; i++) {
+          const a = working[i];
+          const b = working[i + 1];
+          const outerLen = Math.hypot(b.outerX - a.outerX, b.outerY - a.outerY);
+          const innerLen = Math.hypot(b.innerX - a.innerX, b.innerY - a.innerY);
+          if (outerLen > Math.max(220, 3 * innerLen + 40)) {
+            const idx = Math.min(i + 1, working.length - 2);
+            if (idx > 0 && idx < working.length - 1) {
+              flagged.add(idx);
+            }
+          }
+        }
+
+        for (let i = 1; i < working.length - 1; i++) {
+          const prev = working[i - 1];
+          const curr = working[i];
+          const next = working[i + 1];
+          const prevLen = Math.hypot(curr.outerX - prev.outerX, curr.outerY - prev.outerY);
+          const nextLen = Math.hypot(next.outerX - curr.outerX, next.outerY - curr.outerY);
+          if (prevLen <= 120 || nextLen <= 120) continue;
+
+          const angle = vertexAngleDegrees(
+            { x: prev.outerX, y: prev.outerY },
+            { x: curr.outerX, y: curr.outerY },
+            { x: next.outerX, y: next.outerY },
+          );
+          if (angle < 8) {
+            flagged.add(i);
+          }
+        }
+
+        if (flagged.size === 0) break;
+
+        const orderedFlags = Array.from(flagged).sort((a, b) => a - b);
+        for (const idx of orderedFlags) {
+          if (idx <= 0 || idx >= working.length - 1) continue;
+          const prev = working[idx - 1];
+          const curr = working[idx];
+          const next = working[idx + 1];
+          const midpointX = (prev.outerX + next.outerX) * 0.5;
+          const midpointY = (prev.outerY + next.outerY) * 0.5;
+          const projectedDepth = (midpointX - curr.innerX) * curr.nx + (midpointY - curr.innerY) * curr.ny;
+          const maxDepthForPoint = Number.isFinite(curr.maxDepth) ? curr.maxDepth : (maxStadiumDepth - 10);
+          const targetDepth = clamp((projectedDepth + curr.depth) * 0.5, minStadiumDepth, maxDepthForPoint);
+          working[idx] = {
+            ...curr,
+            depth: targetDepth,
+            outerX: curr.innerX + curr.nx * targetDepth,
+            outerY: curr.innerY + curr.ny * targetDepth,
+          };
+        }
+
+        working = dedupeConsecutiveSamples(working, 0.5);
+        if (working.length < 3) break;
+      }
+
+      return dedupeConsecutiveSamples(working, 0.5);
+    }
+
+    function getStrictSegmentIntersection(p1, p2, p3, p4) {
+      const d1x = p2.x - p1.x;
+      const d1y = p2.y - p1.y;
+      const d2x = p4.x - p3.x;
+      const d2y = p4.y - p3.y;
+      const cross = d1x * d2y - d1y * d2x;
+      if (Math.abs(cross) < 0.000001) return null;
+
+      const t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / cross;
+      const u = ((p3.x - p1.x) * d1y - (p3.y - p1.y) * d1x) / cross;
+      if (t > 0.0001 && t < 0.9999 && u > 0.0001 && u < 0.9999) {
+        return { x: p1.x + t * d1x, y: p1.y + t * d1y };
+      }
+      return null;
+    }
+
+    function removeSelfIntersectionsPolyline(points, closed = false, maxIterations = 100) {
+      if (!Array.isArray(points) || points.length < 4) {
+        return dedupeConsecutivePoints(points || [], 0.5, closed);
+      }
+
+      let working = points.map((point) => ({ x: point.x, y: point.y }));
+      if (closed) {
+        working.push({ x: working[0].x, y: working[0].y });
+      }
+
+      for (let iteration = 0; iteration < maxIterations; iteration++) {
+        let changed = false;
+        const n = working.length;
+
+        outerLoop:
+        for (let i = 0; i < n - 1; i++) {
+          const a = working[i];
+          const b = working[i + 1];
+          for (let j = i + 2; j < n - 1; j++) {
+            if (closed && i === 0 && j === n - 2) continue;
+            const c = working[j];
+            const d = working[j + 1];
+            const hit = getStrictSegmentIntersection(a, b, c, d);
+            if (!hit) continue;
+
+            working = [
+              ...working.slice(0, i + 1),
+              { x: hit.x, y: hit.y },
+              ...working.slice(j + 1),
+            ];
+            changed = true;
+            break outerLoop;
+          }
+        }
+
+        if (!changed) break;
+      }
+
+      if (closed && working.length > 1) {
+        working.pop();
+      }
+
+      return dedupeConsecutivePoints(working, 0.5, closed);
+    }
+
+    function hasSelfIntersections(points, closed = true) {
+      if (!Array.isArray(points) || points.length < 4) return false;
+      const n = points.length;
+
+      if (closed) {
+        for (let i = 0; i < n; i++) {
+          const a1 = points[i];
+          const a2 = points[(i + 1) % n];
+          for (let j = i + 1; j < n; j++) {
+            const b1 = points[j];
+            const b2 = points[(j + 1) % n];
+            if (i === j) continue;
+            if (((i + 1) % n) === j) continue;
+            if (((j + 1) % n) === i) continue;
+            if (getStrictSegmentIntersection(a1, a2, b1, b2)) return true;
+          }
+        }
+        return false;
+      }
+
+      for (let i = 0; i < n - 1; i++) {
+        const a1 = points[i];
+        const a2 = points[i + 1];
+        for (let j = i + 2; j < n - 1; j++) {
+          const b1 = points[j];
+          const b2 = points[j + 1];
+          if (getStrictSegmentIntersection(a1, a2, b1, b2)) return true;
+        }
+      }
+      return false;
+    }
+
+    function isValidPolygon(points) {
+      return Array.isArray(points) && points.length >= 6 && !hasSelfIntersections(points, true);
+    }
+
+    function polygonStartsWithInner(polygon, innerPoints, epsilon = 1.5) {
+      if (!Array.isArray(polygon) || !Array.isArray(innerPoints)) return false;
+      if (polygon.length < innerPoints.length) return false;
+      for (let i = 0; i < innerPoints.length; i++) {
+        if (pointDistance(polygon[i], innerPoints[i]) > epsilon) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    function alignOuterPathToInnerEndpoints(points, expectedStart, expectedEnd) {
+      if (!Array.isArray(points) || points.length === 0) return [];
+      if (!isFinitePoint(expectedStart) || !isFinitePoint(expectedEnd)) {
+        return dedupeConsecutivePoints(points, 0.5, false);
+      }
+
+      let aligned = dedupeConsecutivePoints(points, 0.5, false);
+      if (aligned.length === 0) return aligned;
+
+      const forwardScore =
+        pointDistance(aligned[0], expectedStart) +
+        pointDistance(aligned[aligned.length - 1], expectedEnd);
+      const reversed = aligned.slice().reverse();
+      const reversedScore =
+        pointDistance(reversed[0], expectedStart) +
+        pointDistance(reversed[reversed.length - 1], expectedEnd);
+
+      if (reversedScore + 1 < forwardScore) {
+        aligned = reversed;
+      }
+
+      if (pointDistance(aligned[0], expectedStart) > 1) {
+        aligned.unshift({ x: expectedStart.x, y: expectedStart.y });
+      }
+      if (pointDistance(aligned[aligned.length - 1], expectedEnd) > 1) {
+        aligned.push({ x: expectedEnd.x, y: expectedEnd.y });
+      }
+
+      return dedupeConsecutivePoints(aligned, 0.5, false);
+    }
+
     const segmentsToCheck = [
       ...(wallData.outerSegments || []),
-      ...(wallData.innerSegments || [])
+      ...(wallData.innerSegments || []),
     ];
 
     for (const segment of segmentsToCheck) {
@@ -1029,92 +1395,251 @@
       const pts = segment.points;
       const pointDepths = new Array(pts.length).fill(0);
 
-      // Calculate depth for every point
+      // Keep run qualification unchanged for layout lock.
       for (let i = 0; i < pts.length; i++) {
-        // Wall points already have nx/ny from construction? 
-        // processEdgeForWalls preserves original properties if they exist?
-        // buildWallPath calculates nx/ny.
         let nx = pts[i].nx;
         let ny = pts[i].ny;
-
-        // Accessing nx/ny directly might be missing if they were stripped or recalculated 
-        // without saving. Let's re-verify or compute if missing.
-        if (nx === undefined) {
-          // Compute normal from neighbors
-          const prev = pts[Math.max(0, i - 1)];
-          const next = pts[Math.min(pts.length - 1, i + 1)];
-          const dx = next.x - prev.x;
-          const dy = next.y - prev.y;
-          const len = Math.hypot(dx, dy) || 1;
-          nx = -dy / len;
-          ny = dx / len;
+        if (!Number.isFinite(nx) || !Number.isFinite(ny)) {
+          const normal = getStableNormal(pts, i);
+          nx = normal.x;
+          ny = normal.y;
         }
-
         pointDepths[i] = checkDepth(pts[i].x, pts[i].y, nx, ny);
       }
 
-      // Find continuous runs of valid depth
       let startIdx = -1;
-
       for (let i = 0; i < pts.length; i++) {
         const isDeepEnough = pointDepths[i] >= minStadiumDepth;
 
         if (isDeepEnough && startIdx === -1) {
           startIdx = i;
         } else if ((!isDeepEnough || i === pts.length - 1) && startIdx !== -1) {
-          // End of a run (or end of segment)
-          let endIdx = isDeepEnough ? i : i - 1;
-
-          // Check length
-          // We can approximate length by direct distance for now, or sum of segments
+          const endIdx = isDeepEnough ? i : i - 1;
           const length = Math.hypot(pts[endIdx].x - pts[startIdx].x, pts[endIdx].y - pts[startIdx].y);
 
           if (length > minStadiumLength) {
-            // Create stadium polygon
             const innerPath = [];
-            const outerPath = [];
+            const outerSamples = [];
 
-            // Smoothing the outer path (the back of the stadium)
-            // We'll collect the "deep" points and then maybe smooth them
+            for (let k = startIdx; k <= endIdx; k += 2) {
+              const point = pts[k];
+              innerPath.push({ x: point.x, y: point.y });
 
-            for (let k = startIdx; k <= endIdx; k += 2) { // Skip some points for performance/simplicity
-              const p = pts[k];
-              innerPath.push({ x: p.x, y: p.y });
+              const normal = getStableNormal(pts, k);
+              const forwardDepth = checkDepth(point.x, point.y, normal.x, normal.y);
+              const backwardDepth = checkDepth(point.x, point.y, -normal.x, -normal.y);
 
-              // For the back, we use the measured depth (clamped slightly to be safe)
-              // Subtract a bit of buffer (e.g. 10px) to avoid hitting the road exactly
-              const d = Math.max(minStadiumDepth, pointDepths[k] - 10);
+              const outward = backwardDepth > forwardDepth
+                ? { x: -normal.x, y: -normal.y }
+                : { x: normal.x, y: normal.y };
 
-              // We need the normal again
-              let nx = p.nx;
-              let ny = p.ny;
-              if (nx === undefined) {
-                const prev = pts[Math.max(0, k - 1)];
-                const next = pts[Math.min(pts.length - 1, k + 1)];
-                const dx = next.x - prev.x;
-                const dy = next.y - prev.y;
-                const len = Math.hypot(dx, dy) || 1;
-                nx = -dy / len; ny = dx / len;
-              }
+              const maxDepthForPoint = clamp(Math.max(forwardDepth, backwardDepth) - 10, minStadiumDepth, maxStadiumDepth - 10);
+              const rawDepth = clamp(pointDepths[k] - 10, minStadiumDepth, maxStadiumDepth - 10);
+              const depth = clamp(rawDepth, minStadiumDepth, maxDepthForPoint);
 
-              outerPath.push({
-                x: p.x + nx * d,
-                y: p.y + ny * d
+              outerSamples.push({
+                innerX: point.x,
+                innerY: point.y,
+                nx: outward.x,
+                ny: outward.y,
+                depth,
+                maxDepth: maxDepthForPoint,
+                outerX: point.x + outward.x * depth,
+                outerY: point.y + outward.y * depth,
               });
             }
 
-            // Construct closed polygon
-            // Inner path forward, Outer path reversed
-            const polygon = [
-              ...innerPath,
-              ...outerPath.reverse()
-            ];
+            if (innerPath.length >= 2 && outerSamples.length >= 2) {
+              const smoothed = smoothDepthProfile(outerSamples.map((sample) => sample.depth));
+              for (let depthIndex = 0; depthIndex < outerSamples.length; depthIndex++) {
+                const sample = outerSamples[depthIndex];
+                const maxDepthForPoint = Number.isFinite(sample.maxDepth)
+                  ? sample.maxDepth
+                  : (maxStadiumDepth - 10);
+                const depth = clamp(smoothed[depthIndex], minStadiumDepth, maxDepthForPoint);
+                sample.depth = depth;
+                sample.outerX = sample.innerX + sample.nx * depth;
+                sample.outerY = sample.innerY + sample.ny * depth;
+              }
 
-            stadiums.push({
-              points: polygon,
-              innerPoints: innerPath,
-              type: 'stadium'
-            });
+              let sanitizedSamples = sanitizeOuterSamples(outerSamples, 8);
+              if (sanitizedSamples.length < 2) {
+                sanitizedSamples = outerSamples.slice();
+              }
+
+              if (sanitizedSamples.length >= 2 && outerSamples.length >= 2) {
+                sanitizedSamples[0] = { ...sanitizedSamples[0], ...outerSamples[0] };
+                sanitizedSamples[sanitizedSamples.length - 1] = {
+                  ...sanitizedSamples[sanitizedSamples.length - 1],
+                  ...outerSamples[outerSamples.length - 1],
+                };
+              }
+              sanitizedSamples = dedupeConsecutiveSamples(sanitizedSamples, 0.5);
+
+              const innerSegLens = [];
+              for (let idx = 1; idx < innerPath.length; idx++) {
+                innerSegLens.push(pointDistance(innerPath[idx - 1], innerPath[idx]));
+              }
+              const medianInnerSegLen = Math.max(1, medianValue(innerSegLens));
+              const maxOuterSegLen = Math.max(240, 3.2 * medianInnerSegLen);
+
+              let outerPath = dedupeConsecutivePoints(
+                subdivideLongSegments(sanitizedSamples.map((sample) => ({ x: sample.outerX, y: sample.outerY })), maxOuterSegLen),
+                0.5,
+                false,
+              );
+              let fallbackOuterPath = dedupeConsecutivePoints(
+                subdivideLongSegments(outerSamples.map((sample) => ({ x: sample.outerX, y: sample.outerY })), maxOuterSegLen),
+                0.5,
+                false,
+              );
+              const expectedOuterStart = {
+                x: outerSamples[0].outerX,
+                y: outerSamples[0].outerY,
+              };
+              const expectedOuterEnd = {
+                x: outerSamples[outerSamples.length - 1].outerX,
+                y: outerSamples[outerSamples.length - 1].outerY,
+              };
+
+              if (outerPath.length < 2) {
+                outerPath = fallbackOuterPath.slice();
+              }
+
+              const cleanedOuterPath = removeSelfIntersectionsPolyline(outerPath, false, 100);
+              if (cleanedOuterPath.length >= 2) {
+                outerPath = cleanedOuterPath;
+              }
+              const cleanedFallbackOuterPath = removeSelfIntersectionsPolyline(fallbackOuterPath, false, 100);
+              if (cleanedFallbackOuterPath.length >= 2) {
+                fallbackOuterPath = cleanedFallbackOuterPath;
+              }
+
+              outerPath = alignOuterPathToInnerEndpoints(outerPath, expectedOuterStart, expectedOuterEnd);
+              fallbackOuterPath = alignOuterPathToInnerEndpoints(fallbackOuterPath, expectedOuterStart, expectedOuterEnd);
+
+              const conservativeOuterPath = dedupeConsecutivePoints(
+                subdivideLongSegments(
+                  outerSamples.map((sample) => ({
+                    x: sample.innerX + sample.nx * (minStadiumDepth + 20),
+                    y: sample.innerY + sample.ny * (minStadiumDepth + 20),
+                  })),
+                  maxOuterSegLen,
+                ),
+                0.5,
+                false,
+              );
+              const alignedConservativeOuterPath = alignOuterPathToInnerEndpoints(
+                conservativeOuterPath,
+                expectedOuterStart,
+                expectedOuterEnd,
+              );
+
+              const candidatePolygons = [];
+              function pushCandidate(outerCandidate) {
+                if (!Array.isArray(outerCandidate) || outerCandidate.length < 2) return;
+                const raw = dedupeConsecutivePoints([
+                  ...innerPath,
+                  ...outerCandidate.slice().reverse(),
+                ], 0.5, true);
+                if (raw.length >= 3) {
+                  candidatePolygons.push(raw);
+                }
+                const cleaned = removeSelfIntersectionsPolyline(raw, true, 100);
+                if (cleaned.length >= 3) {
+                  candidatePolygons.push(cleaned);
+                }
+              }
+
+              pushCandidate(outerPath);
+              pushCandidate(fallbackOuterPath);
+              pushCandidate(alignedConservativeOuterPath);
+
+              let finalPolygon = null;
+              let lastValid = null;
+
+              for (const candidate of candidatePolygons) {
+                const normalized = dedupeConsecutivePoints(candidate, 0.5, true);
+                if (isValidPolygon(normalized)) {
+                  if (!finalPolygon) finalPolygon = normalized;
+                  lastValid = normalized;
+                }
+              }
+
+              if (!finalPolygon && lastValid) {
+                finalPolygon = lastValid;
+              }
+
+              if (!finalPolygon) {
+                const emergencyStrip = dedupeConsecutivePoints([
+                  ...innerPath,
+                  ...alignedConservativeOuterPath.slice().reverse(),
+                ], 0.5, true);
+                const cleanedEmergencyStrip = removeSelfIntersectionsPolyline(emergencyStrip, true, 100);
+                if (cleanedEmergencyStrip.length >= 3) {
+                  finalPolygon = cleanedEmergencyStrip;
+                }
+              }
+
+              if (!finalPolygon || finalPolygon.length < 3) {
+                finalPolygon = dedupeConsecutivePoints([
+                  ...innerPath,
+                  ...fallbackOuterPath.slice().reverse(),
+                ], 0.5, true);
+              }
+
+              if (finalPolygon && finalPolygon.length >= 3) {
+                const cleaned = removeSelfIntersectionsPolyline(finalPolygon, true, 100);
+                if (cleaned.length >= 3) {
+                  finalPolygon = cleaned;
+                }
+              }
+
+              if (!finalPolygon || finalPolygon.length < 3) {
+                const midpoint = outerSamples[Math.floor(outerSamples.length * 0.5)] || outerSamples[0];
+                if (midpoint) {
+                  finalPolygon = dedupeConsecutivePoints([
+                    { x: innerPath[0].x, y: innerPath[0].y },
+                    { x: midpoint.outerX, y: midpoint.outerY },
+                    { x: innerPath[innerPath.length - 1].x, y: innerPath[innerPath.length - 1].y },
+                  ], 0.5, true);
+                }
+              }
+
+              if (!finalPolygon || finalPolygon.length < 3) {
+                finalPolygon = innerPath.slice(0, 3).map((point) => ({ x: point.x, y: point.y }));
+              }
+              if (hasSelfIntersections(finalPolygon, true)) {
+                finalPolygon = dedupeConsecutivePoints([
+                  { x: innerPath[0].x, y: innerPath[0].y },
+                  { x: expectedOuterStart.x, y: expectedOuterStart.y },
+                  { x: expectedOuterEnd.x, y: expectedOuterEnd.y },
+                  { x: innerPath[innerPath.length - 1].x, y: innerPath[innerPath.length - 1].y },
+                ], 0.5, true);
+              }
+
+              let exportedOuterPoints = null;
+              if (polygonStartsWithInner(finalPolygon, innerPath) && finalPolygon.length > innerPath.length + 1) {
+                exportedOuterPoints = dedupeConsecutivePoints(
+                  subdivideLongSegments(finalPolygon.slice(innerPath.length).reverse(), maxOuterSegLen),
+                  0.5,
+                  false,
+                );
+              }
+              if (!exportedOuterPoints || exportedOuterPoints.length < 2) {
+                exportedOuterPoints = outerPath.slice();
+              }
+
+              const stadium = {
+                points: finalPolygon,
+                innerPoints: innerPath,
+                type: 'stadium',
+              };
+              if (exportedOuterPoints && exportedOuterPoints.length >= 2) {
+                stadium.outerPoints = exportedOuterPoints;
+              }
+              stadiums.push(stadium);
+            }
           }
 
           startIdx = -1;
@@ -1124,8 +1649,6 @@
 
     return stadiums;
   }
-
-
   /**
    * Build a continuous wall path from a track edge.
    * Returns an array of points that form the wall centerline.
@@ -1770,6 +2293,39 @@
     ctx.restore();
   }
 
+  function drawBuildings(ctx, buildings) {
+    if (!buildings || buildings.length === 0) return;
+    ctx.save();
+    for (const b of buildings) {
+      if (!b) continue;
+      const w = Math.max(20, b.width || 60);
+      const d = Math.max(16, b.depth || 40);
+      const x = b.x || 0;
+      const y = b.y || 0;
+      const angle = b.angle || 0;
+
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+
+      // Base building body.
+      ctx.fillStyle = "#d5dbe5";
+      ctx.fillRect(-w * 0.5, -d * 0.5, w, d);
+
+      // Subtle roof strip for depth.
+      ctx.fillStyle = "#b7c0ce";
+      ctx.fillRect(-w * 0.5, -d * 0.5, w, Math.max(6, d * 0.22));
+
+      // Outline.
+      ctx.strokeStyle = "#6b778b";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(-w * 0.5, -d * 0.5, w, d);
+
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
   function drawShadows(shadowCtx, metadata, maskCanvas, mapping) {
     const params = metadata.params || DEFAULT_PARAMS;
     const shadowAlpha = params.shadowStrength != null ? params.shadowStrength : DEFAULT_PARAMS.shadowStrength;
@@ -1878,7 +2434,7 @@
     const trees = sampleTrees(zones, rng, effectiveParams, stadiums);
 
     return {
-      version: 2,
+      version: 4,
       seed,
       params: {
         treeDensity: effectiveParams.treeDensity,
@@ -1888,10 +2444,10 @@
       },
       items: {
         stadiums,
+        buildings: [], // Deprecated legacy layer
         kerbs,
         barriers,
         trees,
-        buildings: [], // Deprecated
         innerWalls,
       },
       zones: {
@@ -1933,8 +2489,8 @@
     }
     drawBarriers(decorCtx, metadata.items.barriers, atlas);
     drawBarriers(decorCtx, metadata.items.barriers, atlas);
-    // drawBuildings(decorCtx, metadata.items.buildings, atlas); // Replaced by stadiums
     drawStadiums(decorCtx, metadata.items.stadiums, options.audienceImage);
+    // drawBuildings(decorCtx, metadata.items.buildings); // Legacy path intentionally disabled.
     drawTrees(decorCtx, metadata.items.trees, atlas);
     drawTrees(decorCtx, metadata.items.trees, atlas);
     decorCtx.restore();
@@ -2003,7 +2559,7 @@
 
     let metadata = null;
     const existing = options.existing;
-    const canReuse = existing && existing.version >= 2 && !options.force;
+    const canReuse = existing && existing.version >= 4 && !options.force;
     const mappingMatches = canReuse && existing.mapping &&
       Math.abs((existing.mapping.worldMinX || 0) - mapping.worldMinX) < 0.5 &&
       Math.abs((existing.mapping.worldMinY || 0) - mapping.worldMinY) < 0.5 &&

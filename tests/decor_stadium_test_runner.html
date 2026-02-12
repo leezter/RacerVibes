@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Decor Stadium Regression Runner</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #10131a;
+      color: #e8eefc;
+    }
+    h1 { margin: 0 0 14px; color: #7dd3fc; }
+    .controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    button {
+      border: none;
+      border-radius: 6px;
+      padding: 10px 16px;
+      cursor: pointer;
+      background: #0ea5e9;
+      color: #02111f;
+      font-weight: 700;
+    }
+    button:disabled { background: #475569; color: #cbd5e1; cursor: not-allowed; }
+    .summary {
+      background: #1e293b;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+      border-left: 4px solid #64748b;
+    }
+    .summary.pass { border-left-color: #22c55e; }
+    .summary.fail { border-left-color: #ef4444; }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(360px, 520px) 1fr;
+      gap: 14px;
+    }
+    .panel {
+      background: #1e293b;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    canvas {
+      width: 100%;
+      height: auto;
+      border-radius: 6px;
+      background: #0f172a;
+      border: 1px solid #334155;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      text-align: left;
+      padding: 7px 6px;
+      border-bottom: 1px solid #334155;
+      vertical-align: top;
+    }
+    th { color: #7dd3fc; position: sticky; top: 0; background: #1e293b; }
+    tr.pass td:first-child { color: #22c55e; }
+    tr.fail td:first-child { color: #ef4444; }
+    .results-wrap {
+      max-height: 74vh;
+      overflow: auto;
+    }
+    .muted { color: #94a3b8; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Decor Stadium Regression Runner</h1>
+  <div class="controls">
+    <button id="runBtn">Run Full Matrix</button>
+    <span class="muted">Tracks: Test, Sharp_Corners, Bendy_Vibes | widthScale: 1.0/2.5 | buildingDensity: 0.2/0.4/0.8 | treeDensity: 0.2/0.5 | seedOffset: 0/1/5/25</span>
+  </div>
+  <div id="summary" class="summary">Not started.</div>
+  <div class="layout">
+    <div class="panel">
+      <h3 style="margin: 0 0 10px;">Preview (Latest Scenario)</h3>
+      <canvas id="previewCanvas" width="900" height="560"></canvas>
+      <div id="previewMeta" class="muted" style="margin-top: 8px;"></div>
+    </div>
+    <div class="panel">
+      <h3 style="margin: 0 0 10px;">Matrix Results</h3>
+      <div class="results-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Track</th>
+              <th>widthScale</th>
+              <th>buildingDensity</th>
+              <th>treeDensity</th>
+              <th>seedOffset</th>
+              <th>Stadiums</th>
+              <th>Issues</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="../builtin_tracks.js"></script>
+  <script src="../decor_generator.js"></script>
+  <script>
+    const TRACKS = ['Test', 'Sharp_Corners', 'Bendy_Vibes'];
+    const WIDTH_SCALES = [1.0, 2.5];
+    const BUILDING_DENSITIES = [0.2, 0.4, 0.8];
+    const TREE_DENSITIES = [0.2, 0.5];
+    const SEED_OFFSETS = [0, 1, 5, 25];
+
+    const runBtn = document.getElementById('runBtn');
+    const summaryEl = document.getElementById('summary');
+    const resultsBody = document.getElementById('resultsBody');
+    const previewCanvas = document.getElementById('previewCanvas');
+    const previewCtx = previewCanvas.getContext('2d');
+    const previewMeta = document.getElementById('previewMeta');
+
+    const maskCache = new Map();
+
+    function median(values) {
+      if (!values || values.length === 0) return 0;
+      const sorted = values.slice().sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) * 0.5 : sorted[mid];
+    }
+
+    function segmentIntersection(p1, p2, p3, p4) {
+      const d1x = p2.x - p1.x;
+      const d1y = p2.y - p1.y;
+      const d2x = p4.x - p3.x;
+      const d2y = p4.y - p3.y;
+      const cross = d1x * d2y - d1y * d2x;
+      if (Math.abs(cross) < 1e-6) return null;
+      const t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / cross;
+      const u = ((p3.x - p1.x) * d1y - (p3.y - p1.y) * d1x) / cross;
+      if (t > 1e-4 && t < 0.9999 && u > 1e-4 && u < 0.9999) {
+        return { x: p1.x + t * d1x, y: p1.y + t * d1y };
+      }
+      return null;
+    }
+
+    function hasSelfIntersections(points) {
+      if (!points || points.length < 4) return false;
+      const n = points.length;
+      for (let i = 0; i < n; i++) {
+        const a1 = points[i];
+        const a2 = points[(i + 1) % n];
+        for (let j = i + 1; j < n; j++) {
+          const b1 = points[j];
+          const b2 = points[(j + 1) % n];
+          if (i === j) continue;
+          if (((i + 1) % n) === j) continue;
+          if (((j + 1) % n) === i) continue;
+          if (segmentIntersection(a1, a2, b1, b2)) return true;
+        }
+      }
+      return false;
+    }
+
+    function hasConsecutiveDuplicates(points, epsilon = 0.5) {
+      if (!points || points.length < 2) return false;
+      for (let i = 1; i < points.length; i++) {
+        if (Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y) <= epsilon) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function centerlineCoverageRatio(points, centerline, stride = 8) {
+      if (!points || points.length < 3 || !centerline || centerline.length === 0) return 0;
+      let sampled = 0;
+      let covered = 0;
+      for (let i = 0; i < centerline.length; i += stride) {
+        sampled++;
+        if (isPointInPolygon(centerline[i].x, centerline[i].y, points)) {
+          covered++;
+        }
+      }
+      return sampled > 0 ? (covered / sampled) : 0;
+    }
+
+    function countSpikeEdges(stadium) {
+      const innerPoints = stadium.innerPoints || [];
+      const points = stadium.points || [];
+      const innerCount = innerPoints.length;
+      if (innerCount < 2 || points.length <= innerCount + 1) return 0;
+      const outerPoints = Array.isArray(stadium.outerPoints) && stadium.outerPoints.length > 1
+        ? stadium.outerPoints
+        : points.slice(innerCount).reverse();
+      if (outerPoints.length < 2) return 0;
+
+      const innerLens = [];
+      for (let i = 1; i < innerPoints.length; i++) {
+        innerLens.push(Math.hypot(
+          innerPoints[i].x - innerPoints[i - 1].x,
+          innerPoints[i].y - innerPoints[i - 1].y
+        ));
+      }
+      const medianInnerLen = Math.max(1, median(innerLens));
+      const maxAllowed = Math.max(240, 3.2 * medianInnerLen);
+
+      let spikes = 0;
+      for (let i = 1; i < outerPoints.length; i++) {
+        const len = Math.hypot(
+          outerPoints[i].x - outerPoints[i - 1].x,
+          outerPoints[i].y - outerPoints[i - 1].y
+        );
+        if (len > maxAllowed) spikes++;
+      }
+
+      for (let i = 1; i < outerPoints.length - 1; i++) {
+        const prev = outerPoints[i - 1];
+        const curr = outerPoints[i];
+        const next = outerPoints[i + 1];
+        const prevLen = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+        const nextLen = Math.hypot(next.x - curr.x, next.y - curr.y);
+        if (prevLen <= 120 || nextLen <= 120) continue;
+        const ux = prev.x - curr.x, uy = prev.y - curr.y;
+        const vx = next.x - curr.x, vy = next.y - curr.y;
+        const ul = Math.hypot(ux, uy) || 1;
+        const vl = Math.hypot(vx, vy) || 1;
+        const dot = Math.max(-1, Math.min(1, (ux * vx + uy * vy) / (ul * vl)));
+        const angleDeg = Math.acos(dot) * 180 / Math.PI;
+        if (angleDeg < 8) spikes++;
+      }
+
+      return spikes;
+    }
+
+    function createTrackMask(track, roadWidth) {
+      const cacheKey = `${track.name || 'track'}|${(roadWidth || (track.roadWidth || 120)).toFixed(2)}`;
+      if (maskCache.has(cacheKey)) return maskCache.get(cacheKey);
+      const w = Math.max(1, Math.ceil(track.world?.width || 1000));
+      const h = Math.max(1, Math.ceil(track.world?.height || 700));
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = roadWidth || track.roadWidth || 120;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      track.points.forEach((p, i) => {
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
+      ctx.closePath();
+      ctx.stroke();
+      maskCache.set(cacheKey, canvas);
+      return canvas;
+    }
+
+    function computeScenarioSeed(trackId, worldW, worldH, seedOffset) {
+      const base = (typeof Decor !== 'undefined' && typeof Decor.hash === 'function')
+        ? Decor.hash(`${trackId}|${worldW}x${worldH}`)
+        : 1;
+      return (base + (seedOffset >>> 0)) >>> 0;
+    }
+
+    function analyzeScenario(trackId, widthScale, buildingDensity, treeDensity, seedOffset) {
+      const track = (window.BUILTIN_TRACKS || {})[trackId];
+      if (!track) throw new Error(`Missing track: ${trackId}`);
+      const worldW = Math.max(1, Math.ceil(track.world?.width || 1000));
+      const worldH = Math.max(1, Math.ceil(track.world?.height || 700));
+      const roadWidth = (track.roadWidth || 120) * widthScale;
+      const maskCanvas = createTrackMask(track, roadWidth);
+      const seed = computeScenarioSeed(trackId, worldW, worldH, seedOffset);
+
+      const generated = Decor.generate({
+        width: worldW,
+        height: worldH,
+        baseWorldWidth: worldW,
+        baseWorldHeight: worldH,
+        roadWidth,
+        centerline: track.points,
+        maskCanvas,
+        seed,
+        force: true,
+        devicePixelRatio: 1,
+        params: {
+          treeDensity,
+          buildingDensity,
+          kerbWidthScale: 1.0,
+          shadowStrength: 0.55,
+        },
+      });
+
+      const stadiums = (generated && generated.metadata && generated.metadata.items && generated.metadata.items.stadiums) || [];
+      let selfIntersections = 0;
+      let spikeEdges = 0;
+      let dupPoints = 0;
+      let centerlineCoverage = 0;
+
+      for (const stadium of stadiums) {
+        if (hasSelfIntersections(stadium.points || [])) selfIntersections++;
+        if (hasConsecutiveDuplicates(stadium.points || [], 0.5)) dupPoints++;
+        spikeEdges += countSpikeEdges(stadium);
+        centerlineCoverage = Math.max(
+          centerlineCoverage,
+          centerlineCoverageRatio(stadium.points || [], track.points || [], 8),
+        );
+      }
+
+      return {
+        track,
+        widthScale,
+        stadiums,
+        buildingDensity,
+        treeDensity,
+        seedOffset,
+        selfIntersections,
+        spikeEdges,
+        dupPoints,
+        centerlineCoverage,
+        failed: (selfIntersections + spikeEdges + dupPoints) > 0 || centerlineCoverage > 0.01,
+      };
+    }
+
+    function drawPreview(result) {
+      const { track, stadiums, failed } = result;
+      previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+      previewCtx.fillStyle = '#0b1220';
+      previewCtx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+
+      const allPoints = track.points.slice();
+      for (const s of stadiums) {
+        if (Array.isArray(s.points)) allPoints.push(...s.points);
+      }
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      allPoints.forEach((p) => {
+        if (!p) return;
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+      });
+      if (!isFinite(minX)) return;
+
+      const pad = 40;
+      const w = Math.max(1, maxX - minX);
+      const h = Math.max(1, maxY - minY);
+      const scale = Math.min(
+        (previewCanvas.width - pad * 2) / w,
+        (previewCanvas.height - pad * 2) / h
+      );
+      const ox = pad - minX * scale;
+      const oy = pad - minY * scale;
+
+      previewCtx.lineWidth = Math.max(1, ((track.roadWidth || 120) * (result.widthScale || 1)) * scale);
+      previewCtx.strokeStyle = '#334155';
+      previewCtx.lineJoin = 'round';
+      previewCtx.lineCap = 'round';
+      previewCtx.beginPath();
+      track.points.forEach((p, i) => {
+        const x = p.x * scale + ox;
+        const y = p.y * scale + oy;
+        if (i === 0) previewCtx.moveTo(x, y);
+        else previewCtx.lineTo(x, y);
+      });
+      previewCtx.closePath();
+      previewCtx.stroke();
+
+      previewCtx.lineWidth = 2;
+      for (const stadium of stadiums) {
+        const spikes = countSpikeEdges(stadium);
+        const intersects = hasSelfIntersections(stadium.points || []);
+        const bad = spikes > 0 || intersects;
+        previewCtx.strokeStyle = bad ? '#ef4444' : '#22c55e';
+        previewCtx.beginPath();
+        (stadium.points || []).forEach((p, i) => {
+          const x = p.x * scale + ox;
+          const y = p.y * scale + oy;
+          if (i === 0) previewCtx.moveTo(x, y);
+          else previewCtx.lineTo(x, y);
+        });
+        previewCtx.closePath();
+        previewCtx.stroke();
+      }
+
+      previewMeta.textContent = [
+        `Track: ${track.name || 'Unknown'}`,
+        `widthScale: ${(result.widthScale || 1).toFixed(2)}`,
+        `Stadiums: ${stadiums.length}`,
+        `selfIntersections: ${result.selfIntersections}`,
+        `spikeEdges: ${result.spikeEdges}`,
+        `dupPoints: ${result.dupPoints}`,
+        `centerlineCoverage: ${(result.centerlineCoverage * 100).toFixed(2)}%`,
+        failed ? 'Status: FAIL' : 'Status: PASS',
+      ].join(' | ');
+    }
+
+    function addResultRow(result) {
+      const tr = document.createElement('tr');
+      tr.className = result.failed ? 'fail' : 'pass';
+      const issues = [];
+      if (result.selfIntersections) issues.push(`self=${result.selfIntersections}`);
+      if (result.spikeEdges) issues.push(`spikes=${result.spikeEdges}`);
+      if (result.dupPoints) issues.push(`dup=${result.dupPoints}`);
+      if (result.centerlineCoverage > 0.01) issues.push(`track=${(result.centerlineCoverage * 100).toFixed(2)}%`);
+      tr.innerHTML = `
+        <td>${result.failed ? 'FAIL' : 'PASS'}</td>
+        <td>${result.track.name || 'Unknown'}</td>
+        <td>${result.widthScale.toFixed(2)}</td>
+        <td>${result.buildingDensity.toFixed(1)}</td>
+        <td>${result.treeDensity.toFixed(1)}</td>
+        <td>${result.seedOffset}</td>
+        <td>${result.stadiums.length}</td>
+        <td>${issues.length ? issues.join(', ') : 'none'}</td>
+      `;
+      resultsBody.appendChild(tr);
+    }
+
+    async function runMatrix() {
+      runBtn.disabled = true;
+      resultsBody.innerHTML = '';
+      summaryEl.className = 'summary';
+      summaryEl.textContent = 'Running scenario matrix...';
+
+      const scenarios = [];
+      TRACKS.forEach((trackId) => {
+        WIDTH_SCALES.forEach((widthScale) => {
+          BUILDING_DENSITIES.forEach((buildingDensity) => {
+            TREE_DENSITIES.forEach((treeDensity) => {
+              SEED_OFFSETS.forEach((seedOffset) => {
+                scenarios.push({ trackId, widthScale, buildingDensity, treeDensity, seedOffset });
+              });
+            });
+          });
+        });
+      });
+
+      const results = [];
+      for (let i = 0; i < scenarios.length; i++) {
+        const s = scenarios[i];
+        try {
+          const result = analyzeScenario(s.trackId, s.widthScale, s.buildingDensity, s.treeDensity, s.seedOffset);
+          results.push(result);
+          addResultRow(result);
+          drawPreview(result);
+        } catch (err) {
+          const failResult = {
+            track: { name: s.trackId },
+            widthScale: s.widthScale,
+            buildingDensity: s.buildingDensity,
+            treeDensity: s.treeDensity,
+            seedOffset: s.seedOffset,
+            stadiums: [],
+            selfIntersections: 0,
+            spikeEdges: 0,
+            dupPoints: 0,
+            failed: true,
+            error: String(err && err.message ? err.message : err),
+          };
+          results.push(failResult);
+          addResultRow(failResult);
+          previewMeta.textContent = `Scenario error: ${failResult.error}`;
+        }
+
+        if ((i + 1) % 4 === 0) {
+          summaryEl.textContent = `Running scenario matrix... ${i + 1}/${scenarios.length}`;
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+      }
+
+      const failed = results.filter((r) => r.failed).length;
+      const passed = results.length - failed;
+      summaryEl.className = `summary ${failed === 0 ? 'pass' : 'fail'}`;
+      summaryEl.textContent = `Completed ${results.length} scenarios: ${passed} PASS, ${failed} FAIL`;
+      runBtn.disabled = false;
+    }
+
+    runBtn.addEventListener('click', runMatrix);
+  </script>
+</body>
+</html>

@@ -1,0 +1,145 @@
+{
+  "version": 4,
+  "generatedAt": "2026-02-12T00:07:53.605Z",
+  "note": "Baseline captured from deterministic synthetic green-mask harness with layout-locked stadium runs and sanitized outer polygons.",
+  "tracks": {
+    "Test": {
+      "stadiumCount": 11,
+      "innerPathHash": [
+        "08e253ef",
+        "fe772e23",
+        "1a706e88",
+        "2cdbd3e1",
+        "295dd867",
+        "a2262b7b",
+        "f985c039",
+        "ba987e3e",
+        "be8849ad",
+        "f7518784",
+        "336c4ea1"
+      ],
+      "innerPathLength": [
+        5087.17,
+        10104.57,
+        314.63,
+        233.07,
+        192.2,
+        134.51,
+        277.12,
+        743.6,
+        1690.71,
+        1218.19,
+        526.22
+      ],
+      "innerPathPointCount": [
+        72,
+        141,
+        6,
+        5,
+        4,
+        3,
+        5,
+        13,
+        24,
+        19,
+        8
+      ]
+    },
+    "Sharp_Corners": {
+      "stadiumCount": 14,
+      "innerPathHash": [
+        "3e812b49",
+        "eea5274f",
+        "d68e80e1",
+        "b4ed99ec",
+        "7c6b9136",
+        "ef5cb96e",
+        "da158f1f",
+        "40b24073",
+        "dda30340",
+        "ac1ca085",
+        "ea97106c",
+        "8175f0c1",
+        "d3e0370b",
+        "c6447fbf"
+      ],
+      "innerPathLength": [
+        7547.69,
+        278.19,
+        1426.79,
+        872.68,
+        150.21,
+        3575.11,
+        690.9,
+        606.57,
+        241.2,
+        1247.32,
+        926.11,
+        212.76,
+        3546.31,
+        269.9
+      ],
+      "innerPathPointCount": [
+        101,
+        10,
+        20,
+        12,
+        8,
+        48,
+        10,
+        9,
+        4,
+        20,
+        14,
+        4,
+        46,
+        10
+      ]
+    },
+    "Bendy_Vibes": {
+      "stadiumCount": 12,
+      "innerPathHash": [
+        "10a0a694",
+        "abf630ef",
+        "49700bee",
+        "a907fb26",
+        "444a7f9b",
+        "2f9cc105",
+        "0e32d11d",
+        "da294831",
+        "028d99c9",
+        "bdab26c6",
+        "16944e86",
+        "c438a83e"
+      ],
+      "innerPathLength": [
+        2219.05,
+        3926.78,
+        250.41,
+        7716.87,
+        1194.24,
+        465.91,
+        529.31,
+        150.54,
+        439.52,
+        291.94,
+        270.62,
+        748.32
+      ],
+      "innerPathPointCount": [
+        31,
+        60,
+        4,
+        109,
+        16,
+        7,
+        8,
+        3,
+        8,
+        5,
+        5,
+        15
+      ]
+    }
+  }
+}
