@@ -105,6 +105,7 @@
               <th>seedOffset</th>
               <th>Stadiums</th>
               <th>Wall Coverage</th>
+              <th>Median Len</th>
               <th>Issues</th>
             </tr>
           </thead>
@@ -255,6 +256,40 @@
       return total;
     }
 
+    function polygonArea(points) {
+      if (!points || points.length < 3) return 0;
+      let area = 0;
+      for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+        const q = points[(i + 1) % points.length];
+        area += p.x * q.y - q.x * p.y;
+      }
+      return Math.abs(area) * 0.5;
+    }
+
+    function computeInnerLengthStats(stadiums) {
+      const lengths = [];
+      const areas = [];
+      for (const stadium of (stadiums || [])) {
+        lengths.push(polylineLength(stadium.innerPoints || []));
+        areas.push(polygonArea(stadium.points || []));
+      }
+      const sum = lengths.reduce((acc, value) => acc + value, 0);
+      const sorted = lengths.slice().sort((a, b) => a - b);
+      const medianLen = sorted.length
+        ? (sorted.length % 2 === 0
+          ? (sorted[(sorted.length / 2) - 1] + sorted[sorted.length / 2]) * 0.5
+          : sorted[Math.floor(sorted.length / 2)])
+        : 0;
+      return {
+        lengths,
+        sumLen: sum,
+        medianLen,
+        maxLen: lengths.length ? Math.max(...lengths) : 0,
+        avgArea: areas.length ? areas.reduce((acc, value) => acc + value, 0) / areas.length : 0,
+      };
+    }
+
     function computeWallCoverageRatio(stadiums, innerWalls) {
       const segments = [
         ...((innerWalls && innerWalls.outerSegments) || []),
@@ -336,6 +371,10 @@
 
       const stadiums = (generated && generated.metadata && generated.metadata.items && generated.metadata.items.stadiums) || [];
       const innerWalls = (generated && generated.metadata && generated.metadata.items && generated.metadata.items.innerWalls) || null;
+      const metadataStats = (generated && generated.metadata && generated.metadata.stats)
+        || ((typeof Decor !== 'undefined' && typeof Decor.computeStadiumStats === 'function' && generated && generated.metadata && generated.metadata.items)
+          ? Decor.computeStadiumStats(generated.metadata.items)
+          : null);
       let selfIntersections = 0;
       let spikeEdges = 0;
       let dupPoints = 0;
@@ -352,6 +391,13 @@
       }
 
       const wallCoverageRatio = computeWallCoverageRatio(stadiums, innerWalls);
+      const lengthStats = computeInnerLengthStats(stadiums);
+      const metadataWallCoverage = metadataStats && Number.isFinite(metadataStats.wallCoverageRatio)
+        ? metadataStats.wallCoverageRatio
+        : null;
+      const statsCoverageDrift = Number.isFinite(metadataWallCoverage)
+        ? Math.abs(metadataWallCoverage - wallCoverageRatio)
+        : 0;
 
       return {
         track,
@@ -365,7 +411,14 @@
         dupPoints,
         centerlineCoverage,
         wallCoverageRatio,
-        failed: (selfIntersections + spikeEdges + dupPoints) > 0 || centerlineCoverage > 0.01 || wallCoverageRatio < 0.84,
+        medianInnerLength: lengthStats.medianLen,
+        maxInnerLength: lengthStats.maxLen,
+        averageArea: lengthStats.avgArea,
+        statsCoverageDrift,
+        failed: (selfIntersections + spikeEdges + dupPoints) > 0
+          || centerlineCoverage > 0.01
+          || wallCoverageRatio < 0.84
+          || statsCoverageDrift > 0.005,
       };
     }
 
@@ -439,6 +492,8 @@
         `dupPoints: ${result.dupPoints}`,
         `centerlineCoverage: ${(result.centerlineCoverage * 100).toFixed(2)}%`,
         `wallCoverage: ${(result.wallCoverageRatio * 100).toFixed(2)}%`,
+        `medianLen: ${result.medianInnerLength.toFixed(1)}`,
+        `statsDrift: ${(result.statsCoverageDrift * 100).toFixed(2)}%`,
         failed ? 'Status: FAIL' : 'Status: PASS',
       ].join(' | ');
     }
@@ -452,6 +507,7 @@
       if (result.dupPoints) issues.push(`dup=${result.dupPoints}`);
       if (result.centerlineCoverage > 0.01) issues.push(`track=${(result.centerlineCoverage * 100).toFixed(2)}%`);
       if (result.wallCoverageRatio < 0.84) issues.push(`wall=${(result.wallCoverageRatio * 100).toFixed(2)}%`);
+      if (result.statsCoverageDrift > 0.005) issues.push(`statsDrift=${(result.statsCoverageDrift * 100).toFixed(2)}%`);
       tr.innerHTML = `
         <td>${result.failed ? 'FAIL' : 'PASS'}</td>
         <td>${result.track.name || 'Unknown'}</td>
@@ -461,9 +517,59 @@
         <td>${result.seedOffset}</td>
         <td>${result.stadiums.length}</td>
         <td>${(result.wallCoverageRatio * 100).toFixed(2)}%</td>
+        <td>${result.medianInnerLength.toFixed(1)}</td>
         <td>${issues.length ? issues.join(', ') : 'none'}</td>
       `;
       resultsBody.appendChild(tr);
+    }
+
+    function evaluateDensitySensitivity(results) {
+      const grouped = new Map();
+      for (const result of results) {
+        if (!result || !result.track) continue;
+        const key = [
+          result.track.name || 'Unknown',
+          result.widthScale.toFixed(2),
+          result.treeDensity.toFixed(1),
+          result.seedOffset,
+        ].join('|');
+        if (!grouped.has(key)) grouped.set(key, {});
+        grouped.get(key)[result.buildingDensity.toFixed(1)] = result;
+      }
+
+      const issues = [];
+      let passed = 0;
+      let total = 0;
+      for (const group of grouped.values()) {
+        const low = group['0.2'];
+        const high = group['0.8'];
+        if (!low || !high) continue;
+        total++;
+
+        const minCountDelta = Math.max(1, Math.ceil((low.stadiums || []).length * 0.12));
+        const countDelta = (high.stadiums || []).length - (low.stadiums || []).length;
+        const hasCountResponse = countDelta >= minCountDelta;
+        const hasLengthResponse = high.medianInnerLength <= Math.max(1, low.medianInnerLength) * 0.92;
+        const coverageRegressed = (high.wallCoverageRatio + 0.02) < low.wallCoverageRatio;
+
+        if ((!hasCountResponse && !hasLengthResponse) || coverageRegressed) {
+          issues.push(
+            `${low.track.name} rw=${low.widthScale.toFixed(2)} t=${low.treeDensity.toFixed(1)} s=${low.seedOffset} ` +
+            `lowCount=${low.stadiums.length} highCount=${high.stadiums.length} ` +
+            `lowMedian=${low.medianInnerLength.toFixed(1)} highMedian=${high.medianInnerLength.toFixed(1)} ` +
+            `lowWall=${(low.wallCoverageRatio * 100).toFixed(2)}% highWall=${(high.wallCoverageRatio * 100).toFixed(2)}%`
+          );
+        } else {
+          passed++;
+        }
+      }
+
+      return {
+        total,
+        passed,
+        failed: issues.length,
+        issues,
+      };
     }
 
     async function runMatrix() {
@@ -505,6 +611,10 @@
             spikeEdges: 0,
             dupPoints: 0,
             wallCoverageRatio: 0,
+            medianInnerLength: 0,
+            maxInnerLength: 0,
+            averageArea: 0,
+            statsCoverageDrift: 0,
             failed: true,
             error: String(err && err.message ? err.message : err),
           };
@@ -519,10 +629,26 @@
         }
       }
 
-      const failed = results.filter((r) => r.failed).length;
-      const passed = results.length - failed;
-      summaryEl.className = `summary ${failed === 0 ? 'pass' : 'fail'}`;
-      summaryEl.textContent = `Completed ${results.length} scenarios: ${passed} PASS, ${failed} FAIL`;
+      const scenarioFailed = results.filter((r) => r.failed).length;
+      const scenarioPassed = results.length - scenarioFailed;
+      const densityReport = evaluateDensitySensitivity(results);
+      const totalFailed = scenarioFailed + densityReport.failed;
+      summaryEl.className = `summary ${totalFailed === 0 ? 'pass' : 'fail'}`;
+
+      const summaryParts = [
+        `Completed ${results.length} scenarios: ${scenarioPassed} PASS, ${scenarioFailed} FAIL`,
+        `Density checks: ${densityReport.passed}/${densityReport.total} PASS`,
+      ];
+      if (densityReport.failed > 0) {
+        summaryParts.push(`Density FAIL: ${densityReport.failed}`);
+        const sampleIssues = densityReport.issues.slice(0, 2).join(' | ');
+        if (sampleIssues) summaryParts.push(sampleIssues);
+      }
+      summaryEl.textContent = summaryParts.join(' | ');
+
+      if (densityReport.failed > 0) {
+        console.warn('[Decor Runner] Density sensitivity failures:', densityReport.issues);
+      }
       runBtn.disabled = false;
     }
 

@@ -195,6 +195,85 @@
     return meta ? JSON.parse(JSON.stringify(meta)) : null;
   }
 
+  function polylineLength(points) {
+    if (!Array.isArray(points) || points.length < 2) return 0;
+    let total = 0;
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1];
+      const b = points[i];
+      if (!a || !b) continue;
+      total += Math.hypot((b.x || 0) - (a.x || 0), (b.y || 0) - (a.y || 0));
+    }
+    return total;
+  }
+
+  function polygonArea(points) {
+    if (!Array.isArray(points) || points.length < 3) return 0;
+    let area = 0;
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      const q = points[(i + 1) % points.length];
+      if (!p || !q) continue;
+      area += (p.x || 0) * (q.y || 0) - (q.x || 0) * (p.y || 0);
+    }
+    return Math.abs(area) * 0.5;
+  }
+
+  function medianValue(values) {
+    if (!Array.isArray(values) || values.length === 0) return 0;
+    const sorted = values.slice().sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    if ((sorted.length % 2) === 0) {
+      return (sorted[mid - 1] + sorted[mid]) * 0.5;
+    }
+    return sorted[mid];
+  }
+
+  function computeStadiumStats(items) {
+    const stadiums = Array.isArray(items && items.stadiums) ? items.stadiums : [];
+    const innerWalls = items && items.innerWalls ? items.innerWalls : {};
+    const segments = [
+      ...((innerWalls && innerWalls.outerSegments) || []),
+      ...((innerWalls && innerWalls.innerSegments) || []),
+    ];
+
+    let wallLength = 0;
+    for (const segment of segments) {
+      wallLength += polylineLength(segment && segment.points ? segment.points : []);
+    }
+
+    const innerLengths = [];
+    const areas = [];
+    const depthEstimates = [];
+    let stadiumInnerLength = 0;
+
+    for (const stadium of stadiums) {
+      const innerLength = polylineLength(stadium && stadium.innerPoints ? stadium.innerPoints : []);
+      const area = polygonArea(stadium && stadium.points ? stadium.points : []);
+      const depthEstimate = innerLength > 0 ? area / innerLength : 0;
+      innerLengths.push(innerLength);
+      areas.push(area);
+      depthEstimates.push(depthEstimate);
+      stadiumInnerLength += innerLength;
+    }
+
+    const avg = (values) => values.length
+      ? values.reduce((sum, value) => sum + value, 0) / values.length
+      : 0;
+
+    return {
+      stadiumCount: stadiums.length,
+      wallLength,
+      stadiumInnerLength,
+      wallCoverageRatio: wallLength > 0 ? (stadiumInnerLength / wallLength) : 0,
+      averageInnerLength: avg(innerLengths),
+      medianInnerLength: medianValue(innerLengths),
+      maxInnerLength: innerLengths.length ? Math.max(...innerLengths) : 0,
+      averageArea: avg(areas),
+      averageDepth: avg(depthEstimates),
+    };
+  }
+
   function readMask(canvas) {
     const width = canvas.width;
     const height = canvas.height;
@@ -990,6 +1069,11 @@
     const minStadiumDepth = 22; // Minimum depth to be considered for a stadium
     const maxStadiumDepth = 300; // Cap depth
     const minStadiumLength = 24; // Minimum length of wall to form a stadium
+    const rawDensity = Number(params && params.buildingDensity);
+    const stadiumDensity = Number.isFinite(rawDensity) ? Math.max(0, Math.min(1, rawDensity)) : 0.4;
+    const deepMaskGapPoints = stadiumDensity < 0.35 ? 2 : (stadiumDensity < 0.75 ? 1 : 0);
+    const targetStadiumLength = 3000 - stadiumDensity * 2200;
+    const minChunkLength = Math.max(minStadiumLength, 260 - stadiumDensity * 180);
 
     function clamp(value, min, max) {
       return Math.max(min, Math.min(max, value));
@@ -1172,6 +1256,53 @@
       }
 
       return mask;
+    }
+
+    function splitRunByLength(startIdx, endIdx, cumulativeLengths, targetLength, minLength) {
+      if (!Number.isFinite(startIdx) || !Number.isFinite(endIdx) || endIdx <= startIdx) {
+        return [];
+      }
+      const chunks = [];
+      let cursor = startIdx;
+
+      while (cursor < endIdx) {
+        let chunkEnd = endIdx;
+        if (Number.isFinite(targetLength) && targetLength > 0) {
+          const targetDistance = cumulativeLengths[cursor] + targetLength;
+          let probe = cursor + 1;
+          while (probe < endIdx && cumulativeLengths[probe] < targetDistance) {
+            probe++;
+          }
+          chunkEnd = Math.min(endIdx, Math.max(cursor + 1, probe));
+        }
+
+        const remainingLength = cumulativeLengths[endIdx] - cumulativeLengths[chunkEnd];
+        if (remainingLength > 0 && remainingLength < minLength && chunkEnd < endIdx) {
+          chunkEnd = endIdx;
+        }
+
+        const chunkLength = cumulativeLengths[chunkEnd] - cumulativeLengths[cursor];
+        if (chunkLength < minLength && chunks.length > 0) {
+          const prev = chunks[chunks.length - 1];
+          prev.endIdx = chunkEnd;
+          prev.length = cumulativeLengths[chunkEnd] - cumulativeLengths[prev.startIdx];
+        } else {
+          chunks.push({ startIdx: cursor, endIdx: chunkEnd, length: chunkLength });
+        }
+
+        if (chunkEnd >= endIdx) break;
+        cursor = chunkEnd;
+      }
+
+      if (chunks.length === 0) {
+        chunks.push({
+          startIdx,
+          endIdx,
+          length: cumulativeLengths[endIdx] - cumulativeLengths[startIdx],
+        });
+      }
+
+      return chunks.filter((chunk) => chunk.length >= minStadiumLength);
     }
 
     function subdivideLongSegments(points, maxLen) {
@@ -1442,7 +1573,7 @@
         pointDepthsBackward[i] = backwardDepth;
         pointDepths[i] = Math.max(forwardDepth, backwardDepth);
       }
-      const deepMask = buildClosedDeepMask(pointDepths, minStadiumDepth, 1);
+      const deepMask = buildClosedDeepMask(pointDepths, minStadiumDepth, deepMaskGapPoints);
 
       let startIdx = -1;
       for (let i = 0; i < pts.length; i++) {
@@ -1452,56 +1583,66 @@
           startIdx = i;
         } else if ((!isDeepEnough || i === pts.length - 1) && startIdx !== -1) {
           const endIdx = isDeepEnough ? i : i - 1;
-          const length = cumulativeLengths[endIdx] - cumulativeLengths[startIdx];
+          const runLength = cumulativeLengths[endIdx] - cumulativeLengths[startIdx];
 
-          if (length > minStadiumLength) {
-            const innerPath = [];
-            const outerSamples = [];
-            let previousOutward = null;
+          if (runLength > minStadiumLength) {
+            const runChunks = splitRunByLength(
+              startIdx,
+              endIdx,
+              cumulativeLengths,
+              targetStadiumLength,
+              minChunkLength,
+            );
+            for (const runChunk of runChunks) {
+              const chunkStartIdx = runChunk.startIdx;
+              const chunkEndIdx = runChunk.endIdx;
+              const innerPath = [];
+              const outerSamples = [];
+              let previousOutward = null;
 
-            for (let k = startIdx; k <= endIdx; k += 2) {
-              const point = pts[k];
-              innerPath.push({ x: point.x, y: point.y });
+              for (let k = chunkStartIdx; k <= chunkEndIdx; k += 2) {
+                const point = pts[k];
+                innerPath.push({ x: point.x, y: point.y });
 
-              const normal = getStableNormal(pts, k);
-              const forwardDepth = pointDepthsForward[k];
-              const backwardDepth = pointDepthsBackward[k];
+                const normal = getStableNormal(pts, k);
+                const forwardDepth = pointDepthsForward[k];
+                const backwardDepth = pointDepthsBackward[k];
 
-              let useBackward = backwardDepth > forwardDepth;
-              let outward = useBackward
-                ? { x: -normal.x, y: -normal.y }
-                : { x: normal.x, y: normal.y };
-              let chosenDepth = useBackward ? backwardDepth : forwardDepth;
-              const alternativeDepth = useBackward ? forwardDepth : backwardDepth;
+                let useBackward = backwardDepth > forwardDepth;
+                let outward = useBackward
+                  ? { x: -normal.x, y: -normal.y }
+                  : { x: normal.x, y: normal.y };
+                let chosenDepth = useBackward ? backwardDepth : forwardDepth;
+                const alternativeDepth = useBackward ? forwardDepth : backwardDepth;
 
-              if (previousOutward) {
-                const continuityDot = outward.x * previousOutward.x + outward.y * previousOutward.y;
-                if (continuityDot < -0.05 &&
-                  alternativeDepth >= (minStadiumDepth + 10) &&
-                  Math.abs(chosenDepth - alternativeDepth) <= 28) {
-                  useBackward = !useBackward;
-                  outward = { x: -outward.x, y: -outward.y };
-                  chosenDepth = alternativeDepth;
+                if (previousOutward) {
+                  const continuityDot = outward.x * previousOutward.x + outward.y * previousOutward.y;
+                  if (continuityDot < -0.05 &&
+                    alternativeDepth >= (minStadiumDepth + 10) &&
+                    Math.abs(chosenDepth - alternativeDepth) <= 28) {
+                    useBackward = !useBackward;
+                    outward = { x: -outward.x, y: -outward.y };
+                    chosenDepth = alternativeDepth;
+                  }
                 }
+                previousOutward = outward;
+
+                const minDepthForPoint = 10;
+                const maxDepthForPoint = clamp(Math.max(10, chosenDepth - 10), minDepthForPoint, maxStadiumDepth - 10);
+                const depth = maxDepthForPoint;
+
+                outerSamples.push({
+                  innerX: point.x,
+                  innerY: point.y,
+                  nx: outward.x,
+                  ny: outward.y,
+                  depth,
+                  minDepth: minDepthForPoint,
+                  maxDepth: maxDepthForPoint,
+                  outerX: point.x + outward.x * depth,
+                  outerY: point.y + outward.y * depth,
+                });
               }
-              previousOutward = outward;
-
-              const minDepthForPoint = 10;
-              const maxDepthForPoint = clamp(Math.max(10, chosenDepth - 10), minDepthForPoint, maxStadiumDepth - 10);
-              const depth = maxDepthForPoint;
-
-              outerSamples.push({
-                innerX: point.x,
-                innerY: point.y,
-                nx: outward.x,
-                ny: outward.y,
-                depth,
-                minDepth: minDepthForPoint,
-                maxDepth: maxDepthForPoint,
-                outerX: point.x + outward.x * depth,
-                outerY: point.y + outward.y * depth,
-              });
-            }
 
             if (innerPath.length >= 2 && outerSamples.length >= 2) {
               const smoothed = smoothDepthProfile(outerSamples.map((sample) => sample.depth));
@@ -1697,6 +1838,7 @@
               }
               stadiums.push(stadium);
             }
+          }
           }
 
           startIdx = -1;
@@ -2489,9 +2631,10 @@
     const stadiums = createStadiums(innerWalls, zones, rng, effectiveParams);
 
     const trees = sampleTrees(zones, rng, effectiveParams, stadiums);
+    const stats = computeStadiumStats({ stadiums, innerWalls });
 
     return {
-      version: 7,
+      version: 8,
       seed,
       params: {
         treeDensity: effectiveParams.treeDensity,
@@ -2507,6 +2650,7 @@
         trees,
         innerWalls,
       },
+      stats,
       zones: {
         offsetX: zones.offsetX || 0,
         offsetY: zones.offsetY || 0,
@@ -2614,17 +2758,31 @@
       texToWorld,
     };
 
+    function paramsApproximatelyMatch(existingParams, nextParams) {
+      if (!existingParams || !nextParams) return false;
+      const keys = ["treeDensity", "buildingDensity", "kerbWidthScale", "shadowStrength"];
+      for (const key of keys) {
+        const nextValue = Number(nextParams[key]);
+        if (!Number.isFinite(nextValue)) continue;
+        const existingValue = Number(existingParams[key]);
+        if (!Number.isFinite(existingValue)) return false;
+        if (Math.abs(existingValue - nextValue) > 0.0001) return false;
+      }
+      return true;
+    }
+
     let metadata = null;
     const existing = options.existing;
-    const canReuse = existing && existing.version >= 7 && !options.force;
+    const canReuse = existing && existing.version >= 8 && !options.force;
     const mappingMatches = canReuse && existing.mapping &&
       Math.abs((existing.mapping.worldMinX || 0) - mapping.worldMinX) < 0.5 &&
       Math.abs((existing.mapping.worldMinY || 0) - mapping.worldMinY) < 0.5 &&
       Math.abs((existing.mapping.worldWidth || 0) - mapping.worldWidth) < 1 &&
       Math.abs((existing.mapping.worldHeight || 0) - mapping.worldHeight) < 1 &&
       Math.abs((existing.mapping.ppm || existing.mapping.worldToTex || 0) - mapping.ppm) < 0.01;
+    const paramsMatch = canReuse && paramsApproximatelyMatch(existing.params || {}, options.params || {});
 
-    if (canReuse && mappingMatches && existing.seed === options.seed) {
+    if (canReuse && mappingMatches && existing.seed === options.seed && paramsMatch) {
       metadata = cloneMetadata(existing);
       metadata.params = Object.assign({}, metadata.params, options.params || {});
       metadata.bounds = {
@@ -2647,6 +2805,9 @@
       };
     }
 
+    if (!metadata.stats) {
+      metadata.stats = computeStadiumStats(metadata.items || {});
+    }
     metadata.mapping = mapping;
 
     replay(metadata, {
@@ -2671,6 +2832,7 @@
     getAtlas,
     generate,
     hash: hashString,
+    computeStadiumStats,
     textureLimits: DECOR_TEXTURE_LIMITS,
   };
 })(typeof window !== "undefined" ? window : this);

@@ -223,47 +223,6 @@ function buildStadiumsForTrack(trackId, internals, tracks, roadWidthScale = 1, b
   return { stadiums, track, innerWalls, roadWidth };
 }
 
-function buildBuildingsForTrack(trackId, internals, tracks, roadWidthScale = 1, buildingDensity = 0.4) {
-  const track = tracks[trackId];
-  if (!track) throw new Error(`Track not found: ${trackId}`);
-
-  const roadWidth = (track.roadWidth || 120) * roadWidthScale;
-  const edges = internals.buildEdges(track.points, roadWidth);
-  const width = Math.max(1, Math.ceil(track.world?.width || 6000));
-  const height = Math.max(1, Math.ceil(track.world?.height || 4000));
-  const greenMask = createSyntheticGreenMask(trackId, track, roadWidth, width, height);
-  const bufferMask = new Uint8Array(greenMask.length);
-  for (let i = 0; i < greenMask.length; i++) {
-    bufferMask[i] = greenMask[i] ? 0 : 1;
-  }
-
-  const rng = {
-    _seed: 1337,
-    next() {
-      this._seed = (Math.imul(this._seed, 1664525) + 1013904223) >>> 0;
-      return this._seed / 4294967296;
-    },
-    int(max) {
-      return Math.floor(this.next() * max);
-    },
-    range(min, max) {
-      return min + (max - min) * this.next();
-    },
-    choice(arr) {
-      return arr[this.int(arr.length)];
-    },
-  };
-
-  const buildings = internals.createBuildings(
-    edges,
-    { width, height, greenMask, bufferMask, offsetX: 0, offsetY: 0 },
-    rng,
-    { roadWidth, buildingDensity },
-  );
-
-  return { buildings, track };
-}
-
 function polygonArea(points) {
   if (!points || points.length < 3) return 0;
   let area = 0;
@@ -365,35 +324,58 @@ function computeWallCoverageRatio(stadiums, innerWalls) {
 
 function run() {
   const baselinePath = path.join(__dirname, 'fixtures', 'stadium_layout_baseline.json');
-  const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
+  const baseline = fs.existsSync(baselinePath)
+    ? JSON.parse(fs.readFileSync(baselinePath, 'utf8'))
+    : { tracks: {} };
+  const updateBaseline = process.env.UPDATE_STADIUM_BASELINE === '1';
   const internals = loadDecorInternals();
   const tracks = loadBuiltInTracks();
 
   const failures = [];
-  const trackIds = Object.keys(baseline.tracks || {});
+  const trackIds = Object.keys(baseline.tracks || {}).length
+    ? Object.keys(baseline.tracks || {})
+    : ['Test', 'Sharp_Corners', 'Bendy_Vibes'];
+  const nextBaseline = {
+    version: 8,
+    generatedAt: new Date().toISOString(),
+    note: 'Baseline captured from deterministic synthetic green-mask harness with density-sensitive stadium run splitting.',
+    tracks: {},
+  };
   let scenarioChecks = 0;
 
   for (const trackId of trackIds) {
-    const expected = baseline.tracks[trackId];
+    const expected = baseline.tracks ? baseline.tracks[trackId] : null;
     const { stadiums, innerWalls } = buildStadiumsForTrack(trackId, internals, tracks);
-
-    if (stadiums.length !== expected.stadiumCount) {
-      failures.push(`[${trackId}] stadiumCount expected ${expected.stadiumCount}, got ${stadiums.length}`);
-      continue;
-    }
 
     const gotHashes = stadiums.map((s) => hashInnerPath(s.innerPoints || []));
     const gotLengths = stadiums.map((s) => innerPathLength(s.innerPoints || []));
     const gotPointCounts = stadiums.map((s) => (s.innerPoints || []).length);
+    nextBaseline.tracks[trackId] = {
+      stadiumCount: stadiums.length,
+      innerPathHash: gotHashes,
+      innerPathLength: gotLengths,
+      innerPathPointCount: gotPointCounts,
+    };
 
-    if (JSON.stringify(gotHashes) !== JSON.stringify(expected.innerPathHash)) {
-      failures.push(`[${trackId}] innerPathHash mismatch`);
-    }
-    if (JSON.stringify(gotLengths) !== JSON.stringify(expected.innerPathLength)) {
-      failures.push(`[${trackId}] innerPathLength mismatch`);
-    }
-    if (JSON.stringify(gotPointCounts) !== JSON.stringify(expected.innerPathPointCount)) {
-      failures.push(`[${trackId}] innerPathPointCount mismatch`);
+    if (!updateBaseline) {
+      if (!expected) {
+        failures.push(`[${trackId}] missing baseline entry`);
+        continue;
+      }
+
+      if (stadiums.length !== expected.stadiumCount) {
+        failures.push(`[${trackId}] stadiumCount expected ${expected.stadiumCount}, got ${stadiums.length}`);
+        continue;
+      }
+      if (JSON.stringify(gotHashes) !== JSON.stringify(expected.innerPathHash)) {
+        failures.push(`[${trackId}] innerPathHash mismatch`);
+      }
+      if (JSON.stringify(gotLengths) !== JSON.stringify(expected.innerPathLength)) {
+        failures.push(`[${trackId}] innerPathLength mismatch`);
+      }
+      if (JSON.stringify(gotPointCounts) !== JSON.stringify(expected.innerPathPointCount)) {
+        failures.push(`[${trackId}] innerPathPointCount mismatch`);
+      }
     }
 
     for (let i = 0; i < stadiums.length; i++) {
@@ -426,7 +408,13 @@ function run() {
       for (const treeDensity of treeDensities) {
         for (const seedOffset of seedOffsets) {
           for (const roadScale of roadWidthScales) {
-            const { stadiums, track, innerWalls } = buildStadiumsForTrack(trackId, internals, tracks, roadScale);
+            const { stadiums, track, innerWalls } = buildStadiumsForTrack(
+              trackId,
+              internals,
+              tracks,
+              roadScale,
+              buildingDensity,
+            );
             scenarioChecks++;
             for (let i = 0; i < stadiums.length; i++) {
               const s = stadiums[i];
@@ -464,18 +452,39 @@ function run() {
     }
   }
 
-  // Density sensitivity check: small-building layer must respond to buildingDensity.
+  // Density sensitivity check: stadium segmentation must respond to buildingDensity.
   for (const trackId of matrixTracks) {
     for (const roadScale of roadWidthScales) {
-      const low = buildBuildingsForTrack(trackId, internals, tracks, roadScale, 0.2).buildings;
-      const high = buildBuildingsForTrack(trackId, internals, tracks, roadScale, 0.8).buildings;
-      const minDelta = Math.max(1, Math.ceil(low.length * 0.05));
-      if ((high.length - low.length) < minDelta) {
+      const low = buildStadiumsForTrack(trackId, internals, tracks, roadScale, 0.2);
+      const high = buildStadiumsForTrack(trackId, internals, tracks, roadScale, 0.8);
+      const lowInnerLens = low.stadiums.map((s) => innerPathLength(s.innerPoints || []));
+      const highInnerLens = high.stadiums.map((s) => innerPathLength(s.innerPoints || []));
+      const lowMedianLen = median(lowInnerLens);
+      const highMedianLen = median(highInnerLens);
+      const lowCoverage = computeWallCoverageRatio(low.stadiums, low.innerWalls);
+      const highCoverage = computeWallCoverageRatio(high.stadiums, high.innerWalls);
+      const minCountDelta = Math.max(1, Math.ceil(low.stadiums.length * 0.12));
+      const countDelta = high.stadiums.length - low.stadiums.length;
+      const hasCountResponse = countDelta >= minCountDelta;
+      const hasLengthResponse = highMedianLen <= (Math.max(1, lowMedianLen) * 0.92);
+
+      if (!hasCountResponse && !hasLengthResponse) {
         failures.push(
-          `[Density ${trackId} rw=${roadScale.toFixed(2)}] buildingDensity has negligible effect on small buildings (lowCount=${low.length}, highCount=${high.length})`,
+          `[Density ${trackId} rw=${roadScale.toFixed(2)}] buildingDensity has negligible stadium effect (lowCount=${low.stadiums.length}, highCount=${high.stadiums.length}, lowMedianLen=${lowMedianLen.toFixed(2)}, highMedianLen=${highMedianLen.toFixed(2)})`,
+        );
+      }
+      if (highCoverage + 0.02 < lowCoverage) {
+        failures.push(
+          `[Density ${trackId} rw=${roadScale.toFixed(2)}] high density unexpectedly reduced wall coverage (low=${(lowCoverage * 100).toFixed(2)}%, high=${(highCoverage * 100).toFixed(2)}%)`,
         );
       }
     }
+  }
+
+  if (updateBaseline && failures.length === 0) {
+    fs.writeFileSync(baselinePath, `${JSON.stringify(nextBaseline, null, 2)}\n`, 'utf8');
+    console.log(`Decor Stadium Geometry Tests: baseline updated (${trackIds.length} tracks)`);
+    return { passed: trackIds.length, failed: 0, failures: [] };
   }
 
   if (failures.length > 0) {

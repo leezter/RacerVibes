@@ -1515,7 +1515,7 @@
     const CAMERA_SCALE_NORMALIZER = 1 / (CAMERA_REFERENCE_BASE_SCALE * CAMERA_REFERENCE_BASE_SCALE);
 
     function getQualityMultiplier() {
-      const quality = localStorage.getItem('graphicsQuality') || 'low';
+      const quality = localStorage.getItem('graphicsQuality') || 'high';
       switch (quality) {
         case 'low': return QUALITY_LOW;
         case 'medium': return QUALITY_MEDIUM;
@@ -2432,6 +2432,13 @@
           return 0;
         }
       });
+      const [showDecorDebugOverlay, setShowDecorDebugOverlay] = useState(() => {
+        try {
+          return localStorage.getItem("decorDebugOverlay") === "1";
+        } catch (_) {
+          return false;
+        }
+      });
       const [aiPanelOpen, setAiPanelOpen] = useState(false);
       const [devMenuOpen, setDevMenuOpen] = useState(false);
       const [activeDevPanel, setActiveDevPanel] = useState(null); // 'scales', 'ai', 'devtools', 'gbx', 'tweaker'
@@ -2737,6 +2744,8 @@
       const decorSourceRef = useRef(null);
       const decorAtlasRef = useRef(null);
       const decorSignatureRef = useRef(null);
+      const decorStatsRef = useRef(null);
+      const showDecorDebugOverlayRef = useRef(showDecorDebugOverlay);
       const activeTrackRef = useRef(null);
       // motion steering analog value -1..1
       // Gyroscope removed: simplifying to keyboard / touch buttons only
@@ -2815,35 +2824,27 @@
         setGraphicsQuality(quality);
         // Trigger canvas resize to apply new quality setting
         window.dispatchEvent(new Event('resize'));
-        // Regenerate decor with new quality-based density and shadows
+        // Regenerate decor with quality-scaled decor settings
         scheduleDecorGeneration(true);
       }
 
-      // Get decor density values based on graphics quality setting
-      function getDecorDensityParams() {
-        const quality = localStorage.getItem('graphicsQuality') || 'high';
-        switch (quality) {
-          case 'low':
-            return { treeDensity: 0.3, buildingDensity: 0.2 };
-          case 'medium':
-            return { treeDensity: 0.4, buildingDensity: 0.3 };
-          case 'high':
-          default:
-            return { treeDensity: 0.55, buildingDensity: 0.4 };
-        }
+      function clampDecorValue(value, min, max, fallback) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return fallback;
+        return Math.max(min, Math.min(max, numeric));
       }
 
-      // Get shadow strength based on graphics quality setting
-      function getShadowStrength() {
+      // Low/medium quality scale user-selected decor settings down for performance.
+      function getDecorQualityScalars() {
         const quality = localStorage.getItem('graphicsQuality') || 'high';
         switch (quality) {
           case 'low':
-            return 0; // No shadows on low
+            return { treeDensity: 0.55, buildingDensity: 0.55, shadowStrength: 0 };
           case 'medium':
-            return 0.25; // Reduced shadows on medium
+            return { treeDensity: 0.75, buildingDensity: 0.75, shadowStrength: 0.45 };
           case 'high':
           default:
-            return 0.55; // Full shadows on high
+            return { treeDensity: 1, buildingDensity: 1, shadowStrength: 1 };
         }
       }
 
@@ -2902,18 +2903,44 @@
         return (base + (decorSeedOffset >>> 0)) >>> 0;
       }
 
+      function computeDecorStats(metadata) {
+        if (!metadata || !metadata.items) return null;
+        if (metadata.stats && Number.isFinite(metadata.stats.wallCoverageRatio)) {
+          return metadata.stats;
+        }
+        if (typeof Decor !== "undefined" && typeof Decor.computeStadiumStats === "function") {
+          return Decor.computeStadiumStats(metadata.items);
+        }
+        return null;
+      }
+
       function runDecor(force = false) {
         if (typeof Decor === "undefined") return;
         const source = decorSourceRef.current;
         if (!source) return;
         const atlas = decorAtlasRef.current || Decor.getAtlas && Decor.getAtlas();
-        // Use density settings from Graphics Settings UI
-        const densityParams = getDecorDensityParams();
+        const baseDecorParams = decorParamsRef.current || {};
+        const qualityScalars = getDecorQualityScalars();
         const params = {
-          treeDensity: densityParams.treeDensity,
-          buildingDensity: densityParams.buildingDensity,
-          kerbWidthScale: kerbWidthScaleParam,
-          shadowStrength: getShadowStrength(),
+          treeDensity: clampDecorValue(
+            (baseDecorParams.treeDensity ?? 0.55) * qualityScalars.treeDensity,
+            0,
+            1.2,
+            0.55,
+          ),
+          buildingDensity: clampDecorValue(
+            (baseDecorParams.buildingDensity ?? 0.4) * qualityScalars.buildingDensity,
+            0,
+            1.1,
+            0.4,
+          ),
+          kerbWidthScale: clampDecorValue(baseDecorParams.kerbWidthScale, 0.25, 2.5, 1.0),
+          shadowStrength: clampDecorValue(
+            (baseDecorParams.shadowStrength ?? 0.55) * qualityScalars.shadowStrength,
+            0,
+            1,
+            0.55,
+          ),
         };
         const rawDpr = (typeof window !== "undefined" && window.devicePixelRatio) ? window.devicePixelRatio : 1;
         // Apply quality multiplier to dpr to reduce decor canvas size at lower quality settings
@@ -2960,6 +2987,7 @@
             shadowCanvas: result.shadowCanvas,
             metadata: result.metadata,
           };
+          decorStatsRef.current = computeDecorStats(result.metadata);
           decorSignatureRef.current = signature;
           if (source.track) {
             source.track.decor = result.metadata;
@@ -2967,6 +2995,7 @@
         } catch (err) {
           console.warn("Decor generation failed:", err);
           decorLayerRef.current = { decorCanvas: null, shadowCanvas: null, metadata: null };
+          decorStatsRef.current = null;
           decorSignatureRef.current = null;
         }
       }
@@ -3046,6 +3075,11 @@
         try { localStorage.setItem("decorSeedOffset", String(decorSeedOffset)); } catch (_) { }
         scheduleDecorGeneration(true);
       }, [decorSeedOffset]);
+
+      useEffect(() => {
+        showDecorDebugOverlayRef.current = showDecorDebugOverlay;
+        try { localStorage.setItem("decorDebugOverlay", showDecorDebugOverlay ? "1" : "0"); } catch (_) { }
+      }, [showDecorDebugOverlay]);
 
       useEffect(() => {
         if (typeof Decor === "undefined" || typeof Decor.loadAtlas !== "function") return;
@@ -4653,6 +4687,7 @@
           activeTrackRef.current = activeTrack;
           startGrid = null;
           decorLayerRef.current = { decorCanvas: null, shadowCanvas: null, metadata: null };
+          decorStatsRef.current = null;
           decorSignatureRef.current = null;
 
           const baseCx = baseWorldWidth / 2;
@@ -5596,8 +5631,14 @@
             for (const cp of checkpoints) { ctx.beginPath(); ctx.moveTo(cp.a.x, cp.a.y); ctx.lineTo(cp.b.x, cp.b.y); ctx.stroke(); }
           }
 
-          // Shadow rendering - skip if shadow quality is 'off' for performance
-          const currentShadowStrength = getShadowStrength();
+          // Shadow rendering - skip if quality scaling disables shadows.
+          const shadowQuality = getDecorQualityScalars().shadowStrength;
+          const currentShadowStrength = clampDecorValue(
+            (decorParamsRef.current?.shadowStrength ?? shadowStrengthParam) * shadowQuality,
+            0,
+            1,
+            0.55,
+          );
           if (decorLayer && decorLayer.shadowCanvas && currentShadowStrength > 0) {
             ctx.save();
             ctx.globalCompositeOperation = "multiply";
@@ -5839,6 +5880,48 @@
             ctx.fillStyle = "#f8fafc";
             ctx.fillText(timeStr, timeX + timeBoxW / 2, timeY + 44);
 
+            ctx.restore();
+          }
+          if (showDecorDebugOverlayRef.current) {
+            const metadata = decorLayerRef.current && decorLayerRef.current.metadata
+              ? decorLayerRef.current.metadata
+              : null;
+            const stats = decorStatsRef.current;
+            const params = metadata && metadata.params ? metadata.params : {};
+            const fmt = (value, digits = 1) => Number.isFinite(value) ? value.toFixed(digits) : "-";
+            const lines = stats
+              ? [
+                "Decor Debug",
+                `stadiums: ${stats.stadiumCount | 0}`,
+                `coverage: ${fmt((stats.wallCoverageRatio || 0) * 100, 2)}%`,
+                `wallLen: ${fmt(stats.wallLength, 0)}  innerLen: ${fmt(stats.stadiumInnerLength, 0)}`,
+                `avgDepth: ${fmt(stats.averageDepth, 1)}  avgArea: ${fmt(stats.averageArea, 0)}`,
+                `medianLen: ${fmt(stats.medianInnerLength, 0)}  maxLen: ${fmt(stats.maxInnerLength, 0)}`,
+                `density(b/t): ${fmt(params.buildingDensity, 2)} / ${fmt(params.treeDensity, 2)}`,
+                `seed: ${metadata && Number.isFinite(metadata.seed) ? metadata.seed : "-"}`,
+              ]
+              : ["Decor Debug", "stats unavailable"];
+
+            ctx.save();
+            ctx.font = "600 14px ui-monospace, SFMono-Regular, Menlo, monospace";
+            ctx.textAlign = "left";
+            ctx.textBaseline = "top";
+            const lineHeight = 18;
+            let maxWidth = 0;
+            for (const line of lines) {
+              maxWidth = Math.max(maxWidth, ctx.measureText(line).width);
+            }
+            const pad = 10;
+            const boxW = Math.ceil(maxWidth + pad * 2);
+            const boxH = Math.ceil(lines.length * lineHeight + pad * 2);
+            const boxX = viewW - boxW - 20;
+            const boxY = 20;
+            ctx.fillStyle = "rgba(7, 12, 20, 0.78)";
+            ctx.fillRect(boxX, boxY, boxW, boxH);
+            for (let i = 0; i < lines.length; i++) {
+              ctx.fillStyle = i === 0 ? "#7dd3fc" : "#e2e8f0";
+              ctx.fillText(lines[i], boxX + pad, boxY + pad + i * lineHeight);
+            }
             ctx.restore();
           }
           // Minimap (below Lap panel on the left)
@@ -7128,6 +7211,16 @@
                   step={0.05}
                   value={shadowStrengthParam.toFixed(2)}
                   onChange={(e) => setShadowStrengthParam(parseFloat(e.target.value))}
+                />
+              </div>
+            </label>
+            <label title="Show stadium/wall coverage diagnostics overlay in-game.">
+              <span>Decor debug overlay</span>
+              <div className="field" style={{ justifyContent: "flex-end" }}>
+                <input
+                  type="checkbox"
+                  checked={showDecorDebugOverlay}
+                  onChange={(e) => setShowDecorDebugOverlay(e.target.checked)}
                 />
               </div>
             </label>

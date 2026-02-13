@@ -116,9 +116,9 @@ Live update caveat:
 5. **Chrome GPU canvas issue**: Stadium shadows in `decor_generator.js` cause Chrome (Windows, hardware acceleration ON) to silently lose canvas content. Stadium shadows are currently **disabled** (commented out at line ~1720). Other shadows work fine. Don't re-enable without thorough Chrome testing.
 6. **Camera/resolution changes can appear "ignored" if stale JS is cached**: hard reload and/or bump `CACHE_VERSION` before judging camera behavior.
 
-## Stadium Buildings Status (As Of February 12, 2026)
+## Stadium Buildings Status (As Of February 13, 2026)
 
-This section is for future AI agents. The user-reported issue is that stadium/building visuals still look under-populated in real gameplay, even after multiple generation changes.
+This section is for future AI agents. Stadium/building density behavior was revised so in-game controls now have an observable impact.
 
 ### Current Architecture
 
@@ -130,9 +130,9 @@ This section is for future AI agents. The user-reported issue is that stadium/bu
 
 ### Current Runtime Cache/Versioning
 
-- Decor metadata version currently expected by generator reuse logic: `version >= 7`.
+- Decor metadata version currently expected by generator reuse logic: `version >= 8`.
 - Service worker cache version was bumped to force asset refresh:
-  - `service-worker.js` -> `CACHE_VERSION = 'rv-static-v20260212-stadium-coverage-v2'`
+  - `service-worker.js` -> `CACHE_VERSION = 'rv-static-v20260213-stadium-density-v1'`
 - If gameplay appears unchanged after code edits, assume stale service worker cache first.
 
 ### What Has Been Tried
@@ -158,20 +158,17 @@ This section is for future AI agents. The user-reported issue is that stadium/bu
 
 ### Current Practical Interpretation
 
-- The system now favors geometry safety/stability and high measured wall coverage in test harnesses.
-- The unresolved problem is still user-visible in-game density/coverage perception on actual race scenes.
-- Building density slider behavior for stadiums remains limited/non-intuitive; it does not currently act like a straightforward "more stadium segments everywhere" control.
+- `buildingDensity` now directly affects stadium segmentation (`createStadiums` splits long wall runs by density and adjusts gap-bridging).
+- Runtime decor generation now uses Dev-panel decor sliders (with quality multipliers), instead of fixed quality presets.
+- In-game decor debug overlay is available from Dev > Scales > Decor (`Decor debug overlay`) and shows stadium count, wall coverage, lengths, depth/area, density, and seed.
+- Automated tests now include stadium density responsiveness checks and baseline regeneration support (`UPDATE_STADIUM_BASELINE=1`).
 
 ### If You Pick This Up Again (Recommended Next Steps)
 
-1. Add an in-game debug overlay showing per-track:
-   - `metadata.items.stadiums.length`
-   - sum of inner-wall length vs sum of stadium `innerPoints` length
-   - average stadium depth and area
-2. Dump runtime stadium metadata from `runDecor()` in `racer.html` and compare directly to `tests/decor_stadium_test_runner.html` output for the same track/seed/scale.
-3. Verify the exact mask used in gameplay (`trackMap`) matches assumptions in test harness mask generation.
-4. Keep service worker cache/version bumps mandatory whenever `decor_generator.js` changes.
-5. Do not re-enable legacy small-block building rendering unless explicitly requested.
+1. Compare `racer.html` overlay metrics with `tests/decor_stadium_test_runner.html` for the same track/seed/scale when tuning thresholds.
+2. Keep service worker cache/version bumps mandatory whenever `decor_generator.js` changes.
+3. If stadium density perception regresses, tune `targetStadiumLength`, `minChunkLength`, and `deepMaskGapPoints` in `createStadiums`.
+4. Do not re-enable legacy small-block building rendering unless explicitly requested.
 
 ## Adding Features
 
