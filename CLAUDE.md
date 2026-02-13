@@ -132,7 +132,7 @@ This section is for future AI agents. Stadium/building density behavior was revi
 
 - Decor metadata version currently expected by generator reuse logic: `version >= 8`.
 - Service worker cache version was bumped to force asset refresh:
-  - `service-worker.js` -> `CACHE_VERSION = 'rv-static-v20260213-stadium-density-v1'`
+  - `service-worker.js` -> `CACHE_VERSION = 'rv-static-v20260213-stadium-facing-v1'`
 - If gameplay appears unchanged after code edits, assume stale service worker cache first.
 
 ### What Has Been Tried
@@ -159,6 +159,7 @@ This section is for future AI agents. Stadium/building density behavior was revi
 ### Current Practical Interpretation
 
 - `buildingDensity` now directly affects stadium segmentation (`createStadiums` splits long wall runs by density and adjusts gap-bridging).
+- Stadium orientation now uses `roadMask` side-scoring so `innerPoints` consistently face the track (prevents backwards-facing stands).
 - Runtime decor generation now uses Dev-panel decor sliders (with quality multipliers), instead of fixed quality presets.
 - In-game decor debug overlay is available from Dev > Scales > Decor (`Decor debug overlay`) and shows stadium count, wall coverage, lengths, depth/area, density, and seed.
 - Automated tests now include stadium density responsiveness checks and baseline regeneration support (`UPDATE_STADIUM_BASELINE=1`).

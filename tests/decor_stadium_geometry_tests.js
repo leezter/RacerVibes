@@ -11,7 +11,8 @@ const vm = require('vm');
 
 const globalObj = globalThis;
 globalObj.window = globalObj;
-const syntheticMaskCache = new Map();
+const syntheticGreenMaskCache = new Map();
+const syntheticRoadMaskCache = new Map();
 
 function loadDecorInternals() {
   const decorPath = path.join(__dirname, '..', 'decor_generator.js');
@@ -152,16 +153,11 @@ function stampCircle(mask, width, height, cx, cy, radius) {
   }
 }
 
-function createSyntheticGreenMask(trackId, track, roadWidth, width, height) {
-  const cacheKey = `${trackId}|${Math.round(roadWidth * 100)}`;
-  if (syntheticMaskCache.has(cacheKey)) {
-    return syntheticMaskCache.get(cacheKey);
-  }
-
-  const greenMask = new Uint8Array(width * height);
-  greenMask.fill(1);
+function createSyntheticCorridorMask(track, radius, width, height) {
+  const mask = new Uint8Array(width * height);
+  mask.fill(1);
   const points = track.points || [];
-  const corridorRadius = roadWidth * 0.5 + 28;
+  const corridorRadius = Math.max(1, radius);
   const step = Math.max(10, corridorRadius * 0.45);
 
   for (let i = 0; i < points.length - 1; i++) {
@@ -175,7 +171,7 @@ function createSyntheticGreenMask(trackId, track, roadWidth, width, height) {
       const t = s / steps;
       const x = a.x + dx * t;
       const y = a.y + dy * t;
-      stampCircle(greenMask, width, height, x, y, corridorRadius);
+      stampCircle(mask, width, height, x, y, corridorRadius);
     }
   }
 
@@ -192,13 +188,38 @@ function createSyntheticGreenMask(trackId, track, roadWidth, width, height) {
         const t = s / steps;
         const x = last.x + dx * t;
         const y = last.y + dy * t;
-        stampCircle(greenMask, width, height, x, y, corridorRadius);
+        stampCircle(mask, width, height, x, y, corridorRadius);
       }
     }
   }
 
-  syntheticMaskCache.set(cacheKey, greenMask);
+  return mask;
+}
+
+function createSyntheticGreenMask(trackId, track, roadWidth, width, height) {
+  const cacheKey = `${trackId}|${Math.round(roadWidth * 100)}`;
+  if (syntheticGreenMaskCache.has(cacheKey)) {
+    return syntheticGreenMaskCache.get(cacheKey);
+  }
+
+  const greenMask = createSyntheticCorridorMask(track, roadWidth * 0.5 + 28, width, height);
+  syntheticGreenMaskCache.set(cacheKey, greenMask);
   return greenMask;
+}
+
+function createSyntheticRoadMask(trackId, track, roadWidth, width, height) {
+  const cacheKey = `${trackId}|${Math.round(roadWidth * 100)}`;
+  if (syntheticRoadMaskCache.has(cacheKey)) {
+    return syntheticRoadMaskCache.get(cacheKey);
+  }
+
+  const roadMask = createSyntheticCorridorMask(track, roadWidth * 0.5 + 4, width, height);
+  const binaryRoadMask = new Uint8Array(roadMask.length);
+  for (let i = 0; i < roadMask.length; i++) {
+    binaryRoadMask[i] = roadMask[i] ? 0 : 1;
+  }
+  syntheticRoadMaskCache.set(cacheKey, binaryRoadMask);
+  return binaryRoadMask;
 }
 
 function buildStadiumsForTrack(trackId, internals, tracks, roadWidthScale = 1, buildingDensity = 0.4) {
@@ -212,15 +233,16 @@ function buildStadiumsForTrack(trackId, internals, tracks, roadWidthScale = 1, b
   const width = Math.max(1, Math.ceil(track.world?.width || 6000));
   const height = Math.max(1, Math.ceil(track.world?.height || 4000));
   const greenMask = createSyntheticGreenMask(trackId, track, roadWidth, width, height);
+  const roadMask = createSyntheticRoadMask(trackId, track, roadWidth, width, height);
 
   const stadiums = internals.createStadiums(
     innerWalls,
-    { width, height, greenMask, offsetX: 0, offsetY: 0 },
+    { width, height, greenMask, roadMask, offsetX: 0, offsetY: 0 },
     null,
     { roadWidth, buildingDensity },
   );
 
-  return { stadiums, track, innerWalls, roadWidth };
+  return { stadiums, track, innerWalls, roadWidth, roadMask, width, height, offsetX: 0, offsetY: 0 };
 }
 
 function polygonArea(points) {
@@ -322,6 +344,71 @@ function computeWallCoverageRatio(stadiums, innerWalls) {
   return stadiumInnerLength / wallLength;
 }
 
+function sampleRoadMask(roadMask, width, height, offsetX, offsetY, x, y, radius = 2) {
+  if (!roadMask || !Number.isFinite(x) || !Number.isFinite(y)) return 0;
+  const cx = Math.round(x - offsetX);
+  const cy = Math.round(y - offsetY);
+  let hits = 0;
+  let total = 0;
+  for (let oy = -radius; oy <= radius; oy++) {
+    const iy = cy + oy;
+    if (iy < 0 || iy >= height) continue;
+    for (let ox = -radius; ox <= radius; ox++) {
+      const ix = cx + ox;
+      if (ix < 0 || ix >= width) continue;
+      total++;
+      if (roadMask[iy * width + ix]) hits++;
+    }
+  }
+  return total > 0 ? (hits / total) : 0;
+}
+
+function verifyStadiumFacesTrack(stadium, roadMask, width, height, offsetX, offsetY, roadWidth) {
+  const innerPoints = stadium && stadium.innerPoints ? stadium.innerPoints : [];
+  if (!Array.isArray(innerPoints) || innerPoints.length < 2) return true;
+  if (!roadMask) return true;
+
+  const sampleCount = Math.min(12, Math.max(3, innerPoints.length - 1));
+  const probeNear = Math.max(18, Math.min(120, (roadWidth || 120) * 0.52));
+  const probeFar = Math.max(26, Math.min(180, (roadWidth || 120) * 0.70));
+  let leftScore = 0;
+  let rightScore = 0;
+  let leftVotes = 0;
+  let rightVotes = 0;
+  let sampleHits = 0;
+
+  for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
+    const t = sampleCount <= 1 ? 0 : (sampleIndex / (sampleCount - 1));
+    const idx = Math.max(0, Math.min(innerPoints.length - 2, Math.floor(t * (innerPoints.length - 2))));
+    const a = innerPoints[idx];
+    const b = innerPoints[idx + 1];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (!Number.isFinite(len) || len < 1) continue;
+    const nx = -dy / len;
+    const ny = dx / len;
+    const mx = (a.x + b.x) * 0.5;
+    const my = (a.y + b.y) * 0.5;
+    const leftNear = sampleRoadMask(roadMask, width, height, offsetX, offsetY, mx + nx * probeNear, my + ny * probeNear, 2);
+    const rightNear = sampleRoadMask(roadMask, width, height, offsetX, offsetY, mx - nx * probeNear, my - ny * probeNear, 2);
+    const leftFar = sampleRoadMask(roadMask, width, height, offsetX, offsetY, mx + nx * probeFar, my + ny * probeFar, 2);
+    const rightFar = sampleRoadMask(roadMask, width, height, offsetX, offsetY, mx - nx * probeFar, my - ny * probeFar, 2);
+    const leftSample = leftNear * 0.6 + leftFar * 0.4;
+    const rightSample = rightNear * 0.6 + rightFar * 0.4;
+    leftScore += leftSample;
+    rightScore += rightSample;
+    if (leftSample > rightSample + 0.02) leftVotes++;
+    if (rightSample > leftSample + 0.02) rightVotes++;
+    if (leftSample > 0 || rightSample > 0) sampleHits++;
+  }
+
+  if (sampleHits === 0) return true;
+  if (leftVotes > rightVotes) return false;
+  if (rightVotes > leftVotes) return true;
+  return rightScore >= leftScore;
+}
+
 function run() {
   const baselinePath = path.join(__dirname, 'fixtures', 'stadium_layout_baseline.json');
   const baseline = fs.existsSync(baselinePath)
@@ -345,7 +432,17 @@ function run() {
 
   for (const trackId of trackIds) {
     const expected = baseline.tracks ? baseline.tracks[trackId] : null;
-    const { stadiums, innerWalls } = buildStadiumsForTrack(trackId, internals, tracks);
+    const {
+      stadiums,
+      innerWalls,
+      track,
+      roadWidth,
+      roadMask,
+      width,
+      height,
+      offsetX,
+      offsetY,
+    } = buildStadiumsForTrack(trackId, internals, tracks);
 
     const gotHashes = stadiums.map((s) => hashInnerPath(s.innerPoints || []));
     const gotLengths = stadiums.map((s) => innerPathLength(s.innerPoints || []));
@@ -389,6 +486,9 @@ function run() {
       if (!verifyOuterSegmentBound(s)) {
         failures.push(`[${trackId}] stadium ${i} violates outer segment length bound`);
       }
+      if (!verifyStadiumFacesTrack(s, roadMask, width, height, offsetX, offsetY, roadWidth)) {
+        failures.push(`[${trackId}] stadium ${i} does not face the track`);
+      }
     }
 
     const wallCoverageRatio = computeWallCoverageRatio(stadiums, innerWalls);
@@ -408,7 +508,17 @@ function run() {
       for (const treeDensity of treeDensities) {
         for (const seedOffset of seedOffsets) {
           for (const roadScale of roadWidthScales) {
-            const { stadiums, track, innerWalls } = buildStadiumsForTrack(
+            const {
+              stadiums,
+              track,
+              innerWalls,
+              roadWidth,
+              roadMask,
+              width,
+              height,
+              offsetX,
+              offsetY,
+            } = buildStadiumsForTrack(
               trackId,
               internals,
               tracks,
@@ -431,6 +541,11 @@ function run() {
               if (!verifyOuterSegmentBound(s)) {
                 failures.push(
                   `[Matrix ${trackId} rw=${roadScale.toFixed(2)} b=${buildingDensity} t=${treeDensity} s=${seedOffset}] stadium ${i} violates outer segment length bound`,
+                );
+              }
+              if (!verifyStadiumFacesTrack(s, roadMask, width, height, offsetX, offsetY, roadWidth)) {
+                failures.push(
+                  `[Matrix ${trackId} rw=${roadScale.toFixed(2)} b=${buildingDensity} t=${treeDensity} s=${seedOffset}] stadium ${i} faces away from track`,
                 );
               }
               const coverage = centerlineCoverageRatio(s.points || [], track.points || [], 8);

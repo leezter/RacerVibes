@@ -1064,7 +1064,7 @@
   }
 
   function createStadiums(wallData, zones, rng, params) {
-    const { width, height, greenMask, offsetX = 0, offsetY = 0 } = zones;
+    const { width, height, greenMask, roadMask, offsetX = 0, offsetY = 0 } = zones;
     const stadiums = [];
     const minStadiumDepth = 22; // Minimum depth to be considered for a stadium
     const maxStadiumDepth = 300; // Cap depth
@@ -1099,6 +1099,74 @@
         depth = d;
       }
       return depth;
+    }
+
+    function sampleRoadMask(x, y, radius = 2) {
+      if (!roadMask || !Number.isFinite(x) || !Number.isFinite(y)) return 0;
+      const cx = Math.round(x - offsetX);
+      const cy = Math.round(y - offsetY);
+      let hits = 0;
+      let total = 0;
+      for (let oy = -radius; oy <= radius; oy++) {
+        const iy = cy + oy;
+        if (iy < 0 || iy >= height) continue;
+        for (let ox = -radius; ox <= radius; ox++) {
+          const ix = cx + ox;
+          if (ix < 0 || ix >= width) continue;
+          total++;
+          if (roadMask[iy * width + ix]) hits++;
+        }
+      }
+      return total > 0 ? (hits / total) : 0;
+    }
+
+    // Ensure inner path orientation is consistent so audience rows always face the track.
+    // drawStadiums assumes stadium interior is on the "left" side of innerPoints, so track
+    // should be on the "right" side of the path direction.
+    function shouldReverseStadiumForTrack(innerPoints) {
+      if (!roadMask || !Array.isArray(innerPoints) || innerPoints.length < 2) return false;
+      const samplesToCheck = Math.min(12, Math.max(3, innerPoints.length - 1));
+      const probeNear = clamp((params.roadWidth || 80) * 0.52, 18, 120);
+      const probeFar = clamp((params.roadWidth || 80) * 0.70, 26, 180);
+      let leftScore = 0;
+      let rightScore = 0;
+      let leftVotes = 0;
+      let rightVotes = 0;
+      let sampleCount = 0;
+
+      for (let sampleIndex = 0; sampleIndex < samplesToCheck; sampleIndex++) {
+        const t = samplesToCheck <= 1 ? 0 : (sampleIndex / (samplesToCheck - 1));
+        const idx = clamp(Math.floor(t * (innerPoints.length - 2)), 0, innerPoints.length - 2);
+        const a = innerPoints[idx];
+        const b = innerPoints[idx + 1];
+        if (!isFinitePoint(a) || !isFinitePoint(b)) continue;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const len = Math.hypot(dx, dy);
+        if (!Number.isFinite(len) || len < 1) continue;
+
+        const nx = -dy / len;
+        const ny = dx / len;
+        const mx = (a.x + b.x) * 0.5;
+        const my = (a.y + b.y) * 0.5;
+
+        const leftNear = sampleRoadMask(mx + nx * probeNear, my + ny * probeNear, 2);
+        const rightNear = sampleRoadMask(mx - nx * probeNear, my - ny * probeNear, 2);
+        const leftFar = sampleRoadMask(mx + nx * probeFar, my + ny * probeFar, 2);
+        const rightFar = sampleRoadMask(mx - nx * probeFar, my - ny * probeFar, 2);
+        const leftSample = leftNear * 0.6 + leftFar * 0.4;
+        const rightSample = rightNear * 0.6 + rightFar * 0.4;
+        leftScore += leftSample;
+        rightScore += rightSample;
+        if (leftSample > rightSample + 0.02) leftVotes++;
+        if (rightSample > leftSample + 0.02) rightVotes++;
+        sampleCount++;
+      }
+
+      if (sampleCount === 0) return false;
+      if (leftVotes > rightVotes) return true;
+      if (rightVotes > leftVotes) return false;
+      return leftScore > rightScore;
     }
 
     function isFinitePoint(point) {
@@ -1828,13 +1896,25 @@
                 exportedOuterPoints = outerPath.slice();
               }
 
+              let stadiumInnerPoints = innerPath;
+              let stadiumOuterPoints = exportedOuterPoints;
+              let stadiumPoints = finalPolygon;
+
+              if (shouldReverseStadiumForTrack(stadiumInnerPoints)) {
+                stadiumInnerPoints = stadiumInnerPoints.slice().reverse();
+                stadiumPoints = stadiumPoints.slice().reverse();
+                if (stadiumOuterPoints && stadiumOuterPoints.length >= 2) {
+                  stadiumOuterPoints = stadiumOuterPoints.slice().reverse();
+                }
+              }
+
               const stadium = {
-                points: finalPolygon,
-                innerPoints: innerPath,
+                points: stadiumPoints,
+                innerPoints: stadiumInnerPoints,
                 type: 'stadium',
               };
-              if (exportedOuterPoints && exportedOuterPoints.length >= 2) {
-                stadium.outerPoints = exportedOuterPoints;
+              if (stadiumOuterPoints && stadiumOuterPoints.length >= 2) {
+                stadium.outerPoints = stadiumOuterPoints;
               }
               stadiums.push(stadium);
             }
