@@ -31,6 +31,11 @@ Prettier config: 100 char width, single quotes, trailing commas, semicolons.
 
 Manual testing only - no automated test suite. Open `tests/test_runner.html` or `tests/vehicle_test_runner.html` in browser.
 
+Additional targeted suites now exist for decor/stadium geometry:
+
+- `node tests/decor_stadium_geometry_tests.js`
+- `tests/decor_stadium_test_runner.html` (browser matrix runner)
+
 ## Architecture
 
 ### Entry Flow
@@ -110,6 +115,63 @@ Live update caveat:
 4. Script order matters - dependencies must load before dependents
 5. **Chrome GPU canvas issue**: Stadium shadows in `decor_generator.js` cause Chrome (Windows, hardware acceleration ON) to silently lose canvas content. Stadium shadows are currently **disabled** (commented out at line ~1720). Other shadows work fine. Don't re-enable without thorough Chrome testing.
 6. **Camera/resolution changes can appear "ignored" if stale JS is cached**: hard reload and/or bump `CACHE_VERSION` before judging camera behavior.
+
+## Stadium Buildings Status (As Of February 12, 2026)
+
+This section is for future AI agents. The user-reported issue is that stadium/building visuals still look under-populated in real gameplay, even after multiple generation changes.
+
+### Current Architecture
+
+- The active "buildings" system is stadium generation in `decor_generator.js` (`createStadiums` + `drawStadiums`).
+- Legacy block buildings (`createBuildings` / `drawBuildings`) are intentionally disabled in runtime output:
+  - metadata stores `buildings: []`
+  - `drawBuildings(...)` is commented out in replay path.
+- Stadium placement source is `innerWalls` from `createInnerWalls(...)`, not the deprecated standalone building layer.
+
+### Current Runtime Cache/Versioning
+
+- Decor metadata version currently expected by generator reuse logic: `version >= 7`.
+- Service worker cache version was bumped to force asset refresh:
+  - `service-worker.js` -> `CACHE_VERSION = 'rv-static-v20260212-stadium-coverage-v2'`
+- If gameplay appears unchanged after code edits, assume stale service worker cache first.
+
+### What Has Been Tried
+
+- Added deterministic outer-path sanitization for spikes/self-intersections.
+- Added endpoint locking/orientation cleanup for outer stadium boundary.
+- Added robust self-intersection cleanup and fallback polygon candidates.
+- Re-enabled legacy small buildings briefly, then removed again because it created detached, incorrect block artifacts.
+- Added coverage-oriented run tuning (shallower depth thresholds, shorter run thresholds, short-gap bridging).
+- Added explicit wall-coverage checks in automated and browser decor runners.
+
+### Known Struggles / Failure Modes Encountered
+
+- **Synthetic pass vs gameplay fail mismatch**:
+  - Geometry tests and browser runner can pass while in-game visuals still look sparse.
+  - The user reports "no visible increase" despite passing matrix tests.
+- **Aggressive depth expansion regressions**:
+  - Using road-mask-driven depth expansion created oversized stadium polygons that overlapped drivable track.
+- **Over-merged runs**:
+  - Large gap-bridging created a few very large stadiums instead of many edge-following segments.
+- **Detached legacy blocks**:
+  - Reintroducing old `createBuildings` path did not match intended stadium behavior and was rejected.
+
+### Current Practical Interpretation
+
+- The system now favors geometry safety/stability and high measured wall coverage in test harnesses.
+- The unresolved problem is still user-visible in-game density/coverage perception on actual race scenes.
+- Building density slider behavior for stadiums remains limited/non-intuitive; it does not currently act like a straightforward "more stadium segments everywhere" control.
+
+### If You Pick This Up Again (Recommended Next Steps)
+
+1. Add an in-game debug overlay showing per-track:
+   - `metadata.items.stadiums.length`
+   - sum of inner-wall length vs sum of stadium `innerPoints` length
+   - average stadium depth and area
+2. Dump runtime stadium metadata from `runDecor()` in `racer.html` and compare directly to `tests/decor_stadium_test_runner.html` output for the same track/seed/scale.
+3. Verify the exact mask used in gameplay (`trackMap`) matches assumptions in test harness mask generation.
+4. Keep service worker cache/version bumps mandatory whenever `decor_generator.js` changes.
+5. Do not re-enable legacy small-block building rendering unless explicitly requested.
 
 ## Adding Features
 

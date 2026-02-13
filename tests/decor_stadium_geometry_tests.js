@@ -220,7 +220,7 @@ function buildStadiumsForTrack(trackId, internals, tracks, roadWidthScale = 1, b
     { roadWidth, buildingDensity },
   );
 
-  return { stadiums, track };
+  return { stadiums, track, innerWalls, roadWidth };
 }
 
 function buildBuildingsForTrack(trackId, internals, tracks, roadWidthScale = 1, buildingDensity = 0.4) {
@@ -332,6 +332,37 @@ function verifyOuterSegmentBound(stadium) {
   return maxOuterSegLen <= maxAllowed;
 }
 
+function polylineLength(points) {
+  if (!points || points.length < 2) return 0;
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    total += Math.hypot(
+      points[i].x - points[i - 1].x,
+      points[i].y - points[i - 1].y,
+    );
+  }
+  return total;
+}
+
+function computeWallCoverageRatio(stadiums, innerWalls) {
+  const segments = [
+    ...((innerWalls && innerWalls.outerSegments) || []),
+    ...((innerWalls && innerWalls.innerSegments) || []),
+  ];
+  let wallLength = 0;
+  for (const seg of segments) {
+    wallLength += polylineLength(seg.points || []);
+  }
+
+  let stadiumInnerLength = 0;
+  for (const stadium of stadiums || []) {
+    stadiumInnerLength += polylineLength(stadium.innerPoints || []);
+  }
+
+  if (wallLength <= 0) return 0;
+  return stadiumInnerLength / wallLength;
+}
+
 function run() {
   const baselinePath = path.join(__dirname, 'fixtures', 'stadium_layout_baseline.json');
   const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
@@ -344,7 +375,7 @@ function run() {
 
   for (const trackId of trackIds) {
     const expected = baseline.tracks[trackId];
-    const { stadiums } = buildStadiumsForTrack(trackId, internals, tracks);
+    const { stadiums, innerWalls } = buildStadiumsForTrack(trackId, internals, tracks);
 
     if (stadiums.length !== expected.stadiumCount) {
       failures.push(`[${trackId}] stadiumCount expected ${expected.stadiumCount}, got ${stadiums.length}`);
@@ -377,6 +408,11 @@ function run() {
         failures.push(`[${trackId}] stadium ${i} violates outer segment length bound`);
       }
     }
+
+    const wallCoverageRatio = computeWallCoverageRatio(stadiums, innerWalls);
+    if (wallCoverageRatio < 0.84) {
+      failures.push(`[${trackId}] wall coverage ratio too low (${(wallCoverageRatio * 100).toFixed(2)}%)`);
+    }
   }
 
   const matrixTracks = ['Test', 'Sharp_Corners', 'Bendy_Vibes'];
@@ -390,7 +426,7 @@ function run() {
       for (const treeDensity of treeDensities) {
         for (const seedOffset of seedOffsets) {
           for (const roadScale of roadWidthScales) {
-            const { stadiums, track } = buildStadiumsForTrack(trackId, internals, tracks, roadScale);
+            const { stadiums, track, innerWalls } = buildStadiumsForTrack(trackId, internals, tracks, roadScale);
             scenarioChecks++;
             for (let i = 0; i < stadiums.length; i++) {
               const s = stadiums[i];
@@ -415,6 +451,12 @@ function run() {
                   `[Matrix ${trackId} rw=${roadScale.toFixed(2)} b=${buildingDensity} t=${treeDensity} s=${seedOffset}] stadium ${i} covers centerline (${(coverage * 100).toFixed(2)}%)`,
                 );
               }
+            }
+            const wallCoverageRatio = computeWallCoverageRatio(stadiums, innerWalls);
+            if (wallCoverageRatio < 0.84) {
+              failures.push(
+                `[Matrix ${trackId} rw=${roadScale.toFixed(2)} b=${buildingDensity} t=${treeDensity} s=${seedOffset}] wall coverage too low (${(wallCoverageRatio * 100).toFixed(2)}%)`,
+              );
             }
           }
         }

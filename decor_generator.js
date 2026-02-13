@@ -987,9 +987,9 @@
   function createStadiums(wallData, zones, rng, params) {
     const { width, height, greenMask, offsetX = 0, offsetY = 0 } = zones;
     const stadiums = [];
-    const minStadiumDepth = 60; // Minimum depth to be considered for a stadium
+    const minStadiumDepth = 22; // Minimum depth to be considered for a stadium
     const maxStadiumDepth = 300; // Cap depth
-    const minStadiumLength = 100; // Minimum length of wall to form a stadium
+    const minStadiumLength = 24; // Minimum length of wall to form a stadium
 
     function clamp(value, min, max) {
       return Math.max(min, Math.min(max, value));
@@ -1007,7 +1007,10 @@
         const iy = Math.round(ty - offsetY);
 
         if (ix < 0 || iy < 0 || ix >= width || iy >= height) return d;
-        if (!greenMask[iy * width + ix]) return d;
+
+        if (!greenMask[iy * width + ix]) {
+          return d;
+        }
 
         depth = d;
       }
@@ -1143,6 +1146,34 @@
       return sorted[mid];
     }
 
+    function buildClosedDeepMask(depths, minDepth, maxGapPoints = 2) {
+      const mask = depths.map((depth) => depth >= minDepth);
+      if (mask.length <= 2 || maxGapPoints <= 0) return mask;
+
+      let i = 0;
+      while (i < mask.length) {
+        if (mask[i]) {
+          i++;
+          continue;
+        }
+        let j = i;
+        while (j < mask.length && !mask[j]) {
+          j++;
+        }
+        const gapLen = j - i;
+        const left = i - 1;
+        const right = j;
+        if (gapLen <= maxGapPoints && left >= 0 && right < mask.length && mask[left] && mask[right]) {
+          for (let k = i; k < j; k++) {
+            mask[k] = true;
+          }
+        }
+        i = j;
+      }
+
+      return mask;
+    }
+
     function subdivideLongSegments(points, maxLen) {
       if (!Array.isArray(points) || points.length < 2 || !Number.isFinite(maxLen) || maxLen <= 0) {
         return Array.isArray(points) ? points.slice() : [];
@@ -1229,7 +1260,8 @@
           const midpointY = (prev.outerY + next.outerY) * 0.5;
           const projectedDepth = (midpointX - curr.innerX) * curr.nx + (midpointY - curr.innerY) * curr.ny;
           const maxDepthForPoint = Number.isFinite(curr.maxDepth) ? curr.maxDepth : (maxStadiumDepth - 10);
-          const targetDepth = clamp((projectedDepth + curr.depth) * 0.5, minStadiumDepth, maxDepthForPoint);
+          const minDepthForPoint = Number.isFinite(curr.minDepth) ? curr.minDepth : minStadiumDepth;
+          const targetDepth = clamp((projectedDepth + curr.depth) * 0.5, minDepthForPoint, maxDepthForPoint);
           working[idx] = {
             ...curr,
             depth: targetDepth,
@@ -1394,48 +1426,69 @@
 
       const pts = segment.points;
       const pointDepths = new Array(pts.length).fill(0);
+      const pointDepthsForward = new Array(pts.length).fill(0);
+      const pointDepthsBackward = new Array(pts.length).fill(0);
+      const cumulativeLengths = new Array(pts.length).fill(0);
 
-      // Keep run qualification unchanged for layout lock.
-      for (let i = 0; i < pts.length; i++) {
-        let nx = pts[i].nx;
-        let ny = pts[i].ny;
-        if (!Number.isFinite(nx) || !Number.isFinite(ny)) {
-          const normal = getStableNormal(pts, i);
-          nx = normal.x;
-          ny = normal.y;
-        }
-        pointDepths[i] = checkDepth(pts[i].x, pts[i].y, nx, ny);
+      for (let i = 1; i < pts.length; i++) {
+        cumulativeLengths[i] = cumulativeLengths[i - 1] + pointDistance(pts[i - 1], pts[i]);
       }
+
+      for (let i = 0; i < pts.length; i++) {
+        const normal = getStableNormal(pts, i);
+        const forwardDepth = checkDepth(pts[i].x, pts[i].y, normal.x, normal.y);
+        const backwardDepth = checkDepth(pts[i].x, pts[i].y, -normal.x, -normal.y);
+        pointDepthsForward[i] = forwardDepth;
+        pointDepthsBackward[i] = backwardDepth;
+        pointDepths[i] = Math.max(forwardDepth, backwardDepth);
+      }
+      const deepMask = buildClosedDeepMask(pointDepths, minStadiumDepth, 1);
 
       let startIdx = -1;
       for (let i = 0; i < pts.length; i++) {
-        const isDeepEnough = pointDepths[i] >= minStadiumDepth;
+        const isDeepEnough = !!deepMask[i];
 
         if (isDeepEnough && startIdx === -1) {
           startIdx = i;
         } else if ((!isDeepEnough || i === pts.length - 1) && startIdx !== -1) {
           const endIdx = isDeepEnough ? i : i - 1;
-          const length = Math.hypot(pts[endIdx].x - pts[startIdx].x, pts[endIdx].y - pts[startIdx].y);
+          const length = cumulativeLengths[endIdx] - cumulativeLengths[startIdx];
 
           if (length > minStadiumLength) {
             const innerPath = [];
             const outerSamples = [];
+            let previousOutward = null;
 
             for (let k = startIdx; k <= endIdx; k += 2) {
               const point = pts[k];
               innerPath.push({ x: point.x, y: point.y });
 
               const normal = getStableNormal(pts, k);
-              const forwardDepth = checkDepth(point.x, point.y, normal.x, normal.y);
-              const backwardDepth = checkDepth(point.x, point.y, -normal.x, -normal.y);
+              const forwardDepth = pointDepthsForward[k];
+              const backwardDepth = pointDepthsBackward[k];
 
-              const outward = backwardDepth > forwardDepth
+              let useBackward = backwardDepth > forwardDepth;
+              let outward = useBackward
                 ? { x: -normal.x, y: -normal.y }
                 : { x: normal.x, y: normal.y };
+              let chosenDepth = useBackward ? backwardDepth : forwardDepth;
+              const alternativeDepth = useBackward ? forwardDepth : backwardDepth;
 
-              const maxDepthForPoint = clamp(Math.max(forwardDepth, backwardDepth) - 10, minStadiumDepth, maxStadiumDepth - 10);
-              const rawDepth = clamp(pointDepths[k] - 10, minStadiumDepth, maxStadiumDepth - 10);
-              const depth = clamp(rawDepth, minStadiumDepth, maxDepthForPoint);
+              if (previousOutward) {
+                const continuityDot = outward.x * previousOutward.x + outward.y * previousOutward.y;
+                if (continuityDot < -0.05 &&
+                  alternativeDepth >= (minStadiumDepth + 10) &&
+                  Math.abs(chosenDepth - alternativeDepth) <= 28) {
+                  useBackward = !useBackward;
+                  outward = { x: -outward.x, y: -outward.y };
+                  chosenDepth = alternativeDepth;
+                }
+              }
+              previousOutward = outward;
+
+              const minDepthForPoint = 10;
+              const maxDepthForPoint = clamp(Math.max(10, chosenDepth - 10), minDepthForPoint, maxStadiumDepth - 10);
+              const depth = maxDepthForPoint;
 
               outerSamples.push({
                 innerX: point.x,
@@ -1443,6 +1496,7 @@
                 nx: outward.x,
                 ny: outward.y,
                 depth,
+                minDepth: minDepthForPoint,
                 maxDepth: maxDepthForPoint,
                 outerX: point.x + outward.x * depth,
                 outerY: point.y + outward.y * depth,
@@ -1453,10 +1507,13 @@
               const smoothed = smoothDepthProfile(outerSamples.map((sample) => sample.depth));
               for (let depthIndex = 0; depthIndex < outerSamples.length; depthIndex++) {
                 const sample = outerSamples[depthIndex];
+                const minDepthForPoint = Number.isFinite(sample.minDepth)
+                  ? sample.minDepth
+                  : minStadiumDepth;
                 const maxDepthForPoint = Number.isFinite(sample.maxDepth)
                   ? sample.maxDepth
                   : (maxStadiumDepth - 10);
-                const depth = clamp(smoothed[depthIndex], minStadiumDepth, maxDepthForPoint);
+                const depth = clamp(smoothed[depthIndex], minDepthForPoint, maxDepthForPoint);
                 sample.depth = depth;
                 sample.outerX = sample.innerX + sample.nx * depth;
                 sample.outerY = sample.innerY + sample.ny * depth;
@@ -2434,7 +2491,7 @@
     const trees = sampleTrees(zones, rng, effectiveParams, stadiums);
 
     return {
-      version: 4,
+      version: 7,
       seed,
       params: {
         treeDensity: effectiveParams.treeDensity,
@@ -2559,7 +2616,7 @@
 
     let metadata = null;
     const existing = options.existing;
-    const canReuse = existing && existing.version >= 4 && !options.force;
+    const canReuse = existing && existing.version >= 7 && !options.force;
     const mappingMatches = canReuse && existing.mapping &&
       Math.abs((existing.mapping.worldMinX || 0) - mapping.worldMinX) < 0.5 &&
       Math.abs((existing.mapping.worldMinY || 0) - mapping.worldMinY) < 0.5 &&

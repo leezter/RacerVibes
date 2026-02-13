@@ -104,6 +104,7 @@
               <th>treeDensity</th>
               <th>seedOffset</th>
               <th>Stadiums</th>
+              <th>Wall Coverage</th>
               <th>Issues</th>
             </tr>
           </thead>
@@ -242,6 +243,36 @@
       return spikes;
     }
 
+    function polylineLength(points) {
+      if (!points || points.length < 2) return 0;
+      let total = 0;
+      for (let i = 1; i < points.length; i++) {
+        total += Math.hypot(
+          points[i].x - points[i - 1].x,
+          points[i].y - points[i - 1].y
+        );
+      }
+      return total;
+    }
+
+    function computeWallCoverageRatio(stadiums, innerWalls) {
+      const segments = [
+        ...((innerWalls && innerWalls.outerSegments) || []),
+        ...((innerWalls && innerWalls.innerSegments) || []),
+      ];
+      let wallLength = 0;
+      for (const seg of segments) {
+        wallLength += polylineLength(seg.points || []);
+      }
+
+      let stadiumInnerLength = 0;
+      for (const stadium of (stadiums || [])) {
+        stadiumInnerLength += polylineLength(stadium.innerPoints || []);
+      }
+
+      return wallLength > 0 ? (stadiumInnerLength / wallLength) : 0;
+    }
+
     function createTrackMask(track, roadWidth) {
       const cacheKey = `${track.name || 'track'}|${(roadWidth || (track.roadWidth || 120)).toFixed(2)}`;
       if (maskCache.has(cacheKey)) return maskCache.get(cacheKey);
@@ -304,6 +335,7 @@
       });
 
       const stadiums = (generated && generated.metadata && generated.metadata.items && generated.metadata.items.stadiums) || [];
+      const innerWalls = (generated && generated.metadata && generated.metadata.items && generated.metadata.items.innerWalls) || null;
       let selfIntersections = 0;
       let spikeEdges = 0;
       let dupPoints = 0;
@@ -319,6 +351,8 @@
         );
       }
 
+      const wallCoverageRatio = computeWallCoverageRatio(stadiums, innerWalls);
+
       return {
         track,
         widthScale,
@@ -330,7 +364,8 @@
         spikeEdges,
         dupPoints,
         centerlineCoverage,
-        failed: (selfIntersections + spikeEdges + dupPoints) > 0 || centerlineCoverage > 0.01,
+        wallCoverageRatio,
+        failed: (selfIntersections + spikeEdges + dupPoints) > 0 || centerlineCoverage > 0.01 || wallCoverageRatio < 0.84,
       };
     }
 
@@ -403,6 +438,7 @@
         `spikeEdges: ${result.spikeEdges}`,
         `dupPoints: ${result.dupPoints}`,
         `centerlineCoverage: ${(result.centerlineCoverage * 100).toFixed(2)}%`,
+        `wallCoverage: ${(result.wallCoverageRatio * 100).toFixed(2)}%`,
         failed ? 'Status: FAIL' : 'Status: PASS',
       ].join(' | ');
     }
@@ -415,6 +451,7 @@
       if (result.spikeEdges) issues.push(`spikes=${result.spikeEdges}`);
       if (result.dupPoints) issues.push(`dup=${result.dupPoints}`);
       if (result.centerlineCoverage > 0.01) issues.push(`track=${(result.centerlineCoverage * 100).toFixed(2)}%`);
+      if (result.wallCoverageRatio < 0.84) issues.push(`wall=${(result.wallCoverageRatio * 100).toFixed(2)}%`);
       tr.innerHTML = `
         <td>${result.failed ? 'FAIL' : 'PASS'}</td>
         <td>${result.track.name || 'Unknown'}</td>
@@ -423,6 +460,7 @@
         <td>${result.treeDensity.toFixed(1)}</td>
         <td>${result.seedOffset}</td>
         <td>${result.stadiums.length}</td>
+        <td>${(result.wallCoverageRatio * 100).toFixed(2)}%</td>
         <td>${issues.length ? issues.join(', ') : 'none'}</td>
       `;
       resultsBody.appendChild(tr);
@@ -466,6 +504,7 @@
             selfIntersections: 0,
             spikeEdges: 0,
             dupPoints: 0,
+            wallCoverageRatio: 0,
             failed: true,
             error: String(err && err.message ? err.message : err),
           };
